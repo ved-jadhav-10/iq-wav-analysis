@@ -1,0 +1,155 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Sanket design tokens. Every colour in the app comes from here.
+ * Names follow shadcn/ui conventions so registry components drop in unchanged.
+ * Evidence-level colours are never the only signal: badges always carry a glyph and a label too.
+ */
+:root {
+  --background: #f5f7f9;
+  --surface: #ffffff;
+  --surface-2: #eef1f5;
+  --border: #d9dfe5;
+  --border-strong: #c2cbd4;
+  --foreground: #0e1620;
+  --muted-foreground: #56616c;
+  --subtle-foreground: #7b8691;
+  --primary: #0a8aa6;
+  --primary-foreground: #ffffff;
+  --ring: #0a8aa6;
+  --danger: #c93c37;
+
+  --ev-verified: #1a7f37;
+  --ev-measured: #0b64c8;
+  --ev-estimated: #7447d8;
+  --ev-hypothesis: #946300;
+  --ev-unknown: #69737d;
+
+  --plot-grid: #e3e8ed;
+  --plot-axis: #7b8691;
+}
+
+.dark {
+  --background: #0a0e14;
+  --surface: #0f141b;
+  --surface-2: #151b24;
+  --border: #1e2630;
+  --border-strong: #2a3441;
+  --foreground: #e4eaf0;
+  --muted-foreground: #8a97a4;
+  --subtle-foreground: #5d6a77;
+  --primary: #22d3ee;
+  --primary-foreground: #06121a;
+  --ring: #22d3ee;
+  --danger: #f2605a;
+
+  --ev-verified: #3fb950;
+  --ev-measured: #58a6ff;
+  --ev-estimated: #a78bfa;
+  --ev-hypothesis: #e3b341;
+  --ev-unknown: #8b949e;
+
+  --plot-grid: #18202a;
+  --plot-axis: #5d6a77;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-ring: var(--ring);
+  --color-danger: var(--danger);
+
+  --color-card: var(--surface);
+  --color-card-foreground: var(--foreground);
+  --color-popover: var(--surface-2);
+  --color-popover-foreground: var(--foreground);
+  --color-muted: var(--surface-2);
+  --color-input: var(--border-strong);
+  --color-destructive: var(--danger);
+
+  --color-ev-verified: var(--ev-verified);
+  --color-ev-measured: var(--ev-measured);
+  --color-ev-estimated: var(--ev-estimated);
+  --color-ev-hypothesis: var(--ev-hypothesis);
+  --color-ev-unknown: var(--ev-unknown);
+
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
+  --font-deva: 'IBM Plex Sans Devanagari', 'Nirmala UI', sans-serif;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    line-height: 1.35rem;
+    -webkit-font-smoothing: antialiased;
+  }
+  * {
+    border-color: var(--border);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  input[type='range'] {
+    accent-color: var(--primary);
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 30%, transparent);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0ms !important;
+      animation-duration: 0ms !important;
+    }
+  }
+}
+
+@utility num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+@utility eyebrow {
+  font-size: var(--text-2xs);
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--subtle-foreground);
+}
+
+/* uPlot: keep its layout, drop its own chrome so our tokens apply. */
+.uplot {
+  font-family: var(--font-mono);
+}
+.uplot .u-legend {
+  display: none;
+}

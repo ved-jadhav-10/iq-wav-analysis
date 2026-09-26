@@ -35,7 +35,7 @@ Pair across roles for review: R1↔R2 (bits handoff), R3↔R1 (features), R4↔R
 
 | Day | Tasks | Owner |
 |---|---|---|
-| **Fri 26 Sep** | Confirm PS text, theme, template and submission format on sih.gov.in; register the team; pick a product name. Install Python 3.12 + uv; `gh auth login`. Scaffold the repo (`dsp/`, `backend/`, `frontend/`, `bench/`). | R6, R4 |
+| **Fri 26 Sep** | Confirm PS text, theme, template and submission format on sih.gov.in; register the team; pick a product name. Install Python 3.12 + uv; `gh auth login`. Scaffold the repo (`dsp/`, `backend/`, `frontend/`, `bench/`). Install the `frontend-design` and `ponytail` Claude Code plugins ([tooling §3](CLAUDE_SKILLS_MCP.md#3-claude-code-plugins-to-install)). | R6, R4 |
 | **Sat 27 Sep** | PoC ingestion: SigMF, raw cf32/ci16 with explicit rate, stereo/mono WAV with an assumptions printout. PoC plots: waterfall + PSD + constellation (matplotlib is fine). Draft the deck outline. | R4, R1, R6 |
 | **Sun 28 Sep** | PoC ground truth: generate BPSK/QPSK with known bits and a CRC-16 frame → demodulate → BER = 0 → CRC passes. Architecture diagram. Competitive-matrix slide from [STANDARDS §9](STANDARDS_TO_BEAT.md#9-competitive-matrix--draft-for-the-idea-deck). | R1, R2, R5 |
 | **Mon 29 Sep** | Finish the deck. Internal review: can we answer all six §B7 judge questions? Remove any claim `bench/` can't reproduce. | All |
@@ -96,6 +96,7 @@ The numeric targets are in [STANDARDS §8](STANDARDS_TO_BEAT.md#8-our-bar--measu
   - Vite + React + TS in `frontend/`
   - GitHub Actions: ruff, pyright, pytest, `tsc`, ESLint, Vitest
   - pre-commit hooks
+- **Claude Code tooling:** `/init` → merge in the project rules, then add the GitHub, Context7, Playwright and shadcn MCP servers and the `update-config` hooks/allowlist. Exact commands and setup order in [Claude Code tooling §5–§9](CLAUDE_SKILLS_MCP.md#5-mcp-servers-to-add).
 - **Evidence model:** `Parameter{value, unit, level, confidence, method, evidence[], alternatives[], warnings[]}`, shared by every stage and the API schema. Levels: VERIFIED / MEASURED / ESTIMATED / HYPOTHESIS / UNKNOWN.
 - **Ingestion:**
   - the full SigMF `core:datatype` vocabulary

@@ -2,7 +2,7 @@
 
 This covers the Claude Code setup that helps a six-person team build SIH26147: built-in skills worth using, MCP servers to add, custom project skills to write, and the `CLAUDE.md` rules and hooks that keep Claude's output consistent with the [plan](PLAN.md).
 
-MCP server details were checked against their repos on **26 September 2026**.
+MCP server details were checked against their repos on **26 September 2026**; plugins and the additions in §3–§5 were checked on **27 September 2026**.
 
 > **Dev-time only.** Everything here helps us *build* the tool. The shipped product must never depend on an MCP server, an LLM, or any network service, because it has to run air-gapped. Two rival repos ship LLM copilots and cloud auth; we deliberately don't.
 
@@ -33,14 +33,14 @@ Invoke these by name, e.g. `/code-review`, or just describe the task and Claude 
 | `deep-research` | Literature sweeps on blind code reconstruction (Marazin, Barbier, Cluzeau–Tillich, Sendrier, Valembois), interleaver identification, low-SNR AMC | Phases 3, 5 |
 | `pdf` | Reading paper PDFs and standards (CCSDS, DVB-S2 LDPC tables); checking our generated PDF reports | Phases 5, 7 |
 | `xlsx` | Benchmark result sheets and the rival matrix as a spreadsheet for the team | Phase 8 |
-| `init` | Generate the first `CLAUDE.md` once the repo is scaffolded, then merge in the rules in [§4](#4-claudemd-rules-to-add) | Phase 1, day 1 |
+| `init` | Generate the first `CLAUDE.md` once the repo is scaffolded, then merge in the rules in [§7](#7-claudemd-rules-to-add) | Phase 1, day 1 |
 | `code-review` | Bug-focused review of every PR (`/code-review high` on FEC and sync code) | Every PR |
 | `simplify` | Clean-up passes on merged code | Weekly |
 | `security-review` | Upload handling, path traversal in export filenames (a rival hit this), parser fuzzing gaps | Phase 7 |
 | `run` | Launch the app and confirm a change works end to end | Phase 7+ |
-| `update-config` | Set up the hooks and permissions in [§5](#5-hooks--permissions) correctly | Phase 1 |
+| `update-config` | Set up the hooks and permissions in [§8](#8-hooks--permissions) correctly | Phase 1 |
 | `fewer-permission-prompts` | After a week of work, build an allowlist of safe read-only commands | Phase 1+ |
-| `skill-creator` | Build and evaluate the custom skills in [§3](#3-custom-project-skills-to-create) | Phase 1 |
+| `skill-creator` | Build and evaluate the custom skills in [§6](#6-custom-project-skills-to-create) | Phase 1 |
 | `loop` / `schedule` | Re-run `rival-scan` periodically, e.g. every morning until the finale | Phase 0 → 9 |
 | `artifact-design` / `artifact-diagramming` | A shareable page for the competitive matrix or the architecture diagram | Phases 0, 9 |
 | `chrome-browser` | Read sih.gov.in in *your own* Chrome session. The portal blocks automated fetches, so this is the reliable way to confirm PS details and deadlines. | Phase 0 |
@@ -49,7 +49,32 @@ Not needed: `claude-api` (there's no LLM in the product), `computer-use`, `morni
 
 ---
 
-## 2. MCP servers to add
+## 3. Claude Code plugins to install
+
+Checked against their repos on **27 September 2026**. Install with `/plugin marketplace add <owner>/<repo>` then `/plugin install <plugin>@<marketplace>`, unless noted otherwise.
+
+| Plugin | Why we need it | Install | Notes |
+|---|---|---|---|
+| **`superpowers`** ([obra/superpowers](https://github.com/obra/superpowers)) | A brainstorm → plan → TDD → review methodology that matches this project's own rules: exact ground truth over "it didn't crash," and the Definition of Done checklist. Best fit for the algorithm-heavy phases (2 DSP, 5 FEC, 6 framing) where a red-green-refactor discipline against `dsp.synth` ground truth actually matters. | `/plugin install superpowers@claude-plugins-official` if the official marketplace is already enabled; otherwise `/plugin marketplace add obra/superpowers-marketplace` then `/plugin install superpowers@superpowers-marketplace` | Large, opinionated plugin (14+ skills). Don't let it override the project's own rules in [§6](#6-claudemd-rules-to-add) — e.g. it shouldn't relax the "no silent defaults" or VERIFIED-only rule. Try it on one phase before rolling out to the whole team. |
+| **`frontend-design`** (official, `anthropics/claude-code`) | Anthropic's own skill for non-generic UI, now as a plugin. Directly useful for R5's waterfall/constellation/evidence-card/hypothesis-table work in Phase 7 — keeps a consistent palette and spacing instead of default AI-slop layouts. | `/plugin install frontend-design@claude-plugins-official` | First-party, no secrets. Verify with `/plugin` after install. |
+| **`ponytail`** ([DietrichGebert/ponytail](https://github.com/dietrichgebert/ponytail), MIT) | Injects a "does this need to exist / is it already in the codebase or stdlib" decision ladder before writing new code. Matches the plan's own anti-abstraction rule ("three similar lines is better than a premature abstraction"). Independently measured around −10–15% code and cost on real sessions — smaller than its own marketing claims, but a real, positive signal (unlike similar "token saver" tools — see the caution in [§5](#5-mcp-servers-to-add)). | `/plugin marketplace add DietrichGebert/ponytail` then `/plugin install ponytail@ponytail` (two separate prompts — the plugin's own install note says this is required) | Needs Node.js on PATH (already on the dev machine). Toggle with `/ponytail [lite\|full\|ultra\|off]`; run `/ponytail-audit` before the Phase 9 freeze to catch scope creep. |
+
+Not added: `commit-commands`/`feature-dev` bundles from `claude-plugins-official` — `/code-review`, `/simplify` and the CLAUDE.md rules already cover that ground; add only if the team finds commit-message drift across 6 people to be an actual problem.
+
+---
+
+## 4. UI/design toolkit notes
+
+The frontend is an analyst tool (waterfall, constellation, evidence cards, hypothesis table), not a marketing site, so skip the flashy animated shadcn kits (Magic UI, Aceternity, Watermelon UI, Motion Primitives, coss ui/Origin UI) — they add licensing and visual-noise risk for no benefit here.
+
+- **shadcn MCP server** (official, [ui.shadcn.com/docs/mcp](https://ui.shadcn.com/docs/mcp)) — listed in [§5](#5-mcp-servers-to-add). Gives Claude live access to real shadcn component APIs instead of hallucinating props.
+- **Motion** (`motion.dev`, formerly Framer Motion, MIT) — a plain npm dependency (`npm install motion`), not an MCP/plugin. Use sparingly for the stage-timeline and before/after diff transitions in Phase 7; avoid it everywhere else per the plan's own restraint.
+- **tweakcn** ([tweakcn.com](https://tweakcn.com), MIT) — a browser-only visual theme editor for shadcn/Tailwind tokens, not a Claude Code tool. Useful once, early in Phase 7, to pick an accessible light/dark palette (colorblind-safe evidence-level colors), then export the CSS variables into the repo. No install needed.
+- **IQEngine** — already called out in [PLAN.md Phase 7](PLAN.md#phase-7--gui--api-w2w10-continuous--r4-r5) as the component/pattern source to study and borrow from (MIT).
+
+---
+
+## 5. MCP servers to add
 
 Use **project scope** (`--scope project`, written to `.mcp.json` and committed) for servers without secrets, so the whole team gets them. Use **user scope** for anything that needs a token. Never commit tokens.
 
@@ -62,17 +87,23 @@ Use **project scope** (`--scope project`, written to `.mcp.json` and committed) 
 | **Hugging Face** ([official](https://huggingface.co/docs/hub/en/hf-mcp-server)) | Find RF datasets and models, check dataset cards and licences | `claude mcp add hf-mcp-server -t http "https://huggingface.co/mcp?login"` | Read-only token. **Never upload real captures.** |
 | **arXiv** ([blazickjp/arxiv-mcp-server](https://github.com/blazickjp/arxiv-mcp-server), ★3.2k, Apache-2.0) | Read AMC and blind-FEC papers section by section; export BibTeX for the deck's references | `claude mcp add --transport stdio --scope user arxiv -- uvx arxiv-mcp-server` | Needs uv |
 | **GNU Radio** ([yoelbassin/gr-mcp](https://github.com/yoelbassin/gr-mcp), ★50, **GPL-3.0**), *optional* | Build and run reference flowgraphs to cross-check our synthetic generator | `/plugin marketplace add yoelbassin/gr-mcp`, then `/plugin install marconi` | Needs GNU Radio 3.10+ to run pipelines. GPL: keep it dev-only and never copy its code into the product. |
+| **shadcn** (official, [ui.shadcn.com/docs/mcp](https://ui.shadcn.com/docs/mcp)) | Live shadcn/ui component data (props, variants, structure) for R5's evidence cards, hypothesis table and stage timeline, instead of hallucinated component APIs | `pnpm dlx shadcn@latest mcp init --client claude`, or add to `.mcp.json`: `{"mcpServers":{"shadcn":{"command":"npx","args":["shadcn@latest","mcp"]}}}` | Project scope, no secret needed. See [§4](#4-uidesign-toolkit-notes) for what to skip. |
+| **Serena** ([oraios/serena](https://github.com/oraios/serena)) | LSP-based symbol-level code retrieval/editing once `dsp/`, `backend/` and `frontend/` grow large — Claude reads the one function it needs instead of whole files, which keeps DSP/FEC review sessions cheaper and faster | `claude mcp add --scope user serena -- serena start-mcp-server --context claude-code --project-from-cwd` | Add from Phase 2 onward, once the codebase is big enough for it to pay off. Older `uvx ... --context ide-assistant` install instructions circulating online are outdated — use the `serena` CLI form above. |
+| **Chrome DevTools** (official, [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp)) | Performance traces and console/network inspection for the WebGL2 tiled-STFT waterfall — checks frame budget, GPU memory and tile-fetch behaviour that Playwright's accessibility-tree view can't see | `claude mcp add chrome-devtools-mcp -- npx -y chrome-devtools-mcp`, or `/plugin marketplace add ChromeDevTools/chrome-devtools-mcp` then `/plugin install chrome-devtools-mcp` | Phase 7, once the waterfall renders. Needs Chrome remote debugging enabled locally; dev-time only, same as Playwright. |
 
 **Community skill (optional):** [briannasywa/sdr-skills](https://github.com/briannasywa/sdr-skills) (MIT) is an SDR knowledge skill covering DSP, modulation, IQ formats/SigMF and GNU Radio 3.10, with 8 small Python tools. Install with `npx skills add briannasywa/sdr-skills --skill software-defined-radio`. **It is 10 days old with 0 stars, so read its `SKILL.md` and tools before enabling it.**
+
+**Personal, optional, never project scope:** a persistent-memory MCP such as [thedotmack/claude-mem](https://github.com/thedotmack/claude-mem) compresses your own Claude Code session history so it survives `/compact` and later sessions. This repo already carries the team's shared memory in `CLAUDE.md` and these docs, so treat any such tool as an individual's personal convenience (their own user scope, their own machine) rather than something the whole team installs.
 
 **Deliberately not added:**
 - filesystem MCP: built-in tools already cover this
 - database or cloud MCPs: we use SQLite locally, and the product is air-gapped
 - any MCP that would upload recordings
+- generic "token-saving" or "context mode" MCP servers advertising 90%+ savings: independent benchmarks of similarly-marketed tools have found some *increase* cost rather than cut it (see the `ponytail` note in [§3](#3-claude-code-plugins-to-install) for the one tool in this category that was actually validated) — don't install one without measuring it yourself first
 
 ---
 
-## 3. Custom project skills to create
+## 6. Custom project skills to create
 
 Put each skill in `.claude/skills/<name>/SKILL.md` and commit them so the whole team shares them. Build and test them with `skill-creator`.
 
@@ -109,7 +140,7 @@ description: Generate a synthetic SigMF IQ recording with exact ground truth (mo
 
 ---
 
-## 4. `CLAUDE.md` rules to add
+## 7. `CLAUDE.md` rules to add
 
 After `/init` generates the base file, paste in these rules:
 
@@ -133,7 +164,7 @@ After `/init` generates the base file, paste in these rules:
 
 ---
 
-## 5. Hooks & permissions
+## 8. Hooks & permissions
 
 Ask Claude to use the `update-config` skill to add these to `.claude/settings.json`; it gets the hook schema right.
 
@@ -149,16 +180,19 @@ Ask Claude to use the `update-config` skill to add these to `.claude/settings.js
 
 ---
 
-## 6. Suggested setup order
+## 9. Suggested setup order
 
 1. **Day 1 (Phase 0):** install Python/uv, run `gh auth login`, add GitHub + Context7, and use `chrome-browser` to confirm the PS on sih.gov.in. Use `pptx` for the deck.
 2. **Phase 1:**
-   - `/init` → merge in the §4 rules
+   - `/init` → merge in the §7 rules
    - `update-config` hooks
-   - add Playwright
+   - install `frontend-design` and `ponytail` plugins; try `superpowers` on one phase before team-wide rollout
+   - add Playwright and the shadcn MCP server
    - create the `gen-iq`, `inspect-iq`, `sigmf-check` and `bench-run` skills
-3. **Phase 3:** add Jupyter, Hugging Face and arXiv; create `eval-amc`.
-4. **Phase 5:** create `fec-catalogue`; use `deep-research` for the blind-FEC literature.
-5. **Phases 8–9:** create `decoder-truth` for real captures; use `rival-scan` on a `loop`, plus `claim-check` and `judge-drill`.
+3. **Phase 2:** add Serena once `dsp/` is big enough to benefit from symbol-level retrieval.
+4. **Phase 3:** add Jupyter, Hugging Face and arXiv; create `eval-amc`.
+5. **Phase 5:** create `fec-catalogue`; use `deep-research` for the blind-FEC literature.
+6. **Phase 7:** add Chrome DevTools MCP once the waterfall renders; pick a palette with tweakcn.
+7. **Phases 8–9:** create `decoder-truth` for real captures; use `rival-scan` on a `loop`, plus `claim-check` and `judge-drill`.
 
 The research behind the latest plan changes is in [`reports/SIH26147 solution research.md`](../reports/SIH26147%20solution%20research.md), with source notes in `research_notes/`.
