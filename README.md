@@ -18,7 +18,7 @@ Every result shows the evidence behind it and how sure we are. Nothing is guesse
 
 ## What the problem statement asks for
 
-The inputs are recordings of terrestrial HF, VHF and UHF signals (from a few kHz up to GHz). They come from different sensors and locations, so formats and sample rates vary. The tool must do five things ([dossier §B1](sih_analysis.md)):
+The inputs are recordings of terrestrial HF, VHF and UHF signals (from a few kHz up to GHz). They come from different sensors and locations, so formats and sample rates vary. The tool must do five things ([dossier §B1](docs/sih_analysis.md)):
 
 1. **Identify signal parameters:** sampling frequency, modulation, FEC and interleaving.
 2. **Demodulate** FSK, PSK and QAM.
@@ -49,9 +49,9 @@ flowchart TD
 | Detect | Finds every signal in time and frequency | Welch PSD, streaming spectrogram, CFAR-style thresholding with hysteresis |
 | Estimate | Measures each signal | Occupied bandwidth, M2M4 SNR, cyclostationary / Oerder-Meyr symbol rate, M-th-power CFO, higher-order cumulants |
 | Sync | Locks onto timing and carrier | RRC matched filter, Gardner / Mueller-Müller, Costas loop, FSK discriminator |
-| Classify | Names the modulation | Explainable cumulant rules + a small CNN trained on RadioML 2018.01A and TorchSig; disagreement is shown, not hidden |
+| Classify | Names the modulation | Explainable cumulant rules + a tiny (~10K-parameter) 1-D CNN on [I, Q, \|x\|, Δφ] after resampling to fixed samples-per-symbol; trained on our own impaired generator; layered unknown-signal rejection (SNR gate → energy score → prototype distance); disagreement is shown, not hidden |
 | Demodulate | Produces soft bits (LLRs) | PSK/QAM slicers with Gray demapping, FSK detection, phase-ambiguity candidates |
-| De-interleave + FEC | Identifies and decodes the coding layers | Dual-code parity/rank tests, syndrome screening, Viterbi, RS, LDPC min-sum, multiple-testing correction |
+| De-interleave + FEC | Identifies and decodes the coding layers | One bit-packed Numba GF(2) Gaussian-elimination kernel (soft GJETP) reused for code length, sync, puncturing and interleaver period; Galois-field Fourier test for RS; soft syndrome scoring against an LDPC catalogue; Viterbi, RS and min-sum decoders; false-alarm rate measured on shuffled bits |
 | Frame | Finds message structure | Known sync library + blind sync discovery with a significance test; frame length; header fields |
 | Report | Shows and exports everything | React GUI, JSON, PDF, SigMF annotations |
 
@@ -75,7 +75,8 @@ We state these up front; they are not buried in fine print:
 
 - **Absolute sample rate and centre frequency cannot be recovered from a headerless file.** We read them from SigMF or the WAV header, or ask the analyst, and print the assumption on every report. Relative values (symbol rate as a fraction of sample rate, bandwidth as a fraction of the recording) are still estimated.
 - **Blind FEC and interleaver identification is catalogue-bounded and probabilistic.** A result is VERIFIED only with CRC, sync-word or re-encode proof. The acceptance threshold rises with the number of hypotheses tried.
-- **Pseudo-random interleavers with an unknown generator or seed are practically unrecoverable.** We search known PRNG families over a bounded seed range. Otherwise we report the bounds we can measure (such as period) and mark the result UNKNOWN.
+- **Pseudo-random interleavers with an unknown permutation are practically unrecoverable.** We test a catalogue of *standard* permutations (3GPP turbo, LTE QPP, 802.11, DVB-S2). Anything else is reported as UNKNOWN with the bounds we can measure, such as its period. General permutation recovery is an open research problem, so we don't claim a seed search.
+- **Blind code identification needs enough clean data.** Hard-decision rank methods fail on long codes at high raw BER. For example, at 3% BER a 2,040-bit RS(255,223) row is almost never error-free. So we set identification targets per code family and use soft decisions: convolutional codes at channel BER, RS after the inner decoder, LDPC at Es/N0.
 - **A mono WAV is real-valued audio, not IQ.** Converting it with a Hilbert transform is an approximation, so digital-modulation labels from mono files are at most HYPOTHESIS.
 - **Modulation classification degrades at low SNR.** We publish the accuracy-vs-SNR curve and suppress labels outside the validated range.
 - **Out of scope:** decrypting protected payloads, live capture, and transmitting. We recover bits, not plaintext.
@@ -84,15 +85,15 @@ We state these up front; they are not buried in fine print:
 
 | Layer | Choice | Why |
 |---|---|---|
-| DSP core | Python 3.12, NumPy, SciPy, Numba for hot loops (Viterbi, LDPC) | Fast to write and test; JIT where it matters |
-| FEC | Our own implementations, checked against scikit-commpy, reedsolo and pyldpc | Rivals hit bugs in these libraries (see [STANDARDS §6](docs/STANDARDS_TO_BEAT.md#6-engineering-lessons-from-rivals-free-bug-reports)) |
-| ML | PyTorch for training; **ONNX Runtime** for CPU inference; TorchSig 2.x (WSL2/Linux) and RadioML 2018.01A for data | Small offline install; public benchmarks |
+| DSP core | **CPython 3.12 (pinned; numpy 2.5 requires it)**, NumPy, SciPy, Numba (pinned) for hot loops (GF(2) elimination, Viterbi, LDPC) | Fast to write and test; JIT where it matters |
+| FEC | Our own implementations on top of **`galois`** (MIT) for finite fields and RS; scikit-commpy and pyldpc (stale since 2022/2020) used only as vendored references | Rivals hit bugs in these libraries (see [STANDARDS §6](docs/STANDARDS_TO_BEAT.md#6-engineering-lessons-from-rivals-free-bug-reports)). **komm (GPL-3.0) and PySDR code (CC BY-NC-SA) are kept out of the product.** |
+| ML | PyTorch for training; **ONNX Runtime** (FP32, no signal processing inside the graph) for CPU inference; our own impaired generator for training; TorchSig as an independent test generator (WSL2); RadioML 2018.01A only as a public comparison benchmark | RadioML has documented SNR-label and class-name flaws and a non-commercial licence |
 | Metadata | `sigmf` Python package | Standard input/output format |
 | API | FastAPI + Uvicorn, SQLite, server-sent events for progress | One local process, no Redis or Postgres, air-gap friendly |
-| GUI | React + TypeScript (Vite), WebGL2 waterfall, canvas/WebGL constellation and eye diagram, TanStack Query | Fits the team's web strengths; fast plots |
+| GUI | React + TypeScript (Vite). Waterfall from a server-side tiled STFT pyramid (uint8 dB tiles) drawn as WebGL2 textures with a colormap shader (deck.gl or regl). uPlot for PSD and time plots. Density-texture constellation. Components borrowed from [IQEngine](https://github.com/IQEngine/IQEngine) (MIT, React/TS over FastAPI). | Handles multi-GB recordings smoothly; changing contrast needs no re-fetch |
 | Reports | JSON, CSV, PDF, SigMF `.sigmf-meta` annotations | Reusable by other tools |
 | Quality | pytest + Hypothesis, Vitest, Playwright E2E, ruff, pyright, ESLint, `tsc`, GitHub Actions | Measured, not claimed |
-| Packaging | FastAPI serves the built frontend; offline wheelhouse; no CDN; bundled fonts | Runs with networking switched off |
+| Packaging | FastAPI serves the built frontend; offline wheelhouse; **PyInstaller one-folder** build with `NUMBA_CACHE_DIR` pointed at a writable directory; no CDN; bundled fonts | Runs with networking switched off; avoids known frozen-Numba failures on Windows |
 
 ## Repository layout (proposed)
 
@@ -104,8 +105,7 @@ iq-wav-analysis/
 ├── frontend/        React + TypeScript (Vite): waterfall, constellation, eye, evidence and hypothesis views
 ├── bench/           Sealed benchmark definitions, null set, rival comparisons, results
 ├── data/            Datasets and captures (git-ignored; only manifests are committed)
-├── docs/            Plan, standards to beat, Claude Code tooling
-└── sih_analysis.md  Source dossier (Primer 1, Dossier B, Glossary B are the relevant parts)
+└── docs/            Plan, standards to beat, Claude Code tooling, source dossier (Primer 1, Dossier B, Glossary B)
 ```
 
 ## Getting started
@@ -121,14 +121,21 @@ There is nothing to run yet; commands arrive in Phase 1 of the [plan](docs/PLAN.
 
 This tool analyses recordings that were **already captured**, offline. It is intended for authorised government, regulatory (WMO/WPC), defence and research use.
 
-In India, lawful interception is governed by the **Telecommunications Act 2023, Section 20**, and is limited to authorised agencies. The tool does not capture, transmit or decrypt. Record the provenance of every recording in its SigMF metadata.
+In India, lawful interception is governed by the **Telecommunications Act 2023, Section 20**, and is limited to authorised agencies. **Section 3** also requires authorisation to *possess* radio equipment unless it is exempted. The February 2025 draft rules that replace the 1965 possession rules don't clearly exempt a hobby SDR receiver, so treat our own over-the-air capture as a grey area.
+
+For that reason, recordings come from these sources, in order of preference:
+1. public licensed datasets
+2. remote public KiwiSDR receivers (receive-only, broadcast and safety signals such as NAVTEX)
+3. our own captures, only under the college's umbrella and after checking with the organisers or WPC
+
+The tool does not capture, transmit or decrypt. Record the provenance of every recording in its SigMF metadata.
 
 ## Documentation
 
 - [docs/PLAN.md](docs/PLAN.md): phased plan, from the idea-submission sprint to the finale
 - [docs/STANDARDS_TO_BEAT.md](docs/STANDARDS_TO_BEAT.md): commercial tools, open-source prior art, 35 verified rival repos, and our measurable targets
 - [docs/CLAUDE_SKILLS_MCP.md](docs/CLAUDE_SKILLS_MCP.md): Claude Code skills, MCP servers, custom skills, CLAUDE.md rules and hooks for building this
-- [sih_analysis.md](sih_analysis.md): the source dossier
+- [docs/sih_analysis.md](docs/sih_analysis.md): the source dossier, trimmed to SIH26147 and generic material
 
 ## Credits
 

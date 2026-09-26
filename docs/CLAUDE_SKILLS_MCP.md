@@ -84,6 +84,7 @@ Put each skill in `.claude/skills/<name>/SKILL.md` and commit them so the whole 
 | `bench-run` | Run the sealed benchmark and null set; compare with the last committed results; refuse to update numbers if the sealed set was touched | `uv run python -m bench run` | `bench/results/<date>.json` + a diff table |
 | `eval-amc` | Evaluate an AMC checkpoint on RadioML 2018.01A, our in-scope set and the null set | `ml.evaluate` | Accuracy-vs-SNR chart (via `dataviz`), confusion matrix, reliability diagram, a model-card update |
 | `fec-catalogue` | Add or verify a catalogue entry (conv/RS/LDPC): encode → channel → blind ID → decode round trip, plus a licence/source note | pytest on that entry | Catalogue YAML + test |
+| `decoder-truth` | For a real capture, run the matching reference decoder (readsb, AIS-catcher, rtl_433, multimon-ng, SatDump, redsea) as a **subprocess**; keep only CRC-passing frames and write them as SigMF annotations | subprocess + `sigmf` | `.sigmf-meta` with protocol-level ground truth |
 | `rival-scan` | Re-run the GitHub searches from [STANDARDS §10](STANDARDS_TO_BEAT.md#10-how-to-refresh-this-document); fetch trees and READMEs of new or changed repos; diff against the matrix | GitHub MCP or `gh api` | Proposed edits to `STANDARDS_TO_BEAT.md` |
 | `claim-check` | Scan the README, deck and docs for numbers; match each to a `bench/` result or a dossier citation; flag anything unsupported | grep + bench results | List of unsupported claims |
 | `judge-drill` | Quiz a team member on the six §B7 questions plus random module questions; score their answers against the docs | — | Drill transcript with gaps |
@@ -123,7 +124,10 @@ After `/init` generates the base file, paste in these rules:
 - Readers and detectors are chunked/streaming; no whole-file loads.
 - The product runs offline: no network calls, CDNs, telemetry or LLMs at runtime.
 - Don't copy code from rival SIH repos (most are unlicensed). Credit every third-party library in THIRD_PARTY.md.
-- GPL tools (GNU Radio, gr-mcp, URH) are dev-time references only; never vendor their code.
+- GPL tools (GNU Radio, gr-mcp, URH, komm, readsb, AIS-catcher, rtl_433, multimon-ng, SatDump) are dev-time references or subprocess-only test tools; never vendor or import their code. PySDR code is CC BY-NC-SA: learn from it, don't copy it.
+- Use `galois` for finite fields and RS. scikit-commpy and pyldpc are stale: vendor small functions with attribution; don't depend on them.
+- Blind FEC/interleaver work goes through the shared GF(2) kernel (dsp/gf2); don't write a second elimination routine. Rank matrices need L >= w + 30 rows; every detector also runs on shuffled bits.
+- Never claim generic pseudo-random seed recovery; only the standard-permutation catalogue.
 - Python: 3.12, uv, ruff, pyright strict on dsp/. Frontend: TS strict, ESLint, Vitest.
 ```
 
@@ -155,4 +159,6 @@ Ask Claude to use the `update-config` skill to add these to `.claude/settings.js
    - create the `gen-iq`, `inspect-iq`, `sigmf-check` and `bench-run` skills
 3. **Phase 3:** add Jupyter, Hugging Face and arXiv; create `eval-amc`.
 4. **Phase 5:** create `fec-catalogue`; use `deep-research` for the blind-FEC literature.
-5. **Phases 8–9:** use `rival-scan` on a `loop`, plus `claim-check` and `judge-drill`.
+5. **Phases 8–9:** create `decoder-truth` for real captures; use `rival-scan` on a `loop`, plus `claim-check` and `judge-drill`.
+
+The research behind the latest plan changes is in [`reports/SIH26147 solution research.md`](../reports/SIH26147%20solution%20research.md), with source notes in `research_notes/`.

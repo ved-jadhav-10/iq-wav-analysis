@@ -4,7 +4,7 @@ This document sets the bar our tool has to clear. It covers commercial products,
 
 - **Snapshot date:** 26 September 2026. The field moves daily, so re-run the scan before any pitch (see [§10](#10-how-to-refresh-this-document)).
 - **How it was verified:** repository metadata (created, last push, licence) came from the GitHub REST API. Capabilities were checked against each repo's **file tree** and its **README**. We did not clone or run rival code.
-- **Source dossier:** [`sih_analysis.md`](../sih_analysis.md) §B1–B7. Where this document disagrees with the dossier, this document is newer (see [§5.5](#55-corrections-to-the-dossier-b6f)).
+- **Source dossier:** [`sih_analysis.md`](sih_analysis.md) §B1–B7. Where this document disagrees with the dossier, this document is newer (see [§5.5](#55-corrections-to-the-dossier-b6f)).
 
 **Legend:** ✅ backed by code in the repo tree · 📄 README claim, not traced to code · ❌ not found · — not applicable.
 
@@ -62,12 +62,19 @@ These are tools to learn from or build on. Star counts and pushes are as of 26 S
 |---|---|---|---|
 | [GNU Radio](https://www.gnuradio.org/) | Signal-processing flowgraph toolkit | GPL-3.0 | Synthetic data generation and reference receivers. **Dev-time only**: don't link GPL code into the product. |
 | [TorchSig](https://github.com/TorchDSP/torchsig) (★376, pushed 2 Sep) | PyTorch RF-ML toolkit: 57 modulation variants, impairments, Sig53 / WidebandSig53 | MIT | AMC training data. **Needs Ubuntu ≥ 22.04**, so use WSL2 on Windows. |
-| [IQEngine](https://github.com/IQEngine/IQEngine) (★332) | Web SDR toolkit for viewing and annotating recordings | MIT | UX reference for a web waterfall with linked annotations. Pinpoint studied it too. |
+| [IQEngine](https://github.com/IQEngine/IQEngine) (★332) | Web SDR toolkit for viewing and annotating recordings: React/TS client, FastAPI backend, SigMF, its own `webfft` package | MIT | **Closest match to our architecture.** Borrow components rather than start from scratch. Pinpoint studied it too. |
+| OpenWebRX | Web SDR receiver UI | **AGPL-3.0** | UX reference only |
 | [SigMF](https://github.com/sigmf/SigMF) (★466) + `sigmf` Python package | Metadata standard for recordings | Spec CC-BY-SA-4.0 | Native input/output format |
 | gr-spectrumdetect | YOLOv8 wideband detector trained with TorchSig, inside GNU Radio | — | Reference for wideband detection |
 | Inspectrum, Universal Radio Hacker (URH) | Manual IQ inspection and protocol analysis | GPL | Cross-checking our results by hand |
 | liquid-dsp, AFF3CT | C/C++ DSP and FEC libraries | MIT | Performance references. Rivals found them hard to install on Windows. |
-| scikit-commpy, reedsolo, pyldpc | Python FEC | BSD-3 / MIT / BSD | Quick references. **Known pitfalls are in [§6](#6-engineering-lessons-from-rivals-free-bug-reports).** |
+| [galois](https://github.com/mhostetter/galois) 0.4.11 | Finite fields (Numba), BCH and RS codes | MIT | **Primary GF/RS dependency.** Makes the RS Galois-field Fourier test straightforward. |
+| scikit-commpy 0.8.0, reedsolo 1.7.0, pyldpc 0.7.9 | Python FEC | BSD-3 / public domain / MIT | commpy (last release 2022) and pyldpc (2020) are stale: vendor the functions we need; don't depend on them. **Known pitfalls are in [§6](#6-engineering-lessons-from-rivals-free-bug-reports).** |
+| komm 0.34.0 | Most active Python comms toolbox | **GPL-3.0** | Reference only; keep out of the product |
+| PySDR code | Textbook examples (FSM/TSM/FAM, etc.) | **CC BY-NC-SA** | Learn from it; don't copy it into the product |
+| Sionna 2.1 | NVIDIA link-level simulator, now on PyTorch | Apache-2.0 | Too heavy for an air-gapped CPU install |
+| onnxruntime 1.30, numba 0.67, sigmf 1.13 | Inference, JIT, metadata | MIT / BSD / LGPL | All have Windows wheels; numpy 2.5 needs Python 3.12+ |
+| Reference decoders: readsb, AIS-catcher, rtl_433, multimon-ng, SatDump; redsea | Ground-truth decoders for real captures | GPL; redsea MIT | Run as subprocesses in the test harness only |
 | [PySDR](https://pysdr.org) | Free IQ/DSP textbook | CC | Team onboarding |
 
 ---
@@ -301,7 +308,10 @@ Other teams found these bugs by testing against ground truth. We should design t
 | D5 | **Analyst-in-the-loop:** correct any stage and every later stage re-runs automatically, with a before/after diff | Devansh re-runs 3 overrides and only records feedback; sigma's workbench is manual |
 | D6 | **Multi-GB streaming through the entire chain**, not just detection | Pinpoint streams 2 GiB (detection only); sigma stops at 10 M samples |
 | D7 | **Overlapping co-channel and frequency-hopping signals** (detect and label, even when decoding isn't possible) | No rival attempts this |
-| D8 | **Transparent hypothesis accounting in the UI:** how many code/interleaver guesses were tried, the corrected threshold, and why each was rejected | ICHNOVA and sigma compute it but don't expose it as an analyst view |
+| D8 | **Transparent hypothesis accounting in the UI:** how many code/interleaver guesses were tried, the corrected threshold, the empirical false-alarm rate on shuffled bits, and why each was rejected | ICHNOVA and sigma compute it but don't expose it as an analyst view |
+| D9 | **The first open, benchmarked implementation of the literature's blind code and interleaver identification methods:** GJETP/dual-code for convolutional and punctured codes, GFFT for RS, rank-drop and KS tests for interleavers. Research in Sep 2026 found **no public implementation** of these methods anywhere. | Rivals use ad-hoc search or trial decoding; deep-learning papers only pick among trained classes and release no code |
+
+**Talking point for judges:** RadioML, the dataset most rivals cite, has SNR labels off by tens of dB, a noise-only AM-SSB class (2016.10a), a wrong class-name mapping in 2018.01A, and a non-commercial licence. We train on our own impaired generator and use RadioML only as a benchmark, with corrected labels.
 
 ---
 
@@ -315,16 +325,22 @@ These are **targets, not claims.** A number moves into the deck only after a `be
 | Scale | Largest file processed | 2 GiB, detection only (Pinpoint) | **≥ 4 GiB** streamed through detection, and the full chain on every selected signal |
 | Detection | Recall / false detections on a multi-signal bench | Not published | ≥ 95% recall, ≤ 5% false detections at ≥ 6 dB in-band SNR |
 | Estimation | Symbol rate / SNR / CFO error | sigma: SNR within 0.3 dB, rate within 1 Hz on its own files | Rate ≤ 0.1% at ≥ 10 dB; SNR ±1 dB over 0–20 dB; CFO ≤ 1% of Rs, reported per SNR bucket |
-| AMC, public data | RadioML 2018.01A, 24 classes, held-out | None published | ≥ 93% at SNR ≥ +10 dB; ≥ 55% averaged over all 26 SNRs (stretch: 62%); full curve published |
+| AMC, public data | RadioML 2018.01A, 24 classes, held-out, **with corrected SNR labels** | None published; ~10K-parameter models reach about 58–60% averaged / 92–96% peak in papers | ≥ 93% at SNR ≥ +10 dB; ≥ 55% averaged over all 26 SNRs (stretch: 60%); full curve published with a ≤ 50K-parameter model |
+| AMC, open set | Held-out modulations as unknowns, per SNR bin | None published | AUROC ≥ 0.90 at ≥ 6 dB; FPR@95%TPR and OSCR reported |
+| AMC, real signals | Accuracy on labelled real captures (Phase 8) | None published; papers show about 96% → 35% sim-to-real drops | Report before/after fine-tuning; target ≥ 85% at ≥ 10 dB |
 | AMC, in scope | ≥ 12 digital classes, TorchSig-impaired, **independent** generator | sigma: 99% at 4 dB, own synthetic | ≥ 95% at ≥ 6 dB; ≥ 80% at 0 dB; noise/unknown rejection ≥ 99% |
-| FEC ID | Correct code + parameters across the catalogue | sigma: works "at several percent BER" | ≥ 95% at channel BER ≤ 3% |
+| FEC ID: convolutional | Code + generators + puncturing, soft decisions | sigma: works "at several percent BER" | ≥ 95% at raw channel BER ≤ 2% (K ≤ 7), with LLR input |
+| FEC ID: RS | n, k, field polynomial, first root, alignment | sigma: identifies with errors present | ≥ 95% at symbol-error rate after the inner decoder ≤ 1% (or on uncoded-inner streams at channel BER ≤ 10⁻³) |
+| FEC ID: LDPC | Catalogue matrix + alignment | sigma: standards catalogue | ≥ 95% at Es/N0 ≥ the code's decoding threshold + 1 dB, via soft syndrome scoring |
 | False accepts | Accepted decodes on a null set (noise, uncoded, random) | ICHNOVA: 0 on 130 files | **0 on ≥ 1,000 null files** (95% upper bound ≤ 0.3%) |
-| Interleaver ID | Block / diagonal / convolutional with an inner code | sigma (not quantified) | ≥ 90%; pseudo-random either recovered in the searched seed range or reported UNKNOWN with bounds, **never a false VERIFIED** |
+| Interleaver ID | Block / diagonal / convolutional with an inner code | sigma (not quantified) | ≥ 90%; pseudo-random either matched to a standard permutation (3GPP, LTE QPP, 802.11, DVB-S2) or reported UNKNOWN with its measured period, **never a false VERIFIED** |
 | Framing | Blind sync-discovery false alarm | sigma: 10⁻⁶ | ≤ 10⁻⁶ per stream, reported |
 | Real signals | Committed over-the-air recordings | ICHNOVA: 7 stations | ≥ 10 recordings, ≥ 6 services, ≥ 4 captured in India, each with SigMF provenance and a licence |
 | Speed | Full chain, 10 M samples, 4-core laptop CPU | sigma: ≈ 2 s on a 2.5 s multi-burst file | ≤ 10 s, excluding blind LDPC catalogue search |
 | Offline | Outbound connections at runtime | Most claim it; none test it | 0, enforced by a socket-blocking test |
 | Quality | Automated tests / CI | IQWAV: 861 claimed; RadioFry: 79 test files | ≥ 300 tests + Playwright E2E; CI green on every PR |
+
+**Why FEC targets are per family.** A flat "95% at 3% BER" can't be met for long codes. Hard-decision rank methods need error-free rows, and at 3% BER a 2,040-bit RS(255,223) row is clean with probability 0.97²⁰⁴⁰ ≈ 10⁻²⁷.
 
 ---
 
@@ -341,6 +357,7 @@ Our column shows **targets** and must say so on the slide. The point is to show 
 | DL AMC on public datasets | ✅ | ❌ | ❌ | ❌ | ❌ | ? |
 | Committed Indian off-air recordings | ✅ | ❌ | AIR carriers | ❌ | ❌ | — |
 | Analyst correction → automatic re-run | ✅ | Manual | ❌ | Partial | ❌ | ? |
+| Literature blind-ID methods (GJETP / GFFT / rank-drop), open + benchmarked | ✅ | Own methods | Syndrome test | Trial search | Catalogue | ? |
 | Multi-GB full-chain streaming | ✅ | ❌ | ❌ | ❌ | ❌ | ? |
 
 ---
