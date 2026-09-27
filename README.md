@@ -10,7 +10,7 @@ Every result shows the evidence behind it and how sure we are. Nothing is guesse
 | **Organisation** | NTRO (National Technical Research Organisation) |
 | **Category / theme** | Software. Theme is listed as Space Technology on recent mirrors; confirm on [sih.gov.in](https://sih.gov.in). |
 | **Idea submission deadline** | **30 September 2026** |
-| **Status** | M0 built: `sanket` serves the analysis workspace UI (synthetic demo data), with tests, licence gate and offline smoke test; waiting on the first CI run. Signal processing starts in M1. Details in [PLAN §0](docs/PLAN.md#0-progress). |
+| **Status** | M0 done (CI green on Windows and Ubuntu): `sanket` serves the analysis workspace UI on synthetic demo data. M1 in progress: evidence model and SigMF ingest built. Details in [PLAN §0](docs/PLAN.md#0-progress). |
 
 ---
 

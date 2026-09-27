@@ -12,12 +12,12 @@ Related: [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · 
 
 *Checked against the repository on **27 September 2026**. This section is the only place status is tracked; update it whenever an item lands. The milestones themselves are defined in [§5](#5-milestones).*
 
-**Overall:** M0's work is done and waiting on its first CI run. `sanket` starts one local process that serves the workspace UI, and the Python workspace, tests, licence gate, pre-commit hooks and offline smoke test are in place. The UI still runs only on synthetic demo data generated in the browser, and there is no signal processing yet, so Sanket has not analysed a real recording. M1–M8 have not started.
+**Overall:** M0 is done: CI is green on Windows and Ubuntu, and `sanket` starts one local process that serves the workspace UI. M1 is in progress: the evidence model and SigMF ingest exist, but the UI still runs only on synthetic demo data generated in the browser, so Sanket has not analysed a real recording. M2–M8 have not started.
 
 | Stage | State | Exit gate met |
 |---|---|---|
 | Idea submission (external, due 30 Sep) | In progress: docs done, deck not started | — |
-| M0 Foundations and identity | All items built and passing locally; CI workflow written but not yet run | No: needs a green CI run on both platforms |
+| M0 Foundations and identity | Done | Yes: CI green on Windows and Ubuntu (27 Sep) |
 | M1 Ingest, evidence model, ground-truth lab, bench v0 | In progress: evidence model, SigMF datatypes, reader and SigMF metadata done | No |
 | M2 Spectrum, detection, estimation, real tiles | Not started | No |
 | M3 Synchronisation and demodulation | Not started | No |
@@ -46,7 +46,7 @@ Related: [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · 
 - [x] pre-commit hooks (large-file guard, ruff, ESLint, licence check)
 - [x] `THIRD_PARTY.md` generated from the lockfiles by `tools/third_party.py`, which fails on GPL/AGPL, non-commercial or unrecognised licences
 - [x] Playwright smoke test against `sanket`: every request outside 127.0.0.1 is aborted and fails the test; no console errors
-- [ ] CI on Windows and Ubuntu: `.github/workflows/ci.yml` written; first run needs a push
+- [x] CI on Windows and Ubuntu (`.github/workflows/ci.yml`): green on both, including the offline smoke test
 - [x] Claude Code setup for M0 ([tooling map](../.claude/CLAUDE_SKILLS_MCP.md#1-tooling-by-milestone)): project MCP servers, permissions, `plan-status`, and the `ponytail` and `frontend-design` plugins (project scope)
 
 **M1**
@@ -61,7 +61,7 @@ Related: [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · 
 - [ ] Ground-truth generator `dsp/synth` (NumPy) with impairments; TorchSig as an independent generator
 - [ ] Bench v0: fixed seeds, sealed set, null set, `bench run`
 
-**Next:** push to get the first CI run and close M0's exit gate; in M1, the results schema and assumptions block, then the format sniffer.
+**Next:** in M1, the results schema and assumptions block, then the format sniffer.
 
 ---
 
