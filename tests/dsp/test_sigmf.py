@@ -5,7 +5,8 @@ from typing import Any
 import pytest
 
 from dsp.evidence import EvidenceLevel
-from dsp.ingest.sigmf import RATE_HINT, read_sigmf
+from dsp.ingest.assumptions import RATE_HINT
+from dsp.ingest.sigmf import read_sigmf
 
 
 def write(tmp_path: Path, global_: dict[str, Any], captures: Any = None, data: bytes = b"") -> Path:
@@ -65,3 +66,19 @@ def test_size_inconsistent_with_datatype_is_warned(tmp_path: Path) -> None:
 def test_missing_centre_frequency_is_unknown(tmp_path: Path) -> None:
     rec = read_sigmf(write(tmp_path, {"core:datatype": "cu8"}, [{"core:sample_start": 0}]))
     assert rec.center_frequency.level is EvidenceLevel.UNKNOWN
+
+
+def test_data_offset_is_zero_by_the_sigmf_spec_or_read_from_header_bytes(tmp_path: Path) -> None:
+    rec = read_sigmf(write(tmp_path, {"core:datatype": "cu8"}, [{"core:sample_start": 0}]))
+    assert (rec.data_offset.value, rec.data_offset.level) == (0, EvidenceLevel.MEASURED)
+    rec = read_sigmf(
+        write(tmp_path, {"core:datatype": "ci16_le"}, [{"core:header_bytes": 6}], bytes(6 + 16))
+    )
+    assert rec.data_offset.value == 6
+    assert rec.datatype.warnings == ()  # the size check excludes the header
+
+
+@pytest.mark.parametrize("header", [-1, 2.5, "6", True])
+def test_invalid_header_bytes_is_unknown(tmp_path: Path, header: object) -> None:
+    rec = read_sigmf(write(tmp_path, {"core:datatype": "cu8"}, [{"core:header_bytes": header}]))
+    assert rec.data_offset.level is EvidenceLevel.UNKNOWN

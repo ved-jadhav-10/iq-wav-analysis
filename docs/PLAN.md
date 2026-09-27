@@ -12,13 +12,13 @@ Related: [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · 
 
 *Checked against the repository on **27 September 2026**. This section is the only place status is tracked; update it whenever an item lands. The milestones themselves are defined in [§5](#5-milestones).*
 
-**Overall:** M0 is done: CI is green on Windows and Ubuntu, and `sanket` starts one local process that serves the workspace UI. M1 is in progress: the evidence model, the results schema and SigMF ingest exist, but the UI still runs only on synthetic demo data generated in the browser, so Sanket has not analysed a real recording. M2–M8 have not started.
+**Overall:** M0 is done: CI is green on Windows and Ubuntu, and `sanket` starts one local process that serves the workspace UI. M1 is in progress: the evidence model, the results schema, SigMF ingest and the raw-format sniffer (0 wrong formats on the 864-file bench) exist, but the UI still runs only on synthetic demo data generated in the browser, so Sanket has not analysed a real recording. M2–M8 have not started.
 
 | Stage | State | Exit gate met |
 |---|---|---|
 | Idea submission (external, due 30 Sep) | In progress: docs done, deck not started | — |
 | M0 Foundations and identity | Done | Yes: CI green on Windows and Ubuntu (27 Sep) |
-| M1 Ingest, evidence model, ground-truth lab, bench v0 | In progress: evidence model, results schema, SigMF datatypes, reader and SigMF metadata done | No |
+| M1 Ingest, evidence model, ground-truth lab, bench v0 | In progress: evidence model, results schema, SigMF ingest and format sniffer done | No |
 | M2 Spectrum, detection, estimation, real tiles | Not started | No |
 | M3 Synchronisation and demodulation | Not started | No |
 | M4 Modulation classification | Not started | No |
@@ -55,13 +55,13 @@ Related: [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · 
 - [x] Chunked, random-access sample reader with header offset and trailing-byte count
 - [x] SigMF metadata to Parameters: datatype, sample rate and centre frequency MEASURED, or UNKNOWN with a resolve hint, never defaulted; file size checked against the datatype
 - [x] JSON schema generated from the evidence model (`dsp/results.schema.json`, honesty rules included, stale-schema test); results JSON with `schemaVersion` and the `Assumptions` block (datatype, sample rate, centre frequency, IQ order — each stated, UNKNOWN if need be)
-- [ ] Raw files without metadata: format sniffer with ranked candidates and a confusion matrix over all formats
+- [x] Raw files without metadata: format sniffer with ranked candidates (`dsp/ingest/sniff.py`), raw ingest with every layout fact stated (`dsp/ingest/raw.py`), and a confusion matrix over all 28 formats in [`bench/results/sniffer.md`](../bench/results/sniffer.md): 0 wrong formats on 864 files
 - [ ] Sample-rate candidates (filename hints, WAV `auxi` chunk, SDR device rates, structural matches)
 - [ ] WAV mono and stereo
-- [ ] Ground-truth generator `dsp/synth` (NumPy) with impairments; TorchSig as an independent generator
+- [ ] Ground-truth generator `dsp/synth` (NumPy) with impairments; TorchSig as an independent generator. *Started: seeded noise, tone, RRC-shaped PSK and FSK waveforms (`dsp/synth/waveforms.py`).*
 - [ ] Bench v0: fixed seeds, sealed set, null set, `bench run`
 
-**Next:** in M1, the format sniffer for raw files, then sample-rate candidates.
+**Next:** in M1, sample-rate candidates, then WAV mono and stereo.
 
 ---
 
@@ -200,7 +200,7 @@ Dependencies: **M0 → M1 → M2 → M3 → (M4 ∥ M5) → M6 → M8**, with **
 - **Ingest:**
   - SigMF full `core:datatype` vocabulary; raw formats in both byte orders and IQ/QI; WAV mono (analytic signal, flagged HYPOTHESIS for digital labels) and stereo (quadrature check plus an analyst prompt)
   - chunked, random-access reader with memory bounded by the chunk size; file-size-versus-datatype consistency check (ORACLE's metadata says 32-bit, its data is complex128)
-  - **format sniffer** that proposes ranked candidates and never picks silently: header detection, then every datatype × byte order scored on float validity, spectral non-whiteness, lag-1 autocorrelation, I/Q power balance and DC; report the margin over the runner-up. IQ/QI stays an analyst toggle — a swap only mirrors the spectrum. Validated with a confusion matrix over all format permutations.
+  - **format sniffer** that proposes ranked candidates and never picks silently: header detection, then every SigMF datatype scored by estimated code length (bits/byte) under a linear predictor on blocks sampled across the file — a wrong byte order, width or signedness looks like random bytes, and invalid floats cost their full width; report the margin over the runner-up, and UNKNOWN with the tied candidates when formats with different components tie. Real vs complex is decided on prediction gain; where the samples can't tell them apart (noise, real low-pass signals), complex is proposed as a HYPOTHESIS with a warning that says so. IQ/QI stays an analyst toggle — a swap only mirrors the spectrum. Validated with a confusion matrix over all format permutations.
   - **sample-rate candidates**, ranked: filename hints, the WAV `auxi` chunk, standard SDR device rates, and structural matches (a recognised symbol rate × candidate Fs within 0.1 % promotes it to HYPOTHESIS). With no candidate, output in normalised units.
   - an `Assumptions` block in every output
 - **Ground-truth lab:**
@@ -214,6 +214,7 @@ Dependencies: **M0 → M1 → M2 → M3 → (M4 ∥ M5) → M6 → M8**, with **
 - **Detection:** streaming Welch PSD and spectrogram; percentile noise floor; OS-CFAR + hysteresis + morphological clean-up + connected-component labelling; run at 2–3 FFT sizes and merge with NMS; channelisation (mix, filter, decimate). Detect FM-carrying-audio before digital classification.
 - **Estimation:** occupied bandwidth; RRC roll-off by least-squares PSD fit, snapped to standard values; SNR from three estimators (PSD in-band vs guard, M2M4 for PSK, eigenvalue/MDL) with their agreement as the confidence; symbol rate from the |x|² line (x²/x⁴ for BPSK/QPSK), refined by cyclic autocorrelation and confirmed by our own FAM/SSCA, with an occupied-bandwidth fallback below β ≈ 0.1; FSK rate from instantaneous frequency; CFO by M-th power (gated for QAM); cumulants C20, C40, C42.
 - **Tiles in the UI:** server STFT pyramid with max-pooling; frontend switches from the demo texture to tiled level-of-detail rendering; detection boxes from real results.
+- **Real/complex ties:** when the format sniffer can't tell the real and complex readings apart, the stage graph carries both forward, as with phase ambiguity (M3), and downstream proof (sync recurrence, CRC) decides. This replaces the interim "complex by convention, with a warning" rule; a branch that finds nothing is dropped and its cost goes to the run record.
 - *Stretch:* frequency-hopper clustering (DBSCAN over detections); co-channel overlap *detection* via multiple cyclic lines or MDL > 1.
 - **Exit gate:** STANDARDS §8 detection and estimation targets met per SNR bucket; a 4 GiB file streams through detection with bounded memory; first tile ≤ 2 s.
 
@@ -256,7 +257,7 @@ The core differentiator (D9): no public implementation of these methods exists.
 
 ### M7 — Analyst workflow and reports
 
-- Open-recording flow: drag-and-drop or path, format candidates shown before analysis, assumptions editable (centre frequency, sample rate, IQ swap).
+- Open-recording flow: drag-and-drop or path, format candidates shown before analysis, assumptions editable (centre frequency, sample rate, IQ swap). An assumption resting on a convention rather than evidence (e.g. a real/complex tie) is shown as a visible prompt in the Assumptions table, not only as a warning.
 - Overrides on any stage → downstream re-run → before/after diff.
 - Job history; batch view; compare view.
 - Exports: JSON (schema-versioned), CSV, PDF report, SigMF annotations; each carries the assumptions block and the Sanket/catalogue/model versions.

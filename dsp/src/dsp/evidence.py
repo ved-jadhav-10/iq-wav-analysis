@@ -41,7 +41,10 @@ Value = int | FiniteFloat | str
 
 class Alternative(CamelModel):
     value: Value
-    confidence: Confidence
+    confidence: Confidence | None = Field(
+        default=None,
+        description="Null when candidates are ranked without a calibrated probability.",
+    )
 
 
 class Proof(CamelModel):

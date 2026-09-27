@@ -20,10 +20,19 @@
           "title": "Value"
         },
         "confidence": {
-          "maximum": 1.0,
-          "minimum": 0.0,
-          "title": "Confidence",
-          "type": "number"
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Null when candidates are ranked without a calibrated probability.",
+          "title": "Confidence"
         }
       },
       "required": [
@@ -40,6 +49,10 @@
         "datatype": {
           "$ref": "#/$defs/Parameter",
           "description": "Sample format as a SigMF core:datatype."
+        },
+        "dataOffset": {
+          "$ref": "#/$defs/Parameter",
+          "description": "Byte offset of the first sample in the data file."
         },
         "sampleRate": {
           "$ref": "#/$defs/Parameter"
@@ -61,6 +74,7 @@
       },
       "required": [
         "datatype",
+        "dataOffset",
         "sampleRate",
         "centerFrequency",
         "iqOrder"
@@ -401,8 +415,8 @@
   "description": "The results of analysing one recording.",
   "properties": {
     "schemaVersion": {
-      "const": "0.1.0",
-      "default": "0.1.0",
+      "const": "0.2.0",
+      "default": "0.2.0",
       "title": "Schemaversion",
       "type": "string"
     },

@@ -7,22 +7,22 @@ from pathlib import Path
 from typing import Any
 
 from dsp.evidence import EvidenceLevel, Parameter
+from dsp.ingest.assumptions import (
+    FORMAT_HINT,
+    FREQUENCY_HINT,
+    OFFSET_HINT,
+    RATE_HINT,
+    iq_order,
+)
 from dsp.ingest.formats import SampleFormat
 from dsp.results import Assumptions
-
-FORMAT_HINT = "Choose the sample format from the ranked format candidates."
-RATE_HINT = (
-    "Enter the sample rate. Until then, frequencies and rates are reported as fractions of it."
-)
-FREQUENCY_HINT = (
-    "Enter the centre frequency. Until then, frequencies are relative to the recording's centre."
-)
 
 
 @dataclass(frozen=True)
 class SigmfRecording:
     data_path: Path
     datatype: Parameter
+    data_offset: Parameter
     sample_rate: Parameter
     center_frequency: Parameter
 
@@ -35,9 +35,12 @@ class SigmfRecording:
     def assumptions(self) -> Assumptions:
         return Assumptions(
             datatype=self.datatype,
+            data_offset=self.data_offset,
             sample_rate=self.sample_rate,
             center_frequency=self.center_frequency,
-            iq_order=_iq_order(self.sample_format),
+            iq_order=iq_order(
+                self.sample_format, "SigMF convention: the in-phase component is stored first"
+            ),
         )
 
 
@@ -49,12 +52,17 @@ class _Field:
     hint: str
 
     def measured(
-        self, value: str | float, *, unit: str | None = None, warnings: tuple[str, ...] = ()
+        self,
+        value: str | float,
+        *,
+        unit: str | None = None,
+        method: str | None = None,
+        warnings: tuple[str, ...] = (),
     ) -> Parameter:
         return Parameter(
             id=self.id,
             name=self.name,
-            method=f"{self.key} in SigMF metadata",
+            method=method or f"{self.key} in SigMF metadata",
             value=value,
             unit=unit,
             level=EvidenceLevel.MEASURED,
@@ -74,6 +82,7 @@ class _Field:
 
 
 DATATYPE = _Field("datatype", "Sample format", "core:datatype", FORMAT_HINT)
+DATA_OFFSET = _Field("data_offset", "Data offset", "core:header_bytes", OFFSET_HINT)
 SAMPLE_RATE = _Field("sample_rate", "Sample rate", "core:sample_rate", RATE_HINT)
 CENTER_FREQUENCY = _Field("center_frequency", "Centre frequency", "core:frequency", FREQUENCY_HINT)
 
@@ -83,9 +92,12 @@ def read_sigmf(meta_path: Path) -> SigmfRecording:
     global_: dict[str, Any] = meta.get("global") or {}
     captures: list[dict[str, Any]] = meta.get("captures") or [{}]
     data_path = meta_path.with_suffix(".sigmf-data")
+    data_offset = _data_offset(captures[0])
+    header = data_offset.value if isinstance(data_offset.value, int) else 0
     return SigmfRecording(
         data_path=data_path,
-        datatype=_datatype(global_.get(DATATYPE.key), data_path),
+        datatype=_datatype(global_.get(DATATYPE.key), data_path, header),
+        data_offset=data_offset,
         sample_rate=_measurement(global_.get(SAMPLE_RATE.key), SAMPLE_RATE, "S/s"),
         center_frequency=_measurement(
             captures[0].get(CENTER_FREQUENCY.key), CENTER_FREQUENCY, "Hz", allow_zero=True
@@ -93,7 +105,21 @@ def read_sigmf(meta_path: Path) -> SigmfRecording:
     )
 
 
-def _datatype(raw: object, data_path: Path) -> Parameter:
+def _data_offset(capture: dict[str, Any]) -> Parameter:
+    raw = capture.get(DATA_OFFSET.key)
+    if raw is None:
+        return DATA_OFFSET.measured(
+            0,
+            unit="B",
+            method="SigMF: a dataset file starts with its first sample unless "
+            "core:header_bytes says otherwise",
+        )
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+        return DATA_OFFSET.unknown(f"{DATA_OFFSET.key} has an invalid value: {raw!r}")
+    return DATA_OFFSET.measured(raw, unit="B")
+
+
+def _datatype(raw: object, data_path: Path, header: int) -> Parameter:
     if not isinstance(raw, str):
         return DATATYPE.unknown(f"{DATATYPE.key} is missing from the SigMF metadata")
     try:
@@ -101,7 +127,7 @@ def _datatype(raw: object, data_path: Path) -> Parameter:
     except ValueError as error:
         return DATATYPE.unknown(str(error))
     warnings: tuple[str, ...] = ()
-    if data_path.exists() and (extra := data_path.stat().st_size % fmt.sample_bytes):
+    if data_path.exists() and (extra := (data_path.stat().st_size - header) % fmt.sample_bytes):
         warnings = (
             f"The data file ends with {extra} byte(s) that don't form a whole {fmt.datatype} "
             "sample; the datatype may be wrong or the file truncated.",
@@ -116,32 +142,3 @@ def _measurement(raw: object, field: _Field, unit: str, *, allow_zero: bool = Fa
     if not math.isfinite(value) or value < 0 or (value == 0 and not allow_zero):
         return field.unknown(f"{field.key} has an invalid value: {raw!r}")
     return field.measured(value, unit=unit)
-
-
-def _iq_order(fmt: SampleFormat | None) -> Parameter | None:
-    method = "SigMF convention: the in-phase component is stored first"
-    if fmt is None:
-        return Parameter(
-            id="iq_order",
-            name="IQ order",
-            value=None,
-            level=EvidenceLevel.UNKNOWN,
-            method=method,
-            evidence=(
-                "The sample format is unknown, so it isn't known whether samples are complex.",
-            ),
-            resolve_hint=FORMAT_HINT,
-        )
-    if not fmt.is_complex:
-        return None
-    return Parameter(
-        id="iq_order",
-        name="IQ order",
-        value="IQ",
-        level=EvidenceLevel.HYPOTHESIS,
-        method=method,
-        evidence=(
-            "The samples can't confirm it: swapping I and Q only mirrors the spectrum. Toggle it "
-            "if a known carrier sits on the wrong side.",
-        ),
-    )

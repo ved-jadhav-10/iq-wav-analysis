@@ -13,8 +13,8 @@ from pydantic import Field, model_validator
 from dsp.evidence import CamelModel, Parameter
 from dsp.ingest.formats import SampleFormat
 
-SchemaVersion = Literal["0.1.0"]
-SCHEMA_VERSION: SchemaVersion = "0.1.0"
+SchemaVersion = Literal["0.2.0"]
+SCHEMA_VERSION: SchemaVersion = "0.2.0"
 SCHEMA_PATH = Path(__file__).with_name("results.schema.json")
 
 
@@ -25,6 +25,7 @@ class Assumptions(CamelModel):
     """
 
     datatype: Parameter = Field(description="Sample format as a SigMF core:datatype.")
+    data_offset: Parameter = Field(description="Byte offset of the first sample in the data file.")
     sample_rate: Parameter
     center_frequency: Parameter
     iq_order: Parameter | None = Field(
@@ -33,7 +34,7 @@ class Assumptions(CamelModel):
 
     @model_validator(mode="after")
     def _check(self) -> Self:
-        for field in ("datatype", "sample_rate", "center_frequency", "iq_order"):
+        for field in ("datatype", "data_offset", "sample_rate", "center_frequency", "iq_order"):
             param: Parameter | None = getattr(self, field)
             if param is not None and param.id != field:
                 raise ValueError(f"the {field} assumption has id {param.id!r}")

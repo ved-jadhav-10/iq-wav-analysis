@@ -3,7 +3,10 @@ name = "sanket-bench"
 version = "0.1.0"
 description = "Sanket benchmark: generator presets, sealed set, null set, results"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = ["numpy>=2.5.3", "sanket-dsp"]
+
+[tool.uv.sources]
+sanket-dsp = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

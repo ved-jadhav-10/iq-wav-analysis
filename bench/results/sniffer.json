@@ -1,0 +1,122 @@
+{
+  "outcomes": {
+    "cf32_be": {
+      "correct": 36,
+      "correct, layout by convention": 18
+    },
+    "cf32_le": {
+      "correct": 36,
+      "correct, layout by convention": 18
+    },
+    "cf64_be": {
+      "correct": 36,
+      "correct, layout by convention": 18
+    },
+    "cf64_le": {
+      "correct": 36,
+      "correct, layout by convention": 18
+    },
+    "ci16_be": {
+      "correct": 24,
+      "correct, layout by convention": 12
+    },
+    "ci16_le": {
+      "correct": 24,
+      "correct, layout by convention": 12
+    },
+    "ci32_be": {
+      "correct": 24,
+      "correct, layout by convention": 12
+    },
+    "ci32_le": {
+      "correct": 24,
+      "correct, layout by convention": 12
+    },
+    "ci8": {
+      "correct": 24,
+      "correct, layout by convention": 12
+    },
+    "cu16_be": {
+      "correct": 24,
+      "correct, layout by convention": 12
+    },
+    "cu16_le": {
+      "correct": 24,
+      "correct, layout by convention": 12
+    },
+    "cu32_be": {
+      "correct": 24,
+      "correct, layout by convention": 12
+    },
+    "cu32_le": {
+      "correct": 24,
+      "correct, layout by convention": 12
+    },
+    "cu8": {
+      "correct": 24,
+      "correct, layout by convention": 12
+    },
+    "rf32_be": {
+      "correct": 9,
+      "real proposed as complex by convention": 18
+    },
+    "rf32_le": {
+      "correct": 9,
+      "real proposed as complex by convention": 18
+    },
+    "rf64_be": {
+      "correct": 9,
+      "real proposed as complex by convention": 18
+    },
+    "rf64_le": {
+      "correct": 9,
+      "real proposed as complex by convention": 18
+    },
+    "ri16_be": {
+      "correct": 6,
+      "real proposed as complex by convention": 12
+    },
+    "ri16_le": {
+      "correct": 6,
+      "real proposed as complex by convention": 12
+    },
+    "ri32_be": {
+      "correct": 6,
+      "real proposed as complex by convention": 12
+    },
+    "ri32_le": {
+      "correct": 6,
+      "real proposed as complex by convention": 12
+    },
+    "ri8": {
+      "correct": 6,
+      "real proposed as complex by convention": 12
+    },
+    "ru16_be": {
+      "correct": 6,
+      "real proposed as complex by convention": 12
+    },
+    "ru16_le": {
+      "correct": 6,
+      "real proposed as complex by convention": 12
+    },
+    "ru32_be": {
+      "correct": 6,
+      "real proposed as complex by convention": 12
+    },
+    "ru32_le": {
+      "correct": 6,
+      "real proposed as complex by convention": 12
+    },
+    "ru8": {
+      "correct": 6,
+      "real proposed as complex by convention": 12
+    }
+  },
+  "samples": 16384,
+  "seeds": [
+    1,
+    2,
+    3
+  ]
+}

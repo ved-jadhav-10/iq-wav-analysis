@@ -530,6 +530,16 @@ requires-dist = [
 name = "sanket-bench"
 version = "0.1.0"
 source = { editable = "bench" }
+dependencies = [
+    { name = "numpy" },
+    { name = "sanket-dsp" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=2.5.3" },
+    { name = "sanket-dsp", editable = "dsp" },
+]
 
 [[package]]
 name = "sanket-dsp"
