@@ -2,7 +2,7 @@
 
 This document sets the bar our tool has to clear. It covers commercial products, open-source tools, published research, and every public SIH26147 repository we could find.
 
-- **Snapshot date:** 26 September 2026. The field moves daily, so re-run the scan before any pitch (see [§10](#10-how-to-refresh-this-document)).
+- **Snapshot date:** 26 September 2026; §2 was re-checked against vendor material on 27 September. The field moves daily, so re-run the scan before any pitch (see [§10](#10-how-to-refresh-this-document)).
 - **How it was verified:** repository metadata (created, last push, licence) came from the GitHub REST API. Capabilities were checked against each repo's **file tree** and its **README**. We did not clone or run rival code.
 - **Source dossier:** [`SIHPS_ANALYSIS.md`](SIHPS_ANALYSIS.md) §B1–B7. Where this document disagrees with the dossier, this document is newer (see [§5.5](#55-corrections-to-the-dossier-b6f)).
 
@@ -40,17 +40,36 @@ This document sets the bar our tool has to clear. It covers commercial products,
 
 ## 2. Commercial incumbents
 
-Source: dossier §B1, §B4. Only two prices are public.
+Sources: dossier §B1, §B4, and vendor brochures and sites checked on 27 Sep 2026 (links below). **No vendor publishes a price.** The two figures in the table are third-party reports that we could not confirm on 27 Sep, so quote them only as "reported".
 
 | Product | Maker | Price | Constraints |
 |---|---|---|---|
-| Krypto500 / Krypto1000 | COMINT Consulting | Krypto500 about **US$7,400** | ITAR-controlled; no trial or light version |
-| W-CODE | Wavecom (Switzerland) | Entry level about **US$995** (reseller-listed) | Commercial licence |
-| go2DECODE / go2MONITOR | PROCITEC (Germany) | Quotation only | Export-controlled |
+| Krypto500 / Krypto1000 | COMINT Consulting (USA) | Krypto500 reported at about US$7,400 (dossier; **unverified**) | ITAR-controlled; no demo, trial or light version |
+| W-CODE, W-PCIe | Wavecom (Switzerland) | Reported at about US$995 per user (third-party page; **unverified**) | Commercial licence |
+| go2MONITOR / go2DECODE / go2ANALYSE | PROCITEC (Germany) | Quotation only | Export-controlled |
+| CODE300-32 | Hoka Electronic (Netherlands) | Not checked | Commercial licence |
 | GX430 | Rohde & Schwarz (Germany) | Quotation only | Export-controlled |
 | Decodio | Decodio (Switzerland) | Quotation only | — |
 
-**Our angle:** open, indigenous, air-gapped, SigMF-native, and ground-truth verified. None of these products is all of those at once (dossier §B6e). We will not claim to match their protocol libraries. We claim **transparent evidence** and **no licence or ITAR lock-in**.
+What the vendors' own material says:
+
+- **Krypto500** ([brochure](https://datatec.es/wp-content/uploads/2016/04/Krypto500.pdf), [site](https://www.comintconsulting.com/krypto500)):
+  - Narrowband signals up to **48 kHz** wide; Krypto1000 covers wideband.
+  - "Automatic classification of nearly **4000** FSK & PSK modems" in the brochure; the site says "more than 3,000".
+  - "Hundreds of decoders" for on-air modes. Parsers, radio fingerprinting ("RadioID"), traffic and network analysis, and output formats that support cryptanalysis.
+  - Inputs: baseband audio, WAV/RF64 and many I/Q formats. Outputs: decoded text, or the demodulated bitstream as ASCII or hex. Runs on Windows with 400+ supported receivers and SDRs.
+- **PROCITEC go2signals** ([go2DECODE brochure](https://procitec.com/file_access/6816/4250/3024/PRO_Broschure_go2DECODE_22.1_lres.pdf)):
+  - go2MONITOR does wideband detection and classification.
+  - go2DECODE does automatic modem recognition and decoding, including digital voice (DMR, TETRA, P25, NXDN). For "new, unidentified signals" it offers manual analysis displays: spectrogram and baud-rate measurement, autocorrelation, constellation, amplitude/frequency/phase behaviour, and a raster display for coding analysis. It also has a language (DDL/pyDDL) for writing new decoders.
+  - go2ANALYSE does forensic bitstream analysis.
+- **Wavecom W-CODE** ([site](https://www.wavecom.ch/)): 300+ modes, including MIL-STD-188-110 and STANAG 4285/4529/4539/5066; a classifier; the W-BitView bitstream tool.
+
+**How incumbents work.** They pair a large **library of known modems**, which recognise and decode automatically, with **analyst-driven toolsets** for signals the library doesn't know. The PS describes the same situation: "the analysis is being carried out manually". Their public material documents blind FEC and interleaver work only as manual tools. We have no evidence either way on whether they automate it, so don't claim they can't.
+
+**Our angle:** open, indigenous, air-gapped, SigMF-native, and ground-truth verified. None of these products is all of those at once (dossier §B6e). We will not claim to match their protocol libraries or live-monitoring features. We claim three things:
+- **automated blind analysis** of what the library doesn't know, the part that is manual today
+- **transparent evidence** for every result
+- **no licence or ITAR lock-in**
 
 ---
 
@@ -67,6 +86,7 @@ These are tools to learn from or build on. Star counts and pushes are as of 26 S
 | [SigMF](https://github.com/sigmf/SigMF) (★466) + `sigmf` Python package | Metadata standard for recordings | Spec CC-BY-SA-4.0 | Native input/output format |
 | gr-spectrumdetect | YOLOv8 wideband detector trained with TorchSig, inside GNU Radio | — | Reference for wideband detection |
 | Inspectrum, Universal Radio Hacker (URH) | Manual IQ inspection and protocol analysis | GPL | Cross-checking our results by hand |
+| [SigDigger](https://github.com/BatchDrake/SigDigger) (★2,904) | Qt desktop analyser for unknown signals: FSK/PSK/ASK demodulation, bursty signals, analog audio | LGPL-3.0 | The closest free tool to manual technical analysis. UX and workflow reference; not linked into the product. |
 | liquid-dsp, AFF3CT | C/C++ DSP and FEC libraries | MIT | Performance references. Rivals found them hard to install on Windows. |
 | [galois](https://github.com/mhostetter/galois) 0.4.11 | Finite fields (Numba), BCH and RS codes | MIT | **Primary GF/RS dependency.** Makes the RS Galois-field Fourier test straightforward. |
 | scikit-commpy 0.8.0, reedsolo 1.7.0, pyldpc 0.7.9 | Python FEC | BSD-3 / public domain / MIT | commpy (last release 2022) and pyldpc (2020) are stale: vendor the functions we need; don't depend on them. **Known pitfalls are in [§6](#6-engineering-lessons-from-rivals-free-bug-reports).** |
@@ -320,7 +340,8 @@ These are **targets, not claims.** A number moves into the deck only after a `be
 
 | Area | Metric | Best public rival today | Our target |
 |---|---|---|---|
-| Ingestion | Formats | Full SigMF vocabulary (Devansh-567) | Full SigMF vocabulary + raw cf32/ci16/ci8/cu8 LE/BE + WAV mono/stereo with quadrature check; **0 silent defaults** (tested) |
+| Ingestion | Formats and input routes | Full SigMF vocabulary (Devansh-567) | Full SigMF vocabulary; raw files in all 28 datatypes, LE/BE; WAV mono/stereo with a quadrature check, including RF64/Wave64; `.sdriq`, MIDAS Blue, VITA 49 recordings, compressed audio; path, upload, folder, sequence, CLI and local receiver capture; **0 silent defaults** (tested) |
+| Known systems | Public systems matched after blind analysis | Not published | Every 1.0 catalogue entry (CCSDS TM coding, AIS, NAVTEX, MF/HF DSC, POCSAG) VERIFIED on its synth preset; **0 false system matches** on the null set; real-capture agreement with reference decoders reported in PLAN M8 |
 | Scale | Largest file processed | 2 GiB, detection only (Pinpoint) | **≥ 4 GiB** streamed through detection, and the full chain on every selected signal |
 | Detection | Recall / false detections on a multi-signal bench | Not published | ≥ 95% recall, ≤ 5% false detections at ≥ 6 dB in-band SNR |
 | Estimation | Symbol rate / SNR / CFO error | sigma: SNR within 0.3 dB, rate within 1 Hz on its own files | Rate ≤ 0.1% at ≥ 10 dB; SNR ±1 dB over 0–20 dB; CFO ≤ 1% of Rs, reported per SNR bucket |

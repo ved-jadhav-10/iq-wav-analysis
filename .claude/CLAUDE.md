@@ -1,6 +1,7 @@
 # Sanket (SIH26147) — IQ/WAV blind signal analysis
 
 - **Start here:** [../docs/PLAN.md](../docs/PLAN.md) — progress (§0), 1.0 scope, the production bar (§2), architecture (§3), product identity (§4) and milestones M0–M8 (§5). Work toward the current milestone's exit gate, and update §0 when an item lands.
+- **The official problem statement:** [../docs/PROBLEM_STATEMENT.md](../docs/PROBLEM_STATEMENT.md) — check scope questions against its wording.
 - **Competitive claims and numeric targets:** [../docs/STANDARDS_TO_BEAT.md](../docs/STANDARDS_TO_BEAT.md) — never restate a rival claim or a target without checking it here first. Targets are not claims until `bench/` reproduces them.
 - **Claude Code tooling (skills/plugins/MCP servers):** [CLAUDE_SKILLS_MCP.md](CLAUDE_SKILLS_MCP.md) — §1 maps what to use in each milestone.
 - **Repo state:** `frontend/` (Vite + React 19 + TS strict + Tailwind 4) runs on a synthetic demo capture. The uv workspace has `dsp/`, `ml/`, `backend/`, `bench/` (each `<pkg>/src/<pkg>/`); `backend/` has the FastAPI app and the `sanket` command; `dsp/` has the evidence model, the results document and its generated JSON schema (`tools/results_schema.py` regenerates it), ingest (SigMF datatypes, chunked reader, SigMF metadata, raw files with the format sniffer), and the start of `synth/` (seeded waveforms). `bench/` has the sniffer bench (`uv run python -m bench.sniffer`, results in `bench/results/`). `ml/` is empty. Python tests live in `tests/<pkg>/`. Don't assume code exists just because the plan describes it.
@@ -24,5 +25,8 @@
 - Use `galois` for finite fields and RS. scikit-commpy and pyldpc are stale: vendor small functions with attribution; don't depend on them.
 - Blind FEC/interleaver work goes through the shared GF(2) kernel (dsp/gf2); don't write a second elimination routine. Rank matrices need L >= w + 30 rows; every detector also runs on shuffled bits.
 - Never claim generic pseudo-random seed recovery; only the standard-permutation catalogue.
+- Known-system and profile matches never overwrite blind results. A match is VERIFIED only when that system's own check passes on this recording, expressed as one of the three existing proof kinds (crc, sync_recurrence, reencode); every entry tried goes in the ledger.
+- Profile values count as analyst-entered and are checked on every recording; profiles hold no samples and are data, never code.
+- SDR drivers (librtlsdr, libhackrf, UHD) are GPL: capture runs their command-line recorders as subprocesses with an argument list, never a shell; never import or link them. No capture from network-attached receivers.
 - RadioML is a benchmark only, with corrected labels; train on dsp.synth.
 - When a milestone item lands, update docs/PLAN.md §0.

@@ -1,0 +1,49 @@
+# Problem Statement
+
+## Problem Statement ID
+**26147**
+
+## Problem Statement Title
+**Automated model for analysis of .IQ and .wav files along with signal parameter extraction**
+
+---
+
+## Description
+
+### • Background
+
+The raw data for analysis of signal collected off the air typically range from few Khz to Ghz bands. The analysis is being carried out manually to identify the signal parameters and the resultant data is then utilised for processing signals in the designated sensors. This data is often insufficient for fine grain analysis for parameter extraction such as modulation type, sampling rate, FEC, interleaving, etc. This creates a need for advanced data processing to extract the observation data.
+
+### • Description
+
+The terrestrial signals received from various sources includes data in HF, VHF and UHF bands. The raw data collected in the form of .wav or .IQ format to retain the characteristics of wave form. The analysis of signals is primarily dependent on the basic characteristics of data points selected during recording of these signals. Since the data point are recorded from different sensors and different locations, the parameters may vary. Therefore, the data available for analysis is often insufficient to clearly identify fine details such as sampling rate, modulation type, interleaving, FEC etc. This limitation reduces the accuracy and confidence of interpretation and data analysis that require detailed information. The data saved as .IQ and .wav have different parameters and therefore they store the raw information in different format. These files have to be processed in different ways for signal analysis to extract signal parameters. The problem can be addressed using advanced models such as GNU Radio, python, C++ to enhance the parameter extraction capability and more information rich inputs. The spectral relationship from training data containing both .IQ and .wav formats can be utilised for identifying signal parameters and carry out deeper analysis. The expected solution should be able to demodulate signals.
+
+The GUI based model will have features to take .IQ or .wav file as input data and perform following tasks.
+
+1. Identify signal parameters (Sampling frequency, Modulation, FEC, Interleaving). Additional features if feasible may be included.
+
+2. Demodulate signals (FSK, QAM PSK)
+
+3. Carry out de-interleaving (Block, Convolution, Diagonal, Pseudo Random).
+
+4. FEC (short-constrained convolution codes with Viterbi decoding, RS block codes, Concatenated codes, LDPC).
+
+5. Bit stream correlation.
+
+### • Expected Solution
+
+The expected system should improve feature visibility of signals with the help of GUI, enable automated signal analysis to identify spectral features such as sampling frequency, constellation plot, water fall (time-frequency domain), demodulate signals, carry out de-interleaving and error correction. The output can then be used to carry out correlation of bit stream for identification of header and payload.
+
+---
+
+## Organization
+**National Technical Research Organisation (NTRO)**
+
+## Department
+**National Technical Research Organisation (NTRO)**
+
+## Category
+**Software**
+
+## Theme
+**Space Technology**
