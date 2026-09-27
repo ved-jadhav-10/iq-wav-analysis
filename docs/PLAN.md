@@ -47,7 +47,7 @@ Related: [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · 
 - [x] `THIRD_PARTY.md` generated from the lockfiles by `tools/third_party.py`, which fails on GPL/AGPL, non-commercial or unrecognised licences
 - [x] Playwright smoke test against `sanket`: every request outside 127.0.0.1 is aborted and fails the test; no console errors
 - [ ] CI on Windows and Ubuntu: `.github/workflows/ci.yml` written; first run needs a push
-- [ ] Claude Code setup for M0 ([tooling map](../.claude/CLAUDE_SKILLS_MCP.md#1-tooling-by-milestone)): project MCP servers, permissions and `plan-status` done; the `ponytail` and `frontend-design` plugins still need installing
+- [x] Claude Code setup for M0 ([tooling map](../.claude/CLAUDE_SKILLS_MCP.md#1-tooling-by-milestone)): project MCP servers, permissions, `plan-status`, and the `ponytail` and `frontend-design` plugins (project scope)
 
 **M1**
 - [x] Evidence model (`dsp/evidence.py`) with the honesty rules enforced at construction, and `promote()` for downstream proof
