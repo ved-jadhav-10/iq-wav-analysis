@@ -10,13 +10,16 @@ do not edit by hand. Lists only what ships in Sanket, not development tools.
 | annotated-doc | 0.0.5 | MIT |
 | annotated-types | 0.8.0 | MIT |
 | anyio | 4.15.1 | MIT |
+| cffi | 2.1.1 | MIT-0 |
 | click | 8.5.0 | BSD-3-Clause |
 | fastapi | 0.141.1 | MIT |
 | h11 | 0.16.0 | MIT |
 | idna | 3.20 | BSD-3-Clause |
 | numpy | 2.5.3 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 |
+| pycparser | 3.0 | BSD-3-Clause |
 | pydantic | 2.13.5 | MIT |
 | pydantic-core | 2.46.5 | MIT |
+| soundfile | 0.14.0 | BSD 3-Clause License |
 | starlette | 1.7.0 | BSD-3-Clause |
 | typing-extensions | 4.16.0 | PSF-2.0 |
 | typing-inspection | 0.4.4 | MIT |
@@ -34,3 +37,17 @@ do not edit by hand. Lists only what ships in Sanket, not development tools.
 | react-dom | 19.3.0 | MIT |
 | scheduler | 0.28.0 | MIT |
 | uplot | 1.6.32 | MIT |
+
+## Native libraries bundled in Python wheels
+
+| Library | Shipped in | Licence |
+|---|---|---|
+| OpenBLAS | numpy | BSD-3-Clause |
+| LAPACK | numpy | BSD-3-Clause-Open-MPI |
+| GCC runtime library | numpy | GPL-3.0-or-later WITH GCC-exception-3.1 |
+| libsndfile | soundfile | LGPL-2.1-or-later |
+| FLAC | soundfile | BSD-3-Clause |
+| Ogg Vorbis | soundfile | BSD-3-Clause |
+| Opus | soundfile | BSD-3-Clause |
+| mpg123 | soundfile | LGPL-2.1 |
+| LAME | soundfile | LGPL-2.0 |

@@ -76,3 +76,29 @@ def test_24_bit_samples_are_read_in_chunks(tmp_path: Path) -> None:
     path.write_bytes(fmt.encode(x))
     with SampleReader(path, fmt) as reader:
         np.testing.assert_allclose(np.concatenate(list(reader.chunks(333))), x, atol=2**-23)
+
+
+def test_segments_across_files_read_as_one_stream(tmp_path: Path) -> None:
+    from dsp.ingest.reader import Segment, SegmentReader
+
+    x = np.exp(2j * np.pi * 0.01 * np.arange(1200)) * 0.5
+    segments = []
+    for i in range(12):  # more files than the reader keeps open at once
+        path = tmp_path / f"part{i}.iq"
+        path.write_bytes(b"H" * i + CI16.encode(x[i * 100 : (i + 1) * 100]) + b"T")
+        segments.append(Segment(path, i, 400))
+    with SegmentReader(segments, CI16) as reader:
+        assert reader.num_samples == 1200
+        np.testing.assert_allclose(reader.read(0, 1200), x, atol=2**-15)
+        np.testing.assert_allclose(reader.read(95, 210), x[95:305], atol=2**-15)
+        np.testing.assert_allclose(reader.read(1150, 99), x[1150:], atol=2**-15)
+        np.testing.assert_allclose(np.concatenate(list(reader.chunks(77))), x, atol=2**-15)
+
+
+def test_a_segment_past_the_end_of_its_file_is_rejected(tmp_path: Path) -> None:
+    from dsp.ingest.reader import Segment, SegmentReader
+
+    path = tmp_path / "x.iq"
+    path.write_bytes(bytes(100))
+    with pytest.raises(ValueError, match="overruns"):
+        SegmentReader([Segment(path, 50, 60)], CI16)

@@ -12,13 +12,13 @@ Related: [Problem statement](PROBLEM_STATEMENT.md) · [README](../README.md) · 
 
 *Checked against the repository on **27 September 2026**. This section is the only place status is tracked; update it whenever an item lands. The milestones themselves are defined in [§5](#5-milestones).*
 
-**Overall:** M0 is done: CI is green on Windows and Ubuntu, and `sanket` starts one local process that serves the workspace UI. M1 is in progress: the evidence model, the results schema, SigMF ingest, the raw-format sniffer (0 wrong formats on the 864-file bench), the WAV reader and sample-rate candidates exist, but the UI still runs only on synthetic demo data generated in the browser, so Sanket has not analysed a real recording. M2–M8 have not started.
+**Overall:** M0 is done: CI is green on Windows and Ubuntu, and `sanket` starts one local process that serves the workspace UI. M1 is in progress: the evidence model, the results schema, the raw-format sniffer (0 wrong formats on the 864-file bench), sample-rate candidates and readers for every planned container (SigMF incl. archives, raw, WAV/RF64/Wave64, `.npy`, `.sdriq`, MIDAS Blue, VITA 49, FLAC/MP3/Ogg, `.gz`/`.zip`, file sequences) exist, but the UI still runs only on synthetic demo data generated in the browser, so Sanket has not analysed a real recording. M2–M8 have not started.
 
 | Stage | State | Exit gate met |
 |---|---|---|
 | Idea submission (external, due 30 Sep) | In progress: docs done, deck not started | — |
 | M0 Foundations and identity | Done | Yes: CI green on Windows and Ubuntu (27 Sep) |
-| M1 Ingest, evidence model, ground-truth lab, bench v0 | In progress: evidence model, results schema, SigMF, raw and WAV ingest, format sniffer and sample-rate candidates done | No |
+| M1 Ingest, evidence model, ground-truth lab, bench v0 | In progress: evidence model, results schema, format sniffer, sample-rate candidates and every container reader done; ground-truth generator and bench v0 remain | No |
 | M2 Spectrum, detection, estimation, real tiles | Not started | No |
 | M3 Synchronisation and demodulation | Not started | No |
 | M4 Modulation classification | Not started | No |
@@ -60,11 +60,21 @@ Related: [Problem statement](PROBLEM_STATEMENT.md) · [README](../README.md) · 
 - [x] Raw files without metadata: format sniffer with ranked candidates (`dsp/ingest/sniff.py`), raw ingest with every layout fact stated (`dsp/ingest/raw.py`), and a confusion matrix over all 28 formats in [`bench/results/sniffer.md`](../bench/results/sniffer.md): 0 wrong formats on 864 files
 - [x] Sample-rate candidates (`dsp/ingest/rate.py`): file-name hints (rate and centre-frequency tags, the gqrx naming scheme, rate units, SDR#/HDSDR `…Hz` names) and standard SDR device rates, ranked with the recorders that write the file's datatype first; a raw file's sample rate and centre frequency stay UNKNOWN with the candidates as alternatives. Structural-match test: every (candidate, recognised symbol rate) pair counted, tolerance 3σ within 0.01–0.1 %, file-name candidates and all candidates as two tiers sharing α = 1 %, and a match that implies more than one rate stays UNKNOWN; the null promotion rate is tested ≤ α. *M2's symbol-rate estimator calls it. A WAV header states its sample rate (MEASURED), so the `auxi` chunk contributes the centre frequency.*
 - [x] WAV (`dsp/ingest/wav.py`): RIFF, RIFX, RF64/BW64 and Wave64; 8/16/24/32-bit integer and 32/64-bit float PCM, plain or `WAVE_FORMAT_EXTENSIBLE` (24-bit is `ri24_le`/`ci24_le`, a stated extension SigMF can't express); the `auxi` chunk before or after the data (centre frequency and start time, MEASURED); truncated and unfinished data chunks read with a warning; compressed encodings and more than two channels UNKNOWN with the reason. Stereo quadrature check on blocks sampled across the file: impropriety (mirror-frequency correlation) and spectral asymmetry against its Gamma null → I/Q as HYPOTHESIS, audio-like channels UNKNOWN with an analyst prompt, or I/Q on a stated convention under `needsReview`. Tested against the standard library's `wave` writer. *Mono WAV's analytic-signal path and HYPOTHESIS cap on digital labels land with the stages that use them (M2–M4).*
-- [ ] Other containers: SigMF archives, multi-capture recordings and metadata that points at another file; SDRangel `.sdriq`; MIDAS Blue; VITA 49 packet recordings; NumPy `.npy`; compressed audio (FLAC, MP3, Ogg); `.gz`/`.zip` recordings; numbered file sequences read as one recording
+- [x] Other containers, all behind one chunked reader interface (`dsp/ingest/reader.py`: byte segments, kept as arrays for per-packet formats):
+  - SigMF archives read in place from the tar (nothing extracted), multi-capture datasets with per-capture `header_bytes`, Non-Conforming Datasets via `core:dataset` (a bare file name, never a path) with `trailing_bytes`; multi-channel datasets UNKNOWN; a changing centre frequency is warned
+  - NumPy `.npy` (header parsed as a literal, never executed; (N, 2) real arrays are I/Q by a stated convention; planar layouts and native-order dtypes UNKNOWN)
+  - SDRangel `.sdriq` (header CRC-32 checked; a mismatch drops the header values to HYPOTHESIS; 24-bit builds flagged as 32-bit words)
+  - MIDAS Blue type 1000/1001 (both byte orders, S/C × B/I/L/F/D, rate from `xdelta`, centre frequency from an `RF_FREQ` keyword, detached `.det` data)
+  - VITA 49 packet recordings, plain or VRL-framed: stream, class ID, timestamps and trailer handled; rate, RF frequency and payload format from context packets; the sniffer proposes a format when no payload format is sent; extra streams warned
+  - FLAC/MP3/Ogg via `soundfile` (libsndfile, LGPL): decoded on demand, stereo quadrature check, lossy codecs flagged so digital labels are capped at HYPOTHESIS
+  - `.gz`/`.zip` decompressed into a target directory, disk cost reported first; refuses path traversal, symlinks, encrypted members, and bombs (absolute limit and 1000:1 ratio, checked on bytes produced); nothing partial is left
+  - numbered file sequences (raw or WAV) read as one recording; formats must agree; gaps in the numbering are warned
+  - `THIRD_PARTY.md` now also lists native libraries bundled in wheels (NumPy's OpenBLAS and GCC runtime, libsndfile and its codecs); the licence policy allows GPL only under the GCC Runtime Library Exception
+  *Tested against files written by independent writers where one exists (`np.save`, `tarfile`, `wave`, `gzip`, `zipfile`, libsndfile); `.sdriq`, Blue and VITA 49 test files are written from the verified layouts.*
 - [ ] Ground-truth generator `dsp/synth` (NumPy) with impairments; TorchSig as an independent generator. *Started: seeded noise, tone, RRC-shaped PSK and FSK waveforms (`dsp/synth/waveforms.py`).*
 - [ ] Bench v0: fixed seeds, sealed set, null set, `bench run`
 
-**Next:** in M1, the other containers (SigMF archives and multi-capture, `.sdriq`, MIDAS Blue, VITA 49, `.npy`, compressed audio, `.gz`/`.zip`, file sequences), then the ground-truth generator and bench v0.
+**Next:** in M1, the ground-truth generator (`dsp/synth`: modulation × pulse shape × FEC × interleaver × framing, impairments, SigMF output with the truth in annotations), then bench v0 (fixed seeds, sealed set, null set, `bench run`).
 
 ---
 

@@ -25,9 +25,34 @@ ALLOWED = re.compile(
 DENIED = re.compile(r"(?<!L)GPL|\bNC\b|Non-?Commercial|SSPL|BUSL|Commons Clause", re.IGNORECASE)
 
 
+# The one GPL form allowed: a runtime library under the GCC Runtime Library Exception, which
+# exists so that compiled programs may ship it under any licence.
+RUNTIME_EXCEPTION = re.compile(r"^GPL-3\.0(-or-later)? WITH GCC-exception-3\.1$")
+
+# Native libraries compiled into Python wheels, which package metadata doesn't list; each is
+# checked by the same policy. Sources: the licence files bundled in each wheel.
+BUNDLED: dict[str, tuple[tuple[str, str], ...]] = {
+    "numpy": (
+        ("OpenBLAS", "BSD-3-Clause"),
+        ("LAPACK", "BSD-3-Clause-Open-MPI"),
+        ("GCC runtime library", "GPL-3.0-or-later WITH GCC-exception-3.1"),
+    ),
+    "soundfile": (
+        ("libsndfile", "LGPL-2.1-or-later"),
+        ("FLAC", "BSD-3-Clause"),
+        ("Ogg Vorbis", "BSD-3-Clause"),
+        ("Opus", "BSD-3-Clause"),
+        ("mpg123", "LGPL-2.1"),
+        ("LAME", "LGPL-2.0"),
+    ),
+}
+
+
 def classify(licence: str) -> str:
     if not licence:
         return "unknown"
+    if RUNTIME_EXCEPTION.match(licence):
+        return "allowed"
     if DENIED.search(licence):
         return "denied"
     return "allowed" if ALLOWED.search(licence) else "unknown"
@@ -76,7 +101,22 @@ def npm_packages() -> list[tuple[str, str, str]]:
     return sorted(packages)
 
 
-def render(python: list[tuple[str, str, str]], npm: list[tuple[str, str, str]]) -> str:
+def bundled(python: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+    """(library, the package that ships it, licence) for every bundled native library."""
+    shipped = {name.lower() for name, _, _ in python}
+    return [
+        (library, package, licence)
+        for package, libraries in sorted(BUNDLED.items())
+        if package in shipped
+        for library, licence in libraries
+    ]
+
+
+def render(
+    python: list[tuple[str, str, str]],
+    npm: list[tuple[str, str, str]],
+    native: list[tuple[str, str, str]],
+) -> str:
     lines = [
         "# Third-party software",
         "",
@@ -86,6 +126,9 @@ def render(python: list[tuple[str, str, str]], npm: list[tuple[str, str, str]]) 
     for title, rows in (("Python", python), ("Frontend (npm)", npm)):
         lines += ["", f"## {title}", "", "| Package | Version | Licence |", "|---|---|---|"]
         lines += [f"| {name} | {version} | {licence} |" for name, version, licence in rows]
+    lines += ["", "## Native libraries bundled in Python wheels", ""]
+    lines += ["| Library | Shipped in | Licence |", "|---|---|---|"]
+    lines += [f"| {library} | {package} | {licence} |" for library, package, licence in native]
     return "\n".join(lines) + "\n"
 
 
@@ -95,15 +138,16 @@ def main() -> int:
     args = parser.parse_args()
 
     python, npm = python_packages(), npm_packages()
+    native = bundled(python)
     problems = [
         f"{name} {version}: {classify(licence)} licence {licence!r}"
-        for name, version, licence in python + npm
+        for name, version, licence in python + npm + native
         if classify(licence) != "allowed"
     ]
     for problem in problems:
         print(f"licence: {problem}", file=sys.stderr)
 
-    content = render(python, npm)
+    content = render(python, npm, native)
     if args.check:
         current = OUTPUT.read_text(encoding="utf-8") if OUTPUT.exists() else ""
         if current != content:

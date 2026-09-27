@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Literal
 
-from dsp.evidence import Alternative, EvidenceLevel, Parameter
+from dsp.evidence import Alternative, EvidenceLevel, Parameter, revise
 from dsp.ingest.assumptions import FREQUENCY_HINT, RATE_HINT
 
 # Family-wise false-match rate for promoting a candidate, shared between the tiers.
@@ -354,7 +354,7 @@ def structural_parameter(test: StructuralTest, unknown: Parameter) -> Parameter:
             why = "The matches could be coincidences, given how many pairs were tried."
         else:
             why = "The matches imply different sample rates, so none is preferred."
-        return unknown.model_copy(update={"evidence": (*unknown.evidence, head, *lines, why)})
+        return revise(unknown, evidence=(*unknown.evidence, head, *lines, why))
     rate = tier.sample_rate
     assert rate is not None
     return Parameter(

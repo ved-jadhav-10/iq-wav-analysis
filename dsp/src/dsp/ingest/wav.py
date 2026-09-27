@@ -33,7 +33,7 @@ from dsp.evidence import Alternative, EvidenceLevel, Parameter
 from dsp.ingest.assumptions import iq_order
 from dsp.ingest.formats import SampleFormat
 from dsp.ingest.rate import center_frequency_parameter, rate_candidates, sample_rate_parameter
-from dsp.ingest.reader import SampleReader
+from dsp.ingest.reader import Reader, SampleReader
 from dsp.results import Assumptions
 
 Container = Literal["RIFF", "RIFX", "RF64", "BW64", "Wave64"]
@@ -293,7 +293,7 @@ class QuadratureCheck:
         )
 
 
-def quadrature_check(reader: SampleReader) -> QuadratureCheck:
+def quadrature_check(reader: Reader) -> QuadratureCheck:
     """Run the quadrature check on a few blocks spread across a stereo recording."""
     n = reader.num_samples
     starts = (
@@ -456,7 +456,7 @@ def read_wav(path: Path) -> WavRecording:
     else:
         with _reader(path, header, fmt, False) as reader:
             quadrature = quadrature_check(reader)
-        datatype = _stereo(fmt, quadrature, header, facts)
+        datatype = stereo_datatype(fmt, quadrature, facts, "WAV fmt chunk", header.warnings)
     start = None
     if header.auxi is not None and header.auxi.start_time is not None:
         start = Parameter(
@@ -504,8 +504,11 @@ def _unsupported(header: WavHeader, facts: str, method: str) -> Parameter:
     )
 
 
-def _stereo(fmt: SampleFormat, check: QuadratureCheck, header: WavHeader, facts: str) -> Parameter:
-    method = "WAV fmt chunk and quadrature check"
+def stereo_datatype(
+    fmt: SampleFormat, check: QuadratureCheck, facts: str, source: str, warnings: tuple[str, ...]
+) -> Parameter:
+    """The datatype of a two-channel recording, from its quadrature check."""
+    method = f"{source} and quadrature check"
     real = SampleFormat(False, fmt.kind, fmt.bits, fmt.endian).datatype
     if check.verdict == "audio":
         why = "The two channels look like stereo audio, not I and Q: " + (
@@ -524,7 +527,7 @@ def _stereo(fmt: SampleFormat, check: QuadratureCheck, header: WavHeader, facts:
             method=method,
             evidence=(facts, *check.evidence, why),
             alternatives=(Alternative(value=fmt.datatype),),
-            warnings=header.warnings,
+            warnings=warnings,
             resolve_hint=f"Confirm whether the channels carry I and Q (the format is then "
             f"{fmt.datatype}) or audio; for audio, save one channel as a mono {real} file.",
         )
@@ -543,6 +546,6 @@ def _stereo(fmt: SampleFormat, check: QuadratureCheck, header: WavHeader, facts:
         level=EvidenceLevel.HYPOTHESIS,
         method=method,
         evidence=(facts, *check.evidence, "Two channels read as I and Q."),
-        warnings=header.warnings,
+        warnings=warnings,
         convention=convention,
     )

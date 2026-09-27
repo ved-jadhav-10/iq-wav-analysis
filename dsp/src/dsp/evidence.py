@@ -157,3 +157,11 @@ def promote(parameter: Parameter, proof: Proof) -> Parameter:
             "convention": None,
         }
     )
+
+
+def revise(parameter: Parameter, **changes: Any) -> Parameter:
+    """A copy with some fields changed, validated again so the honesty rules still hold.
+
+    Use this rather than `model_copy(update=...)`, which skips validation.
+    """
+    return Parameter.model_validate({**parameter.model_dump(by_alias=False), **changes})
