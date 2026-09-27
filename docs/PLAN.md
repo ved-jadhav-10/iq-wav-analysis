@@ -6,6 +6,8 @@ This plan is written to ship **Sanket 1.0 as production software**, not a demo. 
 
 Related: [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · [Source dossier](SIHPS_ANALYSIS.md) · [Research report](../reports/SIH26147%20solution%20research.md) · [Claude Code tooling](../claude/CLAUDE_SKILLS_MCP.md)
 
+**Where we are (27 September 2026):** M0 is the only milestone with code. `frontend/` is a working Vite + React 19 + TS + Tailwind 4 workspace UI (waterfall, PSD, constellation, evidence cards, hypothesis ledger, frames/assumptions tables) driven entirely by a synthetic demo signal — no real signal has been processed yet. Nothing exists yet under `dsp/`, `backend/`, `ml/` or `bench/`; there is no Python project, no API, and no CI. M0's remaining items (Python/uv workspace, FastAPI skeleton, CI, pre-commit, Playwright smoke test) are open. M1–M8 have not started. Next concrete step is closing out M0's remaining bullets, then M1 (ingest + evidence model + ground-truth generator + bench v0). SIH idea submission is **30 September 2026** — 3 days out — and the plan/README/docs are the primary submission artifact since no backend exists yet to demo beyond the synthetic UI.
+
 ---
 
 ## 1. What 1.0 is
