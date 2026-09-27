@@ -1,311 +1,284 @@
-# Build plan — SIH26147
+# Sanket — build plan
 
-This plan runs from today (**Friday 26 September 2026**) to the grand finale. Phase 0 is the idea-submission sprint (deadline **Tuesday 30 September**). After that, the build phases are counted in weeks (**W1 = week of 1 October**) because the finale date hasn't been announced; confirm it on sih.gov.in.
+**Sanket** (संकेत, "signal") is our SIH26147 product: an offline, CPU-only workstation that takes an unknown `.iq` or `.wav` recording and works out how it was transmitted — sample format, bandwidth, SNR, symbol rate, modulation, interleaver, error-correction code and framing — then undoes each layer to recover the bits, showing the evidence for every claim.
 
-Related: [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · [Claude Code tooling](CLAUDE_SKILLS_MCP.md) · [Dossier](sih_analysis.md)
+This plan is written to ship **Sanket 1.0 as production software**, not a demo. It is organised by milestones with measurable exit gates rather than by calendar weeks or people. Last revised **27 September 2026**.
+
+Related: [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · [Source dossier](SIHPS_ANALYSIS.md) · [Research report](../reports/SIH26147%20solution%20research.md) · [Claude Code tooling](../claude/CLAUDE_SKILLS_MCP.md)
 
 ---
 
-## Guiding rules
+## 1. What 1.0 is
 
-1. **Measure, don't claim.** Every number in the deck or README comes from a script in `bench/` that anyone can re-run.
-2. **Ground truth before estimators.** Build the synthetic lab with known answers first; then build the stages it tests.
-3. **No silent defaults.** An unknown format or sample rate becomes a stated assumption or an UNKNOWN, never a quiet guess.
-4. **Streaming from day one.** Every reader and detector works on chunks, so multi-GB files never need a rewrite.
-5. **Study rivals, write our own code.** Most rival repos have no licence. Every team member must be able to explain every module.
+**In scope**
 
-## Team roles (6 members)
+- Input: SigMF (full `core:datatype` vocabulary), raw `cf32/ci16/ci8/cu8` in both byte orders and IQ/QI order, WAV mono and stereo. Files of any size, streamed.
+- Multi-signal detection in time and frequency, parameter estimation, synchronisation and demodulation of PSK, QAM and FSK to soft bits.
+- Modulation classification with open-set rejection.
+- Blind identification and decoding of block, convolutional, helical and catalogued pseudo-random interleavers; convolutional (incl. punctured), Reed-Solomon, concatenated and catalogued LDPC codes.
+- Frame sync discovery, frame length, header fields, CRC checks.
+- A web GUI served locally: waterfall, PSD, constellation, eye diagram, evidence, hypothesis accounting, frames, assumptions. Analyst overrides that re-run downstream stages.
+- Exports: JSON, CSV, PDF, SigMF annotations.
+- One-folder installable build for Windows 10/11 x64 and Ubuntu 22.04+ that runs with networking switched off.
 
-| Role | Owns | Main phases |
+**Out of scope for 1.0**: live capture from SDR hardware, transmitting, decrypting protected payloads, generic pseudo-random permutation recovery, multi-user server deployment.
+
+## 2. The production bar
+
+1.0 ships only when every row holds, each enforced by a test or a script rather than a review comment. Numeric targets for the signal-processing itself are in [STANDARDS §8](STANDARDS_TO_BEAT.md#8-our-bar--measurable-targets); these are the product-level requirements around them.
+
+| Area | Requirement | Enforced by |
 |---|---|---|
-| **R1 DSP lead** | Detection, estimation, sync, demodulation | 2, 4 |
-| **R2 Coding lead** | Interleaver + FEC catalogue, blind identification, framing | 5, 6 |
-| **R3 ML lead** | Datasets, AMC training and evaluation, ONNX export, calibration | 1 (data), 3 |
-| **R4 Platform lead** | Ingestion, evidence model, FastAPI, jobs, storage, exports, offline packaging, CI | 1, 7 |
-| **R5 Frontend lead** | React/TS app, WebGL waterfall, constellation, eye, evidence and hypothesis UX | 7 |
-| **R6 Validation & pitch lead** | Benchmark and null set, real captures, rival head-to-head, deck, judge drills | 0, 1 (bench), 8, 9 |
+| Correctness | Every stage is tested against exact ground truth from our generator, including a case where it must fail or abstain | pytest + `bench/` |
+| Honesty | Every reported value is a `Parameter` with an evidence level; **0 silent defaults**; VERIFIED only from a CRC pass, sync-word recurrence or a re-encode match consistent with EVM | Schema validation on every result; an ingest test that enumerates every unknown-format path |
+| False accepts | **0 accepted decodes on ≥ 1,000 null files** (noise, uncoded, repetition, idle) | `bench run --null` in CI (nightly) |
+| Scale | Files ≥ 4 GiB processed end to end; peak memory stays bounded and independent of file size | Scale test on a generated 4 GiB file; RSS ceiling asserted |
+| Performance | Full chain on 10 M samples ≤ 10 s on a 4-core laptop (excluding blind LDPC catalogue search); first waterfall tile ≤ 2 s after ingest starts; pan/zoom holds 60 fps at 1080p on integrated graphics | `bench perf` with thresholds; a frame-time check in E2E |
+| Reliability | A stage that throws is marked FAILED with its error and the job continues where it can; the server never crashes on bad input; jobs survive a restart | Fault-injection tests; parser fuzzing; restart test |
+| Offline | **0 outbound connections** at runtime; no CDN; fonts and assets bundled | Socket-blocking E2E run in CI; build scan for external URLs |
+| Security | Binds to 127.0.0.1 by default; upload size limits; export filenames sanitised (a rival had path traversal here); no shell interpolation of filenames; dependency audit | Security tests; `pip-audit` and `npm audit` in CI |
+| Reproducibility | Same file + same Sanket version + same settings → byte-identical results JSON. Results record Sanket version, catalogue version, model hash and seeds | Hash test on the bench set |
+| Accessibility | Every control keyboard-reachable; WCAG 2.2 AA contrast in both themes; evidence never conveyed by colour alone; reduced-motion respected | axe checks in E2E; manual keyboard pass per release |
+| Observability | Structured local logs (JSON lines, per job); per-stage timings in results; a "diagnostics bundle" export with logs and versions but no recording data | Tests on the bundle contents |
+| Licensing | No GPL, AGPL or non-commercial code in the product; `THIRD_PARTY.md` generated from the lockfiles | Licence check in CI fails the build |
+| Data handling | Recordings never leave the machine; the workspace directory is configurable; deleting a job deletes everything derived from it | Tests on deletion |
+| Packaging | One-folder build per platform, one start command, frozen Numba works (pinned numba/llvmlite, writable `NUMBA_CACHE_DIR`, kernels pre-warmed) | Frozen-build smoke test in CI on both platforms |
 
-Pair across roles for review: R1↔R2 (bits handoff), R3↔R1 (features), R4↔R5 (API contract).
+## 3. Architecture
 
----
+```mermaid
+flowchart LR
+    UI["Browser UI<br/>React + TS, WebGL2"] -- "/api/v1 + SSE" --> API["FastAPI<br/>(serves the SPA too)"]
+    API --> Jobs["Job runner<br/>process pool"]
+    Jobs --> Graph["Stage graph<br/>dsp/ + ml/"]
+    Graph --> Store[("Workspace<br/>SQLite + content-addressed artifacts")]
+    API --> Store
+```
 
-## Phase 0 — Idea-submission sprint (26–30 Sep)
+One local process tree, no external services. The pieces and the contracts between them:
 
-**Goal:** a submitted idea deck that is honest, specific and visibly better informed than the rest of the field, backed by a small working proof of concept for screenshots.
+- **Stage graph.** Each stage is a pure function `run(inputs, params, overrides) → StageResult {parameters, artifacts, warnings, timings}`. Its cache key is the hash of its input artifacts, parameters and stage code version. An analyst override invalidates that stage and its descendants only, which is what makes "correct a stage, re-run the rest, show the diff" (D5) cheap.
+- **Evidence model.** `Parameter {value, unit, level, confidence, method, evidence[], alternatives[], warnings[], resolve_hint}` — the frontend type already exists in [`frontend/src/lib/evidence.ts`](../frontend/src/lib/evidence.ts) and the Python model must match it. Downstream proof may **promote** an upstream value (a CRC pass makes the modulation VERIFIED), and the promotion is recorded as evidence.
+- **Hypothesis ledger.** Every blind search writes every candidate it tried — statistic, p-value, corrected threshold, outcome, reason — plus its shuffled-bit false-alarm runs. The D8 hypothesis table renders this ledger directly.
+- **Streaming.** Readers are memory-mapped and chunked; detectors run on chunks; nothing loads a whole file.
+- **Tiles.** The server computes a multi-resolution STFT pyramid quantised to uint8 dB in fixed-size tiles, **max-pooled** between levels so short bursts survive zooming out. The frontend already renders a uint8 dB texture through a LUT shader; switching it from one demo texture to server tiles is an M2 task.
+- **API.** Versioned under `/api/v1`. The OpenAPI schema generates the TypeScript types the frontend compiles against, so a contract break fails the build. Progress over server-sent events. Literal routes are registered before parameterised ones.
 
-| Day | Tasks | Owner |
+  | Endpoint | Purpose |
+  |---|---|
+  | `POST /recordings` | Chunked upload, or register a local path without copying |
+  | `GET /recordings/{id}` | Metadata, format candidates, assumptions |
+  | `POST /jobs` · `GET /jobs/{id}/events` | Start analysis · SSE progress |
+  | `GET /jobs/{id}/results` | Stage results, parameters, ledger, frames |
+  | `GET /tiles/{rec}/{level}/{t}/{f}` | uint8 dB waterfall tile |
+  | `POST /jobs/{id}/overrides` | Analyst correction → downstream re-run |
+  | `GET /jobs/{id}/export.{json,csv,pdf,sigmf}` | Exports, each carrying the assumptions block |
+
+- **Repository layout.**
+
+  ```
+  frontend/   React + TS + Vite — exists (identity, workspace, demo data)
+  dsp/        ingest, detect, estimate, sync, demod, gf2, deinterleave, fec, framing, evidence
+  ml/         AMC training, evaluation, ONNX export, model card
+  backend/    FastAPI app, job runner, storage, exports, packaging
+  bench/      generator presets, sealed set, null set, results, perf, decoder-truth harness
+  docs/       plan, standards, dossier
+  ```
+
+## 4. Product identity (fixed)
+
+The identity is implemented in [`frontend/`](../frontend/) and is the reference for every screen, export and slide.
+
+| Element | Decision | Source of truth |
 |---|---|---|
-| **Fri 26 Sep** | Confirm PS text, theme, template and submission format on sih.gov.in; register the team; pick a product name. Install Python 3.12 + uv; `gh auth login`. Scaffold the repo (`dsp/`, `backend/`, `frontend/`, `bench/`). Install the `frontend-design` and `ponytail` Claude Code plugins ([tooling §3](CLAUDE_SKILLS_MCP.md#3-claude-code-plugins-to-install)). | R6, R4 |
-| **Sat 27 Sep** | PoC ingestion: SigMF, raw cf32/ci16 with explicit rate, stereo/mono WAV with an assumptions printout. PoC plots: waterfall + PSD + constellation (matplotlib is fine). Draft the deck outline. | R4, R1, R6 |
-| **Sun 28 Sep** | PoC ground truth: generate BPSK/QPSK with known bits and a CRC-16 frame → demodulate → BER = 0 → CRC passes. Architecture diagram. Competitive-matrix slide from [STANDARDS §9](STANDARDS_TO_BEAT.md#9-competitive-matrix--draft-for-the-idea-deck). | R1, R2, R5 |
-| **Mon 29 Sep** | Finish the deck. Internal review: can we answer all six §B7 judge questions? Remove any claim `bench/` can't reproduce. | All |
-| **Tue 30 Sep** | Submit **in the morning**. Portals slow down near deadlines. Keep a PDF copy. | R6 |
+| Name | **Sanket** (संकेत, "signal"); tagline "Blind signal analysis, with evidence" | `frontend/src/brand.ts` — change it there only |
+| Mark | A waveform resolving into a four-point constellation: signal in, symbols out | `frontend/src/components/Logo.tsx`, `frontend/public/favicon.svg` |
+| Colour | Dark-first instrument UI with a light theme; accent "signal cyan"; all colours are tokens with shadcn/ui-compatible names | `frontend/src/styles/index.css` |
+| Evidence levels | VERIFIED green + shield · MEASURED blue + ruler · ESTIMATED violet + Σ · HYPOTHESIS amber + dashed circle · UNKNOWN grey + slashed circle | `frontend/src/components/levelStyles.ts` |
+| Type | IBM Plex Sans for UI, IBM Plex Mono with tabular numerals for every number, IBM Plex Sans Devanagari for the native name — all bundled | `frontend/src/main.tsx` |
+| Colormaps | "Sanket" house map plus Viridis, Inferno, Grayscale; all tested for monotonic luminance | `frontend/src/lib/colormaps.ts` |
 
-### Deck outline
+**UI rules** that every new screen follows:
 
-This follows the usual six-slide SIH idea template; confirm the exact template on the portal.
+1. An evidence level is always glyph + label + colour, never colour alone.
+2. Every number shows its unit and, where it's estimated, its uncertainty. True minus signs; non-breaking space before units.
+3. UNKNOWN always says why and what would settle it.
+4. Demo or synthetic data is always labelled as such, on screen and in any screenshot.
+5. No dead controls: a button that can't work yet isn't shown.
+6. Plots are dark in both themes; their overlays use the dark palette.
+7. Workspace layout: detections and pipeline on the left; waterfall, PSD and the hypotheses/frames/assumptions tabs in the centre; symbol view and evidence on the right. Below 1280 px the page scrolls and panels stack.
 
-1. **Title:** team, PS ID SIH26147, product name.
-2. **Idea:** the problem in one line. The India case:
-   - 1,951 GPS-interference incidents (Nov 2023 – Nov 2025)
-   - 12–18 person-hours to isolate one signal manually
-   - Krypto500 costs about US$7,400 and is ITAR-controlled
+## 5. Milestones
 
-   Then our solution and what's different: evidence levels, verified decodes, a web GUI that runs air-gapped.
-3. **Technical approach:** pipeline diagram, stack, evidence levels, PoC screenshots (waterfall, constellation, CRC-verified decode).
-4. **Feasibility & viability:** honest limits, phased scope, CPU-only offline deployment, risk table (from §B4).
-5. **Impact & benefits:**
-   - audiences: NTRO, WMO/WPC (28 monitoring stations), DGCA, DoT/TRAI, ISRO, NDRF, academia
-   - Atmanirbhar Bharat and import substitution
-   - SDGs 9.1, 9.c, 16.4, 16.a, 17.8
-6. **Research & references:** key papers and datasets, plus the **competitive matrix** naming the leading public rivals and our targets (labelled as targets).
+Dependencies: **M0 → M1 → M2 → M3 → (M4 ∥ M5) → M6 → M8**, with **M7** running alongside from M2 onward. Every exit gate is measured in `bench/` or CI, never asserted.
 
-**PoC exit criteria:**
-- one synthetic QPSK SigMF file goes through ingest → waterfall → constellation → bits → CRC pass
-- the same file loaded as headerless `.iq` with no rate given produces an explicit "sample rate unknown" message, not a default
+| | Milestone | Status |
+|---|---|---|
+| M0 | Foundations and identity | Identity and workspace UI done; repo tooling and CI open |
+| M1 | Ingest, evidence model, ground-truth lab, bench v0 | Not started |
+| M2 | Spectrum, detection, estimation, real tiles in the UI | Not started |
+| M3 | Synchronisation and demodulation | Not started |
+| M4 | Modulation classification | Not started |
+| M5 | GF(2) kernel, interleavers, FEC | Not started |
+| M6 | Framing | Not started |
+| M7 | Analyst workflow and reports | Not started |
+| M8 | Hardening, validation and 1.0 release | Not started |
 
-**Submission checklist:**
-- [ ] PS details re-verified on the portal on 29 or 30 Sep
-- [ ] All figures sourced from the dossier or `bench/`
-- [ ] Every rival named in the deck re-checked within 24 hours
-- [ ] Team details complete; deck exported to the required format
-- [ ] Submitted, with the confirmation saved
+### M0 — Foundations and identity
 
----
+- **Done:** Vite + React 19 + TypeScript (strict) + Tailwind 4 frontend; design tokens; the full analysis workspace driven by a deterministic synthetic capture generated in a Web Worker — WebGL2 waterfall (R8 dB texture + LUT shader, zoom/pan/keyboard, detection overlays, hover readout), uPlot PSD locked to the waterfall's frequency window, constellation and FSK tone views, evidence cards, hypothesis ledger, frames and assumptions tables. 26 unit tests (FFT, colormaps, generator, view maths, formatting); lint, typecheck and production build clean; verified in headless Chrome in both themes and at 390/1180/1512 px with no console errors and no network requests beyond localhost.
+- **Remaining:**
+  - Python 3.12 (pinned) + uv workspace for `dsp/`, `ml/`, `backend/`, `bench/`
+  - FastAPI skeleton that serves the built frontend; a `sanket` start command
+  - CI on Windows and Ubuntu: ruff, pyright (strict on `dsp/`), pytest, `tsc`, ESLint, Vitest, build, licence check
+  - pre-commit hooks; `THIRD_PARTY.md` generated from lockfiles
+  - Playwright smoke test (the identity-pass browser checks become the first E2E), run once with sockets blocked
+- **Exit gate:** a clean clone goes green in CI on both platforms, and `sanket` starts one process that serves the UI with networking off.
 
-## Build phases (after submission)
+### M1 — Ingest, evidence model, ground-truth lab, bench v0
 
-| Phase | Weeks | Goal | Exit criterion (measured in `bench/`) |
-|---|---|---|---|
-| 1 Foundations | W1–W2 | Repo, CI, ingestion, evidence model, ground-truth lab, bench v0 | Round-trip tests for every format; bench v0 + null set generated; CI green |
-| 2 DSP core | W2–W4 | Detection, estimation, sync | Estimator error targets met per SNR bucket |
-| 3 AMC | W3–W6 | Rules + CNN, fusion, ONNX | AMC targets met on public and in-scope sets |
-| 4 Demodulation | W4–W6 | PSK/QAM/FSK to soft bits | BER within 1 dB of theory on AWGN |
-| 5 Interleaver + FEC | W5–W9 | Blind catalogue search with verification | Per-family FEC-ID targets met (STANDARDS §8); **0 false accepts on ≥ 1,000 null files** |
-| 6 Framing | W7–W9 | Sync discovery, frame length, header fields | Blind sync false alarm ≤ 10⁻⁶ |
-| 7 GUI + API | W2–W10 | Web app, analyst-in-the-loop, exports, offline bundle | Playwright E2E passes with networking off |
-| 8 Validation | W8–W11 | Real captures, scale tests, head-to-head | Validation report published in `bench/` |
-| 9 Finale prep | Final 2 weeks | Freeze, rehearse, fallback plans | Demo runs clean three times in a row on the finale laptop |
-
-The numeric targets are in [STANDARDS §8](STANDARDS_TO_BEAT.md#8-our-bar--measurable-targets).
-
-### Phase 1 — Foundations (W1–W2) · R4, R3, R6
-
-- **Monorepo and CI:**
-  - uv workspace for `dsp/`, `ml/`, `backend/`
-  - Vite + React + TS in `frontend/`
-  - GitHub Actions: ruff, pyright, pytest, `tsc`, ESLint, Vitest
-  - pre-commit hooks
-- **Claude Code tooling:** `/init` → merge in the project rules, then add the GitHub, Context7, Playwright and shadcn MCP servers and the `update-config` hooks/allowlist. Exact commands and setup order in [Claude Code tooling §5–§9](CLAUDE_SKILLS_MCP.md#5-mcp-servers-to-add).
-- **Evidence model:** `Parameter{value, unit, level, confidence, method, evidence[], alternatives[], warnings[]}`, shared by every stage and the API schema. Levels: VERIFIED / MEASURED / ESTIMATED / HYPOTHESIS / UNKNOWN.
-- **Ingestion:**
-  - the full SigMF `core:datatype` vocabulary
-  - raw cf32/ci16/ci8/cu8, LE/BE, IQ/QI order
-  - WAV mono (analytic signal, flagged) and stereo (quadrature check plus an analyst prompt)
-  - memory-mapped chunked reader
-  - format *sniffer* that proposes ranked candidates but never picks silently. No existing tool infers raw formats, so we build it:
-    - detect headers (WAV/SigMF, byte-entropy)
-    - score every datatype × endianness reading by NaN/denormal rate, spectral flatness, lag-1 autocorrelation and I/Q balance
-    - check file size against datatype width
-    - I/Q vs Q/I stays an analyst toggle, because a swap only mirrors the spectrum
-    - tested with a confusion matrix over every format combination
-  - **sample-rate candidates, ranked:** filename hints, the WAV `auxi` chunk, standard SDR device rates (RTL-SDR, HackRF, etc.) and matches to known standards. With no candidate, output in normalised units.
+- **Evidence model** in `dsp/evidence` matching the frontend type; JSON schema generated from it; every result validated against the schema.
+- **Ingest:**
+  - SigMF full `core:datatype` vocabulary; raw formats in both byte orders and IQ/QI; WAV mono (analytic signal, flagged HYPOTHESIS for digital labels) and stereo (quadrature check plus an analyst prompt)
+  - memory-mapped chunked reader; file-size-versus-datatype consistency check (ORACLE's metadata says 32-bit, its data is complex128)
+  - **format sniffer** that proposes ranked candidates and never picks silently: header detection, then every datatype × byte order scored on float validity, spectral non-whiteness, lag-1 autocorrelation, I/Q power balance and DC; report the margin over the runner-up. IQ/QI stays an analyst toggle — a swap only mirrors the spectrum. Validated with a confusion matrix over all format permutations.
+  - **sample-rate candidates**, ranked: filename hints, the WAV `auxi` chunk, standard SDR device rates, and structural matches (a recognised symbol rate × candidate Fs within 0.1 % promotes it to HYPOTHESIS). With no candidate, output in normalised units.
   - an `Assumptions` block in every output
 - **Ground-truth lab:**
-  - NumPy generator (our main training source): modulation × pulse shape × FEC × interleaver × framing with CRC, writing SigMF with the truth stored as annotations. Add a Sig53-style impairment list, ±10–20% samples-per-symbol jitter and an explicit noise class.
-  - TorchSig corpus built in WSL2 as an **independent** test generator. Budget up to about 1 TB of disk; generate only the subsets we need.
-  - impairment harness: AWGN, CFO, phase noise, IQ imbalance, multipath, timing drift, clipping
-- **Bench v0:**
-  - fixed seeds
-  - a **sealed** held-out set that is never inspected during development
-  - a **null set** (noise, uncoded random bits, repetition patterns, idle patterns) to measure false accepts
-  - `bench run` writes a versioned results JSON
+  - NumPy generator as the main source: modulation × pulse shape × FEC × interleaver × framing with CRC, writing SigMF with the truth in annotations; Sig53-style impairments (AWGN, CFO, phase noise, IQ imbalance, multipath/fading, timing drift, clipping, AGC), ±10–20 % samples-per-symbol jitter, an explicit noise class
+  - TorchSig (WSL2) as an **independent** test generator; generate only the subsets needed (full corpus is about 1 TB)
+- **Bench v0:** fixed seeds; a **sealed** held-out set never inspected during development; the null set; `bench run` writes versioned results JSON.
+- **Exit gate:** round-trip tests pass for every format; sniffer confusion matrix published; 0 silent defaults (tested); bench v0 and null set generated.
 
-### Phase 2 — DSP core (W2–W4) · R1
+### M2 — Spectrum, detection, estimation, real tiles
 
-- **Detection:**
-  - streaming Welch PSD and spectrogram
-  - percentile noise floor
-  - OS-CFAR threshold + hysteresis + morphological clean-up + `scipy.ndimage.label` → multiple signals in time **and** frequency
-  - run at 2–3 FFT sizes and merge the boxes with non-maximum suppression, to catch both short bursts and narrow carriers
-  - channelisation: mix, filter, decimate
-  - *stretch:* cluster detections with DBSCAN to find frequency hoppers (hop set, dwell time). Detect co-channel overlap from multiple cyclic lines and an MDL source count; separate only easy cases, by filtering or SIC. Optional YOLO detector via ONNX as a cross-check (check Ultralytics' licence first).
-- **Estimators:**
-  - occupied bandwidth; RRC roll-off by least-squares fit of the theoretical PSD
-  - SNR from three estimators (in-band PSD, M2M4 for PSK, eigenvalue/MDL); their agreement sets the confidence. EVM only after a successful demodulation.
-  - symbol rate: FFT of |x|² spectral line (x² for BPSK, x⁴ for QPSK), refined with cyclic autocorrelation and confirmed with our own NumPy/Numba FAM/SSCA; ranked by harmonic comb. FSK uses instantaneous frequency. At low roll-off, fall back to occupied bandwidth.
-  - CFO (M-th power, gated for QAM)
-  - cumulants C20, C40, C42
-- **Sync:**
-  - RRC matched filter
-  - Gardner / Mueller-Müller timing with a Farrow interpolator
-  - Costas loop, plus decision-directed tracking for QAM
-  - FSK discriminator averaged over each symbol interior
-- **Detect FM first:** check whether the signal is FM carrying audio before any digital classification (a lesson from sigma).
+- **Detection:** streaming Welch PSD and spectrogram; percentile noise floor; OS-CFAR + hysteresis + morphological clean-up + connected-component labelling; run at 2–3 FFT sizes and merge with NMS; channelisation (mix, filter, decimate). Detect FM-carrying-audio before digital classification.
+- **Estimation:** occupied bandwidth; RRC roll-off by least-squares PSD fit, snapped to standard values; SNR from three estimators (PSD in-band vs guard, M2M4 for PSK, eigenvalue/MDL) with their agreement as the confidence; symbol rate from the |x|² line (x²/x⁴ for BPSK/QPSK), refined by cyclic autocorrelation and confirmed by our own FAM/SSCA, with an occupied-bandwidth fallback below β ≈ 0.1; FSK rate from instantaneous frequency; CFO by M-th power (gated for QAM); cumulants C20, C40, C42.
+- **Tiles in the UI:** server STFT pyramid with max-pooling; frontend switches from the demo texture to tiled level-of-detail rendering; detection boxes from real results.
+- *Stretch:* frequency-hopper clustering (DBSCAN over detections); co-channel overlap *detection* via multiple cyclic lines or MDL > 1.
+- **Exit gate:** STANDARDS §8 detection and estimation targets met per SNR bucket; a 4 GiB file streams through detection with bounded memory; first tile ≤ 2 s.
 
-### Phase 3 — Modulation classification (W3–W6) · R3
+### M3 — Synchronisation and demodulation
 
-- **Explainable baseline:** cumulant and spectral-line rules. Each decision lists its evidence.
-- **CNN:**
-  - a **tiny complex-as-real 1-D CNN (about 10K parameters, ULCNN/LDCVNN style)**. Published models this size match a 406K-parameter MCLDNN on RadioML (about 60% averaged over SNR, 92–96% peak).
-  - input [I, Q, |x|, Δφ], power-normalised, after estimating symbol rate and CFO and resampling to a fixed 4 or 8 samples per symbol
-  - cumulant features fused before the classifier head. Cumulants separate 16QAM from 64QAM poorly, so the CNN carries that case.
-  - trained mainly on **our own impaired generator** (frequency/phase/timing offsets, rate jitter, Rayleigh/Rician fading, IQ imbalance, phase noise), with an explicit noise class
-  - temperature calibration applied **only if** expected calibration error improves
-- **Open-set rejection, in three layers:** SNR gate → energy score → Mahalanobis distance to class prototypes with per-class thresholds. Logits are averaged over several windows.
-- **Fusion:** agreement → ESTIMATED; disagreement → HYPOTHESIS showing both rankings.
-- **Deployment:**
-  - export to ONNX, keep FP32 logits, no FFT/atan2 inside the graph
-  - if quantising, use static QDQ for the CNN and re-fit temperature and rejection thresholds afterwards
-  - model identity (hash, data, metrics) pinned in `ml/MODEL_CARD.md`
-- **Evaluation:**
-  - accuracy vs SNR from −20 to +30 dB, with confusion matrices and reliability diagrams
-  - open-set metrics per SNR bin with modulations held out as unknowns: AUROC, FPR@95%TPR, OSCR
-  - run on data we **did not generate** (TorchSig, HisarMod, RadioML with corrected labels) as well as our own
-  - RadioML flaws to correct and state: SNR labels are off by tens of dB, AM-SSB in 2016.10a is noise, the 2018.01A class-name mapping is wrong, and it is licensed non-commercial
-  - a sim-to-real test: models can drop from about 96% to 35% on real captures, so fine-tune (e.g. CORAL) on labelled real recordings from Phase 8
+- RRC matched filter; Gardner / Mueller-Müller timing with a Farrow interpolator; Costas loop plus decision-directed tracking for QAM; FSK discriminator averaged over each symbol interior.
+- BPSK, QPSK, 8PSK, 16/64-QAM, 2/4/8-FSK (stretch: MSK/GMSK, OQPSK, π/4-DQPSK); Gray demapping to LLRs; EVM and lock metrics; eye diagram in the UI.
+- Phase ambiguity: carry every rotation forward; FEC and sync stages resolve it.
+- **Exit gate:** BER within 1 dB of theory on AWGN for every supported modulation.
 
-### Phase 4 — Demodulation to bits (W4–W6) · R1
+### M4 — Modulation classification
 
-- **Modulations:**
-  - BPSK, QPSK, 8PSK, 16/64-QAM, 2/4/8-FSK
-  - stretch: MSK/GMSK, OQPSK, π/4-DQPSK
-- **Bit mapping:** Gray demapping; soft outputs (LLRs); EVM and lock metrics.
-- **Phase ambiguity:** carry the rotated or inverted candidates forward. The FEC and sync stages resolve them; this stage never forces a pick.
+- Explainable cumulant and spectral-line rules, each decision listing its evidence.
+- A ~10K-parameter complex-as-real 1-D CNN on [I, Q, |x|, Δφ] after resampling to 4–8 samples per symbol, cumulant features fused before the head, trained on our impaired generator. Temperature calibration only if expected calibration error improves.
+- Three-layer open-set rejection: SNR gate → energy score → Mahalanobis distance to class prototypes with per-class thresholds; logits averaged over windows.
+- Fusion: agreement → ESTIMATED; disagreement → HYPOTHESIS with both rankings.
+- FP32 ONNX with no signal processing in the graph; model identity pinned in `ml/MODEL_CARD.md`.
+- Evaluation on data we didn't generate (TorchSig, HisarMod, RadioML with corrected labels — its SNR labels, AM-SSB class and 2018.01A class mapping are wrong, and its licence is non-commercial); accuracy vs SNR −20 to +30 dB; open-set AUROC, FPR@95 %TPR, OSCR per SNR bin.
+- **Exit gate:** STANDARDS §8 AMC targets met; labels are suppressed outside the validated SNR range.
 
-### Phase 5 — De-interleaving + FEC (W5–W9) · R2 · *the core differentiator*
+### M5 — GF(2) kernel, interleavers, FEC
 
-- **Catalogue** (versioned YAML, licence-checked):
-  - convolutional codes K=3–9 at rates ½ and ⅓, with CCSDS / DVB / 802.11 punctures
-  - RS(255,223) CCSDS, RS(204,188) DVB, and shortened variants
-  - concatenated RS + conv with a byte interleaver
-  - LDPC: CCSDS, DVB-S2 short frames, 802.11n, 5G NR base-graph subsets
-- **Build the GF(2) kernel first (W5):**
-  - one bit-packed, Numba-JIT Gaussian-elimination routine (GJETP) is the shared engine for code length, sync offset, puncturing pattern, parity-check recovery and interleaver period
-  - variants: soft GJETP (rows ordered by LLR reliability), rank iteration (repeat elimination for noise tolerance), dual-code parity-check search (Marazin/Gautier/Burel)
-  - **no public implementation of these methods exists**, so a working, benchmarked one is differentiator D9
-- **Blind identification by code family:**
-  - **convolutional:** dual-code parity checks via the kernel; punctured codes via Marazin's two-stage method (equivalent encoder, then mother code + puncturing pattern); catalogue scoring by the probability that parity checks hold, computed from LLRs (Moosavi–Larsson)
-  - **RS:** a binary rank scan finds the codeword length in bits and the alignment. Then a Galois-field Fourier transform over 16 primitive polynomials × symbol offsets, plus the CCSDS dual-basis variant, shows a run of consecutive zeros: its length is n−k and its start is the first root. Uses `galois`.
-  - **LDPC:** soft syndrome scoring against the standard-matrix catalogue. Rebuilding a sparse H from scratch is a stretch goal.
-  - **concatenated:** identify and decode the inner conv code, then search the Forney interleaver, then run the RS pipeline
-  - *optional:* a gradient-boosted or small-CNN code-family pre-classifier. Deep-learning papers only pick among trained classes and can't recover parameters.
-- **Interleavers:**
-  - block: rank-drop criterion (Sicot/Houcke/Barbier) for the period; the largest rank drop gives the sync; a Kolmogorov–Smirnov test on rank distributions for low-SNR confirmation
-  - convolutional (Forney): a small (I, J, phase) grid search using the kernel
-  - diagonal/helical: period, row/column and codeword-length estimator (2012/2015 methods)
-  - pseudo-random: test a catalogue of **standard permutations** (3GPP turbo, LTE QPP, 802.11, DVB-S2); anything else is UNKNOWN with its measured period. No generic seed search.
-- **Search engine and false-alarm control:**
-  - coarse-to-fine pruning with cheap syndrome screening before full decodes
-  - **every hypothesis is counted**; binomial-tail p-values with Holm/Bonferroni (or Benjamini–Hochberg) across the whole catalogue
-  - rank matrices always have L ≥ w + 30 rows
-  - every detector also runs on **shuffled bits** to measure its empirical false-alarm rate, shown in the GUI hypothesis table
-  - VERIFIED requires a CRC pass, sync recurrence, or a re-encode BER consistent with EVM
-- **Targets are set per code family and use soft decisions** (see [STANDARDS §8](STANDARDS_TO_BEAT.md#8-our-bar--measurable-targets)). Hard-decision rank methods can't tolerate a flat 3% BER on long codes.
-- **Performance:** Numba-JIT Viterbi and normalised min-sum LDPC. Profile with `bench perf`.
+The core differentiator (D9): no public implementation of these methods exists.
 
-### Phase 6 — Framing (W7–W9) · R2
+- **Kernel first:** one bit-packed, Numba-JIT GF(2) Gauss-Jordan elimination (GJETP) reused for code length, sync offset, puncturing period, parity-check recovery and interleaver period; soft variant (rows ordered by LLR reliability) and rank iteration.
+- **Catalogue** (versioned YAML, each entry with source and licence): convolutional K=3–9 at ½ and ⅓ with CCSDS / DVB / 802.11 punctures; RS(255,223) CCSDS, RS(204,188) DVB and shortened variants; concatenated RS + conv with a byte interleaver; LDPC from CCSDS, DVB-S2 short frames, 802.11n and 5G NR base-graph subsets.
+- **Identification:** convolutional via dual-code parity checks, punctured codes via Marazin's two-stage method, scored by parity-check probability from LLRs; RS via a binary rank scan then a Galois-field Fourier transform over 16 primitive polynomials × symbol offsets plus the CCSDS dual basis (`galois`); LDPC by soft syndrome-posterior scoring against the catalogue; concatenated chains inner-first.
+- **Interleavers:** block via rank-drop plus a KS test on rank distributions; Forney via an (I, J, phase) grid; helical via the dedicated period/row/column estimators; pseudo-random only against a catalogue of **standard permutations** (3GPP turbo, LTE QPP, 802.11, DVB-S2) — anything else is UNKNOWN with its measured period.
+- **False-alarm control:** every hypothesis counted into the ledger; Holm (or Benjamini–Hochberg) across the whole search; rank matrices always have L ≥ w + 30 rows; every detector also runs on shuffled bits and reports its empirical false-alarm rate.
+- **Decoders:** Numba Viterbi (soft), RS via `galois`, normalised min-sum LDPC.
+- **Exit gate:** per-family, soft-decision FEC-ID targets from STANDARDS §8; **0 false accepts on ≥ 1,000 null files**.
 
-- **Sync words:** a known-sync library (CCSDS ASM, Barker codes, POCSAG, etc.), plus blind sync discovery using a significance test against control words.
-- **Frame structure:** frame length from autocorrelation; header fields (constant bits, frame counters with a significance test); CRC-16/32 checks.
-- **Output:** frame table with header/payload split, exportable as bits, hex and JSON.
+### M6 — Framing
 
-### Phase 7 — GUI + API (W2–W10, continuous) · R4, R5
+- Known-sync library (CCSDS ASM, Barker, POCSAG and others) plus blind sync discovery with a significance test against control words.
+- Frame length from autocorrelation; constant-bit and counter-field tests on headers; CRC-16/32 checks.
+- Frame table with header/payload split, exportable as bits, hex and JSON.
+- **Exit gate:** blind sync false-alarm rate ≤ 10⁻⁶ per stream, measured and reported.
 
-- **API:**
-  - chunked upload
-  - job runner with SSE progress
-  - stage-graph endpoints
-  - `POST /override` (analyst correction → downstream re-run)
-  - exports: JSON, CSV, PDF, SigMF
-  - literal routes registered before parameterised ones
-- **Frontend:**
-  - study and borrow components from IQEngine (MIT: React/TS + FastAPI + SigMF, with its own `webfft` package)
-  - waterfall from a server-side **tiled STFT pyramid** (uint8 dB tiles, level of detail), drawn as WebGL2 R8 textures with a colormap lookup in the shader, via deck.gl TileLayer or regl. Contrast and colormap changes need no re-fetch. Zoom, pan and detection boxes.
-  - PSD and time plots in uPlot with min/max decimation per pixel
-  - constellation: additive-blended WebGL scatter for small captures; a server-side `histogram2d` shown as a log-density texture for large ones. Eye diagram.
-  - stage timeline with evidence cards
-  - **hypothesis table** showing how many guesses were tried, the corrected threshold and each rejection reason
-  - bitstream/frame viewer, batch view, compare view
-- **Analyst-in-the-loop:** change any stage's decision → later stages re-run → a before/after diff is shown.
-- **Offline bundle:**
-  - FastAPI serves the built SPA; no CDN; bundled fonts; offline wheelhouse
-  - PyInstaller **one-folder** build with a pinned Numba/llvmlite and `NUMBA_CACHE_DIR` set to a writable directory. Frozen Numba has known Windows failures (missing `numba.core.*`, WinError 126), so test the frozen build in CI. Check for WebView2 and MSVC runtimes if we wrap it with pywebview or Tauri.
-  - one start command on Windows and Linux
-  - a CI test that blocks sockets and runs the whole E2E suite
+### M7 — Analyst workflow and reports
 
-### Phase 8 — Validation (W8–W11) · R6, all
+- Open-recording flow: drag-and-drop or path, format candidates shown before analysis, assumptions editable (centre frequency, sample rate, IQ swap).
+- Overrides on any stage → downstream re-run → before/after diff.
+- Job history; batch view; compare view.
+- Exports: JSON (schema-versioned), CSV, PDF report, SigMF annotations; each carries the assumptions block and the Sanket/catalogue/model versions.
+- **Exit gate:** Playwright E2E covers open → analyse → override → export, with sockets blocked.
 
-- **Legal order of sources** (see the README "Lawful use" section; Telecom Act 2023 §3 makes *possessing* a receiver an authorisation question):
-  1. public licensed datasets
-  2. remote public KiwiSDRs
-  3. our own RTL-SDR captures, only under the college's umbrella and after checking with the organisers or WPC
-- **Ground truth comes from our own `decoder-truth` harness.** No public dataset pairs IQ with checksum-verified decodes. Record, run a reference decoder as a *subprocess*, and store frames that pass their CRC as SigMF annotations. Decoders:
-  - readsb (ADS-B), AIS-catcher, rtl_433, multimon-ng, SatDump: all GPL, so never linked into the product
-  - redsea (RDS): MIT
-- **Real recordings, each stored as SigMF with provenance and licence:**
-  - **Indian NAVTEX (primary Indian ground truth):** 7 DGLL stations on 518 kHz (English) and 490 kHz (regional languages), each with a known ID letter and a fixed 4-hourly schedule. Record via public KiwiSDRs in Bangalore with `kiwirecorder.py -m iq --kiwi-wav`, which adds GPS timestamps. KiwiSDR bandwidth is about 12–20 kHz, so it suits HF only.
-  - Other Indian HF: AIR shortwave, VOLMET, HFDL, ham RTTY/PSK31/FT8
-  - ADS-B at 1090 MHz near airports and AIS at 162 MHz in coastal cities: CRC-verified
-  - **Meteor-M LRPT** as the main satellite target. **NOAA APT and FM RDS are conditional**: confirm the satellites are still transmitting in 2026 and that Indian FM stations broadcast RDS.
-  - Public sets for breadth: ORACLE (SigMF; note its data is actually complex128), DroneDetect, IQEngine/SigMF samples (licence per file)
-  - Contribute our CC-BY captures to LakeShark-Signal-Corpus (currently empty)
-- **Hardware:** RTL-SDR Blog V4, about ₹6,000 from Robu, ElectroPi or Fab.to.Lab. Check stock; one source says it has been discontinued.
-- **Sim-to-real:** fine-tune AMC on labelled real captures (Phase 3) and report before/after numbers.
-- **Robustness:**
-  - deliberately wrong format and sample rate
-  - truncated, corrupt and NaN files
-  - files ≥ 4 GiB
-  - fuzzing the parsers
-- **Head-to-head:** run the leading public rival tools on our sealed bench where their licences allow it. Publish the results neutrally, including where they beat us.
-- **Report:** `bench/VALIDATION.md` with every number, script, seed and hardware spec.
+### M8 — Hardening, validation and 1.0 release
 
-### Phase 9 — Finale prep (final 2 weeks) · all
+- **Packaging:** PyInstaller one-folder builds for Windows and Linux with pinned numba/llvmlite, hidden imports, writable `NUMBA_CACHE_DIR`, kernels pre-warmed on first launch; offline wheelhouse; optional pywebview shell (check WebView2 on Windows).
+- **Robustness:** wrong format and wrong sample rate deliberately; truncated, corrupt and NaN files; ≥ 4 GiB files; parser fuzzing; a Canvas2D waterfall fallback for machines without WebGL2.
+- **Security and accessibility:** security review (uploads, exports, subprocess use); axe clean; full keyboard pass.
+- **Real-signal validation**, sourced in this legal order (Telecommunications Act 2023 §3 makes *possessing* a receiver an authorisation question):
+  1. public licensed datasets (IQEngine/SigMF samples, ORACLE, DroneDetect; licence per file)
+  2. remote public KiwiSDRs — **Indian NAVTEX** from the seven DGLL stations on 518/490 kHz is the primary Indian ground truth; also AIR shortwave, VOLMET, HFDL
+  3. own RTL-SDR captures only under an institutional umbrella after checking with the organisers or WPC: ADS-B and AIS (CRC-verified), **Meteor-M LRPT** as the primary satellite target; NOAA APT and FM RDS only if confirmed on air in India
 
-- Code freeze 7 days before the finale; bug fixes only.
-- Rehearse the §B7 judge questions, each answered with a live demo:
-  1. no metadata
-  2. how do you know it's correct
-  3. accuracy at 0 dB
-  4. two overlapping signals
-  5. pseudo-random interleaver
-  6. networking off
-- Demo script: a 5-minute version and a 15-minute version. Keep a recorded fallback video and a second laptop with an identical offline bundle.
-- Every member can explain every module; hold a cross-quiz session.
+  Ground truth comes from a `bench/decoder_truth/` harness that runs reference decoders (readsb, AIS-catcher, rtl_433, multimon-ng, SatDump — GPL, so **subprocess only**; redsea is MIT) and keeps only CRC-passing frames. AMC is fine-tuned on labelled real captures (e.g. CORAL) and reported before/after.
+- **Head-to-head** against the leading public rival tools on the sealed bench where their licences allow, published neutrally including where they win.
+- **Docs:** user guide, method notes per stage, a limits page, `bench/VALIDATION.md` with every number, script, seed and hardware spec.
+- **Exit gate:** every row of §2 holds, and the release checklist in §6 is complete.
 
----
+## 6. Quality system
 
-## Risk register
+**Tests, from fastest to slowest**
 
-| Risk | Type | Mitigation |
-|---|---|---|
-| A rival already matches our headline feature | Competitive | Lead with the differentiators D1–D8 in [STANDARDS §7](STANDARDS_TO_BEAT.md#7-table-stakes-vs-open-differentiators); re-scan before every pitch |
-| Blind FEC / de-interleaving is unsolved in general | Technical | Catalogue-bounded search; VERIFIED only with proof; publish the false-accept rate |
-| No absolute sample rate or centre frequency from IQ | Data | Require SigMF or analyst input; estimate relative quantities; print assumptions |
-| AMC collapses at low SNR | Performance | Publish the curve; suppress labels outside the validated range |
-| Domain gap between synthetic and real signals | Data | TorchSig impairments + real captures in Phase 8; evaluate on external datasets |
-| Mono WAV mistaken for IQ | Data | Detect channel count; quadrature check; HYPOTHESIS labels |
-| False matches from many FEC and interleaver guesses | Technical | Count hypotheses; Holm/Bonferroni correction; null set with ≥ 1,000 files |
-| Pseudo-random interleaver with unknown permutation | Technical | Catalogue of standard permutations (3GPP, LTE QPP, 802.11, DVB-S2); otherwise UNKNOWN with the measured period. No generic seed-search claim. |
-| Flat "95% at 3% BER" FEC target is mathematically unreachable for long codes | Credibility | Per-family, soft-decision targets (STANDARDS §8) |
-| Receiver possession needs authorisation (Telecom Act 2023 §3) | Legal | Public datasets and remote KiwiSDRs first; own captures only under the college umbrella after checking with organisers or WPC |
-| RadioML label/SNR flaws and non-commercial licence | Data / legal | Train on our own generator; use RadioML only as a benchmark, with corrected labels |
-| Frozen Numba fails on Windows | Tooling | Pin Numba; PyInstaller one-folder; `NUMBA_CACHE_DIR`; test the frozen build in CI |
-| NOAA APT / Indian RDS may not be on air | Data | Meteor-M LRPT and NAVTEX as primary targets; APT and RDS conditional |
-| Scope too broad | Scope | Phases have exit criteria; FEC depth before UI polish; cut stretch modulations first |
-| TorchSig needs Linux | Tooling | WSL2 Ubuntu 22.04+; pre-generate datasets offline (up to about 1 TB, so generate only needed subsets) |
-| Python not installed on the main dev machine | Tooling | Install Python 3.12 + uv on day 1 (Phase 0) |
-| LDPC matrix licences unclear | Legal | Use matrices from published standards with a recorded source; download on request, as sigma does |
-| Looks copied from public repos | Scope / legal | Own code only; credit libraries; cross-quiz |
-| Legal sensitivity of interception | Legal | Offline file analysis only; lawful-use notice; provenance in SigMF |
-| Finale connectivity not guaranteed | Operational | Offline bundle, datasets and weights pre-staged; fallback video |
+1. Unit tests against exact ground truth (bits in, exact values out), including failure and abstain cases.
+2. Property-based tests (Hypothesis) for parsers, the GF(2) kernel and decoders.
+3. Golden results: each bench file has a committed results JSON; any change is a reviewed diff.
+4. Null-set run for false accepts (nightly).
+5. Playwright E2E with networking blocked, plus axe checks.
+6. Parser fuzzing (nightly).
+7. `bench perf` with regression thresholds.
+8. Frozen-build smoke test on both platforms.
 
-## Definition of done
+**Definition of done** for any feature:
 
-A feature is done only when **all** of these are true:
-- [ ] It is tested against known ground truth (exact bits or values in, exact expected out), including a failure case.
-- [ ] Its outputs carry an evidence level, confidence, method and evidence.
-- [ ] Its limits are written down, both in code docstrings and in the user-facing text.
-- [ ] Its `bench/` numbers are updated, and the README or deck quotes only those numbers.
-- [ ] It is visible and overridable in the GUI.
-- [ ] It works with networking switched off.
+- [ ] Tested against known ground truth, including a failure case.
+- [ ] Outputs carry an evidence level, confidence, method and evidence; UNKNOWN carries its reason.
+- [ ] Limits written down in docstrings and in the user-facing text.
+- [ ] `bench/` numbers updated; the README and any deck quote only those numbers.
+- [ ] Visible and overridable in the GUI, following the §4 UI rules.
+- [ ] Works with networking switched off.
+
+**Release checklist (1.0)**
+
+- [ ] All §2 rows green in CI on the release commit
+- [ ] Sealed-bench and null-set results published in `bench/VALIDATION.md`
+- [ ] Frozen builds pass the smoke test on a clean Windows and a clean Ubuntu machine
+- [ ] `THIRD_PARTY.md` and the licence check up to date
+- [ ] User guide and limits page reviewed against the shipped behaviour
+- [ ] Version, results-schema version, catalogue version and model hash tagged together
+
+## 7. Versioning and compatibility
+
+- Semantic versioning for Sanket. The results JSON carries `schema_version`; a breaking schema change is a major version.
+- The FEC/interleaver catalogue and the AMC model are versioned independently and recorded in every result, so any result can be reproduced.
+- SQLite schema changes ship as migrations; the workspace from the previous minor version must open.
+- A changelog entry for every user-visible change.
+
+## 8. Risk register
+
+| Risk | Mitigation |
+|---|---|
+| Blind FEC / de-interleaving is unsolved in general | Catalogue-bounded search; VERIFIED only with proof; publish the false-accept rate |
+| No absolute sample rate or centre frequency in a headerless file | Ranked candidates, promoted only by structural matches; normalised units otherwise; assumptions on every output |
+| AMC collapses at low SNR | Publish the curve; suppress labels outside the validated range |
+| Synthetic-to-real domain gap | Impairment-rich generator; independent TorchSig tests; real-capture fine-tuning in M8 |
+| Mono WAV mistaken for IQ | Channel count, quadrature check, HYPOTHESIS labels |
+| False matches from many code/interleaver guesses | Ledger of every hypothesis; Holm correction; L ≥ w + 30; shuffled-bit runs; ≥ 1,000-file null set |
+| Pseudo-random interleaver with an unknown permutation | Standard-permutation catalogue; otherwise UNKNOWN with the measured period |
+| A flat "95 % at 3 % BER" FEC target is unreachable for long codes | Per-family, soft-decision targets (STANDARDS §8) |
+| Frozen Numba fails on Windows | Pinned numba/llvmlite, one-folder build, writable cache, frozen-build test in CI |
+| No WebGL2 on a target machine | Clear message today; Canvas2D fallback over the same tiles in M8 |
+| Huge files exceed GPU texture limits | Tiled pyramid with level of detail, never one texture per file |
+| Receiver possession needs authorisation (Telecom Act 2023 §3) | Public datasets and remote KiwiSDRs first; own captures only under an institutional umbrella after checking |
+| RadioML label/SNR flaws and non-commercial licence | Train on our generator; RadioML only as a corrected benchmark |
+| NOAA APT / Indian RDS may not be on air | Meteor-M LRPT and NAVTEX as primary targets |
+| TorchSig needs Linux and ~1 TB | WSL2; generate only needed subsets |
+| LDPC matrix licences unclear | Matrices from published standards with a recorded source |
+| GPL or unlicensed code leaking into the product | Licence check in CI; rival repos studied, never copied |
+| Scope too broad for 1.0 | Milestone exit gates; FEC depth before UI polish; stretch items cut first |
+
+## 9. External dates (SIH)
+
+- **Idea submission: Tuesday 30 September 2026.** The deck draws on this plan: the problem, the §3 architecture, the §4 identity with screenshots of the workspace (labelled *synthetic demo data*), and the STANDARDS §9 competitive matrix with our column labelled as targets. Confirm the template and PS details on sih.gov.in before submitting.
+- **Grand finale:** date not yet announced; confirm on sih.gov.in. The finale demo is whatever state the milestones have reached, run from the offline build with networking switched off.

@@ -4,7 +4,7 @@ This document sets the bar our tool has to clear. It covers commercial products,
 
 - **Snapshot date:** 26 September 2026. The field moves daily, so re-run the scan before any pitch (see [§10](#10-how-to-refresh-this-document)).
 - **How it was verified:** repository metadata (created, last push, licence) came from the GitHub REST API. Capabilities were checked against each repo's **file tree** and its **README**. We did not clone or run rival code.
-- **Source dossier:** [`sih_analysis.md`](sih_analysis.md) §B1–B7. Where this document disagrees with the dossier, this document is newer (see [§5.5](#55-corrections-to-the-dossier-b6f)).
+- **Source dossier:** [`SIHPS_ANALYSIS.md`](SIHPS_ANALYSIS.md) §B1–B7. Where this document disagrees with the dossier, this document is newer (see [§5.5](#55-corrections-to-the-dossier-b6f)).
 
 **Legend:** ✅ backed by code in the repo tree · 📄 README claim, not traced to code · ❌ not found · — not applicable.
 
@@ -364,7 +364,7 @@ Our column shows **targets** and must say so on the slide. The point is to show 
 
 ## 10. How to refresh this document
 
-- **Automated:** the `rival-scan` project skill (see [CLAUDE_SKILLS_MCP.md](CLAUDE_SKILLS_MCP.md)) re-runs the searches and diffs the results against this file.
+- **Automated:** the `rival-scan` project skill (see [CLAUDE_SKILLS_MCP.md](../claude/CLAUDE_SKILLS_MCP.md)) re-runs the searches and diffs the results against this file.
 - **Queries used on 26 Sep:** `SIH26147`, `SIH 26147`, `26147 in:name,description,readme`, `iq wav signal parameter extraction`, `NTRO signal analysis`, `automated model analysis .IQ .wav`, `modulation classification iq wav created:>2026-08-15`, and `sigmf created:>2026-08-20`.
 - **Before each pitch:** re-check the top 8. `sigma` and `Pinpoint` were both pushed on the day of this snapshot.
 - **Unauthenticated GitHub API limit:** 60 requests/hour. Run `gh auth login` to raise it.

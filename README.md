@@ -1,8 +1,6 @@
-# IQ/WAV Signal Analysis — SIH26147
+# Sanket — blind signal analysis, with evidence
 
-> **Working name.** Choose the final product name before the idea submission.
-
-An **offline, CPU-only** workstation for unknown `.iq` and `.wav` radio recordings. It works out how a recording was transmitted: sample format, bandwidth, SNR, symbol rate, modulation, interleaver, error-correction code and framing. It then undoes each layer to recover the bits.
+**Sanket** (संकेत, "signal") is our answer to SIH26147: an **offline, CPU-only** workstation for unknown `.iq` and `.wav` radio recordings. It works out how a recording was transmitted: sample format, bandwidth, SNR, symbol rate, modulation, interleaver, error-correction code and framing. It then undoes each layer to recover the bits.
 
 Every result shows the evidence behind it and how sure we are. Nothing is guessed silently.
 
@@ -12,13 +10,13 @@ Every result shows the evidence behind it and how sure we are. Nothing is guesse
 | **Organisation** | NTRO (National Technical Research Organisation) |
 | **Category / theme** | Software. Theme is listed as Space Technology on recent mirrors; confirm on [sih.gov.in](https://sih.gov.in). |
 | **Idea submission deadline** | **30 September 2026** |
-| **Status** | Planning. No code yet. See [docs/PLAN.md](docs/PLAN.md). |
+| **Status** | M0: product identity and the analysis workspace UI are built (running on synthetic demo data); the signal-processing backend starts in M1. See [docs/PLAN.md](docs/PLAN.md). |
 
 ---
 
 ## What the problem statement asks for
 
-The inputs are recordings of terrestrial HF, VHF and UHF signals (from a few kHz up to GHz). They come from different sensors and locations, so formats and sample rates vary. The tool must do five things ([dossier §B1](docs/sih_analysis.md)):
+The inputs are recordings of terrestrial HF, VHF and UHF signals (from a few kHz up to GHz). They come from different sensors and locations, so formats and sample rates vary. The tool must do five things ([dossier §B1](docs/SIHPS_ANALYSIS.md)):
 
 1. **Identify signal parameters:** sampling frequency, modulation, FEC and interleaving.
 2. **Demodulate** FSK, PSK and QAM.
@@ -95,27 +93,35 @@ We state these up front; they are not buried in fine print:
 | Quality | pytest + Hypothesis, Vitest, Playwright E2E, ruff, pyright, ESLint, `tsc`, GitHub Actions | Measured, not claimed |
 | Packaging | FastAPI serves the built frontend; offline wheelhouse; **PyInstaller one-folder** build with `NUMBA_CACHE_DIR` pointed at a writable directory; no CDN; bundled fonts | Runs with networking switched off; avoids known frozen-Numba failures on Windows |
 
-## Repository layout (proposed)
+## Repository layout
 
 ```
 iq-wav-analysis/
-├── dsp/             Python package: ingest, detect, estimate, sync, demod, deinterleave, fec, framing, evidence
-├── ml/              AMC training, evaluation, ONNX export
-├── backend/         FastAPI app: uploads, jobs, SSE progress, SQLite storage, exports
-├── frontend/        React + TypeScript (Vite): waterfall, constellation, eye, evidence and hypothesis views
-├── bench/           Sealed benchmark definitions, null set, rival comparisons, results
+├── frontend/        React + TypeScript (Vite) workspace: waterfall, PSD, constellation, evidence, hypotheses — built
+├── dsp/             (M1) Python package: ingest, detect, estimate, sync, demod, gf2, deinterleave, fec, framing, evidence
+├── ml/              (M4) AMC training, evaluation, ONNX export
+├── backend/         (M0/M1) FastAPI app: uploads, jobs, SSE progress, SQLite storage, exports
+├── bench/           (M1) Sealed benchmark, null set, rival comparisons, results
 ├── data/            Datasets and captures (git-ignored; only manifests are committed)
-└── docs/            Plan, standards to beat, Claude Code tooling, source dossier (Primer 1, Dossier B, Glossary B)
+├── docs/            Plan, standards to beat, source dossier
+└── claude/          Claude Code tooling notes for building this (dev-time only)
 ```
 
 ## Getting started
 
-There is nothing to run yet; commands arrive in Phase 1 of the [plan](docs/PLAN.md). Prerequisites:
+The frontend runs today on a deterministic synthetic capture generated in the browser (clearly labelled *Synthetic demo*). It needs **Node.js 22**:
 
-- **Python 3.12** (not yet installed on the main dev machine) and [uv](https://docs.astral.sh/uv/)
-- **Node.js 22** and npm (installed)
-- Git (installed); GitHub CLI (`gh auth login`)
-- Optional: **WSL2 Ubuntu 22.04+** for TorchSig; radioconda for GNU Radio; an RTL-SDR dongle for receive-only captures
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:5173
+npm test           # unit tests (FFT, colormaps, generator, view maths)
+npm run lint && npm run typecheck && npm run build
+```
+
+The build loads nothing from the network: fonts, code and data are bundled.
+
+For the Python side (from M1): **Python 3.12** (pinned) and [uv](https://docs.astral.sh/uv/). Optional: **WSL2 Ubuntu 22.04+** for TorchSig; radioconda for GNU Radio; an RTL-SDR dongle for receive-only captures.
 
 ## Lawful use
 
@@ -132,10 +138,10 @@ The tool does not capture, transmit or decrypt. Record the provenance of every r
 
 ## Documentation
 
-- [docs/PLAN.md](docs/PLAN.md): phased plan, from the idea-submission sprint to the finale
+- [docs/PLAN.md](docs/PLAN.md): the production plan — 1.0 scope, production bar, architecture, product identity, milestones M0–M8
 - [docs/STANDARDS_TO_BEAT.md](docs/STANDARDS_TO_BEAT.md): commercial tools, open-source prior art, 35 verified rival repos, and our measurable targets
-- [docs/CLAUDE_SKILLS_MCP.md](docs/CLAUDE_SKILLS_MCP.md): Claude Code skills, MCP servers, custom skills, CLAUDE.md rules and hooks for building this
-- [docs/sih_analysis.md](docs/sih_analysis.md): the source dossier, trimmed to SIH26147 and generic material
+- [claude/CLAUDE_SKILLS_MCP.md](claude/CLAUDE_SKILLS_MCP.md): Claude Code skills, MCP servers, custom skills, CLAUDE.md rules and hooks for building this
+- [docs/SIHPS_ANALYSIS.md](docs/SIHPS_ANALYSIS.md): the source dossier, trimmed to SIH26147 and generic material
 
 ## Credits
 
