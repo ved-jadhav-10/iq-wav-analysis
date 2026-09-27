@@ -12,6 +12,7 @@ from dsp.ingest.rate import (
     rate_candidates,
     sample_rate_parameter,
 )
+from dsp.ingest.reader import SampleReader
 from dsp.ingest.sniff import FormatSniff, sniff
 from dsp.results import Assumptions
 
@@ -29,6 +30,13 @@ class RawRecording:
     def sample_format(self) -> SampleFormat | None:
         value = self.datatype.value
         return SampleFormat.parse(value) if isinstance(value, str) else None
+
+    def reader(self, *, swap_iq: bool = False, datatype: str | None = None) -> SampleReader:
+        """Samples from byte 0, as the proposed format or as `datatype` (another reading)."""
+        fmt = SampleFormat.parse(datatype) if datatype else self.sample_format
+        if fmt is None:
+            raise ValueError("the sample format is UNKNOWN; settle it before reading samples")
+        return SampleReader(self.data_path, fmt, swap_iq=swap_iq)
 
     @property
     def rate_candidates(self) -> tuple[RateCandidate, ...]:

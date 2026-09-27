@@ -22,6 +22,7 @@ do not edit by hand. Lists only what ships in Sanket, not development tools.
 | pycparser | 3.0 | BSD-3-Clause |
 | pydantic | 2.13.5 | MIT |
 | pydantic-core | 2.46.5 | MIT |
+| scipy | 1.18.1 | BSD License |
 | soundfile | 0.14.0 | BSD 3-Clause License |
 | starlette | 1.7.0 | BSD-3-Clause |
 | typing-extensions | 4.16.0 | PSF-2.0 |
@@ -48,6 +49,10 @@ do not edit by hand. Lists only what ships in Sanket, not development tools.
 | OpenBLAS | numpy | BSD-3-Clause |
 | LAPACK | numpy | BSD-3-Clause-Open-MPI |
 | GCC runtime library | numpy | GPL-3.0-or-later WITH GCC-exception-3.1 |
+| OpenBLAS | scipy | BSD-3-Clause |
+| LAPACK | scipy | BSD-3-Clause-Open-MPI |
+| GCC runtime library | scipy | GPL-3.0-or-later WITH GCC-exception-3.1 |
+| libquadmath (Linux wheels) | scipy | LGPL-2.1-or-later |
 | libsndfile | soundfile | LGPL-2.1-or-later |
 | FLAC | soundfile | BSD-3-Clause |
 | Ogg Vorbis | soundfile | BSD-3-Clause |

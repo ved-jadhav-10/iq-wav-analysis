@@ -7,6 +7,7 @@ dependencies = [
     "galois>=0.4.11",
     "numpy>=2.5.3",
     "pydantic>=2.13.5",
+    "scipy>=1.16",
     "soundfile>=0.14.0",
 ]
 

@@ -37,6 +37,12 @@ BUNDLED: dict[str, tuple[tuple[str, str], ...]] = {
         ("LAPACK", "BSD-3-Clause-Open-MPI"),
         ("GCC runtime library", "GPL-3.0-or-later WITH GCC-exception-3.1"),
     ),
+    "scipy": (
+        ("OpenBLAS", "BSD-3-Clause"),
+        ("LAPACK", "BSD-3-Clause-Open-MPI"),
+        ("GCC runtime library", "GPL-3.0-or-later WITH GCC-exception-3.1"),
+        ("libquadmath (Linux wheels)", "LGPL-2.1-or-later"),
+    ),
     "soundfile": (
         ("libsndfile", "LGPL-2.1-or-later"),
         ("FLAC", "BSD-3-Clause"),

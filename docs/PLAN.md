@@ -2,7 +2,7 @@
 
 **Sanket** (संकेत, "signal") is our SIH26147 product: an offline, CPU-only workstation that takes an unknown `.iq` or `.wav` recording and works out how it was transmitted — sample format, bandwidth, SNR, symbol rate, modulation, interleaver, error-correction code and framing — then undoes each layer to recover the bits, showing the evidence for every claim.
 
-This plan is written to ship **Sanket 1.0 as production software**, not a demo. It is organised by milestones with measurable exit gates rather than by calendar weeks or people. Last revised **27 September 2026**.
+This plan is written to ship **Sanket 1.0 as production software**, not a demo. It is organised by milestones with measurable exit gates rather than by calendar weeks or people. Last revised **28 September 2026**.
 
 Related: [Problem statement](PROBLEM_STATEMENT.md) · [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · [Source dossier](SIHPS_ANALYSIS.md) · [Research report](../reports/SIH26147%20solution%20research.md) · [Claude Code tooling](../.claude/CLAUDE_SKILLS_MCP.md)
 
@@ -10,16 +10,16 @@ Related: [Problem statement](PROBLEM_STATEMENT.md) · [README](../README.md) · 
 
 ## 0. Progress
 
-*Checked against the repository on **27 September 2026**. This section is the only place status is tracked; update it whenever an item lands. The milestones themselves are defined in [§5](#5-milestones).*
+*Checked against the repository on **28 September 2026**. This section is the only place status is tracked; update it whenever an item lands. The milestones themselves are defined in [§5](#5-milestones).*
 
-**Overall:** M0 is done: CI is green on Windows and Ubuntu, and `sanket` starts one local process that serves the workspace UI. M1 is done: the evidence model, the results schema, readers for every planned container, the raw-format sniffer, sample-rate candidates, the ground-truth generator and bench v0 exist; 0 silent defaults is tested for every reader, and the sniffer proposed 0 wrong formats on the 864-file sniffer bench, the 200-file dev set, the 1000-file null set and 84 files from TorchSig, an independent generator. The UI still runs only on synthetic demo data generated in the browser, so Sanket has not analysed a real recording; that starts in M2. M2–M8 have not started.
+**Overall:** M0 is done: CI is green on Windows and Ubuntu, and `sanket` starts one local process that serves the workspace UI. M1 is done: the evidence model, the results schema, readers for every planned container, the raw-format sniffer, sample-rate candidates, the ground-truth generator and bench v0 exist; 0 silent defaults is tested for every reader, and the sniffer proposed 0 wrong formats on the 864-file sniffer bench, the 200-file dev set, the 1000-file null set and 84 files from TorchSig, an independent generator. M2 is in progress: the DSP core (streaming spectrogram, detection, channelisation, estimation, analog AM/FM detection, a reader dispatcher) exists and is tested against dsp.synth ground truth, but the STANDARDS §8 numbers aren't yet measured in `bench/`, a 4 GiB streaming scale test doesn't exist, and the server tile pyramid plus the frontend's switch off the demo texture haven't started — so the UI still runs only on synthetic demo data generated in the browser, and Sanket has not yet analysed a real recording end to end. M3–M8 have not started.
 
 | Stage | State | Exit gate met |
 |---|---|---|
 | Idea submission (external, due 30 Sep) | In progress: docs done, deck not started | — |
 | M0 Foundations and identity | Done | Yes: CI green on Windows and Ubuntu (27 Sep) |
 | M1 Ingest, evidence model, ground-truth lab, bench v0 | Done | Yes: round trips for every format and container, sniffer confusion matrix published, 0 silent defaults tested, bench v0 and null set generated (27 Sep) |
-| M2 Spectrum, detection, estimation, real tiles | Not started | No |
+| M2 Spectrum, detection, estimation, real tiles | In progress: DSP core done and tested; tiles, bench numbers and the 4 GiB scale test outstanding | No |
 | M3 Synchronisation and demodulation | Not started | No |
 | M4 Modulation classification | Not started | No |
 | M5 GF(2) kernel, interleavers, FEC | Not started | No |
@@ -77,7 +77,20 @@ Related: [Problem statement](PROBLEM_STATEMENT.md) · [README](../README.md) · 
 - [x] TorchSig 2.2.0 as an independent generator, dev-time only: `bench/torchsig/export.py` runs under WSL2 in its own environment (CPU PyTorch), exports 14 classes × 6 files with TorchSig's impairments and labels as SigMF, and `uv run bench run torchsig` scores them ([`bench/results/bench-v0-torchsig.md`](../bench/results/bench-v0-torchsig.md): 0 ingest mismatches, 0 wrong formats on 84 files). Nothing in the product imports it.
 - [x] Bench v0 (`uv run bench generate|run dev|null|sealed`): every file follows from its seed (`bench/presets.py`), so only seeds and results are committed; a sealed set whose seeds are fixed in `bench/sealed/manifest.json` and whose results are totals only, not run during development; the null set (noise, uncoded bits, repetition code, idle flags). Results: [dev](../bench/results/bench-v0-dev.md) (200 files: 0 ingest mismatches, 0 wrong formats) and [null](../bench/results/bench-v0-null.md) (1000 files: 0 wrong formats, 0 VERIFIED values). *Accepted decodes are 0 by construction until FEC and framing land (M5/M6), and the results say so.*
 
-**Next:** M2: spectrum, detection and estimation on real recordings, shown in the UI's tiles in place of the demo capture; the symbol-rate estimator calls the structural-match test in `rate.py`. Analysing a real recording end to end also needs a dispatcher that picks the reader for a file, which doesn't exist yet (callers pick the reader).
+**M2**
+- [x] Reader dispatcher (`dsp/ingest/dispatch.py`): picks the reader for a file from its header magic and name, so a caller no longer has to pick one; refuses a compressed file with the reason (decompress first); exposes whether a recording is lossy, mono/real, or a raw file's real/complex reading tied
+- [x] Streaming Welch spectrogram and PSD (`dsp/spectrum.py`): Hann/50 % overlap frames, cells bounded by `MAX_CELLS` regardless of recording length, real input keeping only non-negative frequencies; even- and odd-numbered frames accumulated separately for the split-sample significance test below
+- [x] Detection (`dsp/detect.py`): OS-CFAR noise floor (Gamma-quantile corrected), candidates chosen on even frames and tested on odd ones so the significance test isn't biased by the selection it's given, Bonferroni-corrected over cells and searches, morphological clean-up and connected-component labelling, multiple FFT sizes plus a whole-recording integrated search merged finest-frequency-first, sidelobe absorption, time-edge refinement, I/Q-image mirroring
+- [x] Channelisation (`dsp/channel.py`): streaming mix + Kaiser low-pass + decimate to a detection's band with margin; a real source's negative-frequency mirror is removed by the filter even when no decimation is needed
+- [x] Estimation (`dsp/estimate/`): a generic significant-spectral-line finder (`lines.py`) behind symbol rate (linear modulations via |x|², FSK via tone-transition rate), carrier offset (M-th power, gated off for QAM and for 8PSK's too-weak line), occupied bandwidth, SNR (PSD in-band vs guard band; the other two estimators PLAN calls for, M2M4 and eigenvalue/MDL, aren't built yet, so there's no cross-check by agreement), RRC roll-off fit, and cumulants
+- [x] Analog AM/FM detection (`dsp/analog.py`): envelope and instantaneous-frequency statistics tested against the floor AWGN alone would produce at the signal's own power, with a kurtosis gate so M-FSK's discrete tones aren't mistaken for FM; SSB and Morse CW aren't implemented (dsp.synth has no generator for either, so nothing claims to detect them)
+- [x] `dsp-reviewer` run over the new modules; three real bugs it found are fixed: a real recording's mirror image surviving channelisation when no decimation was needed, `welch()` always treating input as complex, and `SnrEstimate.signal_power` off by a factor of `nfft` relative to `noise_density`
+- [ ] STANDARDS §8 detection and estimation targets measured in `bench/` (nothing has run there yet; today's tests check correctness on individual cases, not the recall/false-detection/error-vs-SNR-bucket numbers the exit gate needs)
+- [ ] A 4 GiB file streamed through detection with bounded memory (the streaming design is in place; the scale test itself doesn't exist)
+- [ ] Server STFT tile pyramid with max-pooling, and the frontend's switch from the demo texture to it; first tile ≤ 2 s
+- [ ] Frequency-hopper clustering and co-channel overlap detection (stretch items)
+
+**Next:** finish M2's exit gate: a `bench/` run against STANDARDS §8's per-SNR-bucket targets, the 4 GiB scale test, and the tile pyramid plus the frontend wiring, none of which exist yet. `dsp/estimate`'s SNR estimate is a single method and known to degrade below about 10-15 dB Es/N0; M2M4 and eigenvalue/MDL are still to build.
 
 ---
 
