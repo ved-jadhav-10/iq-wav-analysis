@@ -201,14 +201,32 @@ def read_span(source: Any, start: int, stop: int, chunk: int = READ_CHUNK) -> It
         yield source.read(s, min(chunk, stop - s))
 
 
+def _welch_nfft(n_samples: int, nfft: int) -> int:
+    """The FFT size `welch(x, nfft)` actually uses for `n_samples` samples: `nfft`, clipped down
+    for a short `x` so it still gets at least one frame. `welch_dof`, `welch_freqs` and `welch`
+    itself all clip the same way, so a caller's `freqs` axis always matches its `psd` in length.
+    """
+    return min(nfft, 1 << max(3, int(math.log2(max(n_samples, 8)))))
+
+
 def welch_dof(n_samples: int, nfft: int) -> float:
     """The degrees of freedom `welch(x, nfft)` averages into each bin, for `n_samples` samples:
     the frames a `welch` call folds into its one row, corrected for their 50 % overlap."""
-    nfft = min(nfft, 1 << max(3, int(math.log2(max(n_samples, 8)))))
+    nfft = _welch_nfft(n_samples, nfft)
     grid = plan_grid(n_samples, nfft, min_average=1, max_cells=nfft)
     if grid is None:
         raise ValueError(f"{n_samples} samples are too few for a {nfft}-point PSD")
     return grid.frames / OVERLAP_VARIANCE
+
+
+def welch_freqs(n_samples: int, nfft: int, real: bool) -> Float:
+    """The frequency axis (cycles/sample, fftshifted) matching `welch(x, nfft)`'s bins for an
+    `x` of `n_samples` samples: build this instead of reconstructing it from `len(psd)`, which
+    silently mismatches for real input (see `welch`) or a `nfft` clipped down for a short `x`.
+    """
+    nfft = _welch_nfft(n_samples, nfft)
+    freqs = np.fft.fftshift(np.fft.fftfreq(nfft))
+    return freqs[freqs >= 0] if real else freqs
 
 
 def welch(x: NDArray[Any], nfft: int) -> Float:
@@ -217,9 +235,11 @@ def welch(x: NDArray[Any], nfft: int) -> Float:
     Real input gets only its non-negative frequencies (see `spectrograms`); a real signal's
     negative-frequency half carries no separate information, and folding it in as if it were
     complex would double the measured bandwidth and centre it on 0 Hz instead of the signal.
+    Build the matching frequency axis with `welch_freqs`, not `fftfreq(len(psd))` - a real
+    result is shorter than `nfft`, and `nfft` itself may have been clipped down.
     """
     real = not np.iscomplexobj(x)
-    nfft = min(nfft, 1 << max(3, int(math.log2(max(len(x), 8)))))
+    nfft = _welch_nfft(len(x), nfft)
     grid = plan_grid(len(x), nfft, min_average=1, max_cells=nfft)
     if grid is None:
         raise ValueError(f"{len(x)} samples are too few for a {nfft}-point PSD")

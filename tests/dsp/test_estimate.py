@@ -12,7 +12,7 @@ from dsp.estimate.params import (
     snr_psd,
     symbol_rate,
 )
-from dsp.spectrum import welch, welch_dof
+from dsp.spectrum import welch, welch_dof, welch_freqs
 from dsp.synth.chain import Scene, SignalSpec, generate
 
 # -- lines.py -------------------------------------------------------------------------------
@@ -100,7 +100,7 @@ def test_occupied_bandwidth_matches_the_nominal_rrc_bandwidth() -> None:
     scene = Scene(1 << 17, (spec,), noise_db=-25.0)
     g = generate(scene, seed=7)
     psd = welch(g.samples, 4096)
-    freqs = np.fft.fftshift(np.fft.fftfreq(len(psd)))
+    freqs = welch_freqs(len(g.samples), 4096, real=False)
     obw = occupied_bandwidth(psd, freqs, dof=welch_dof(len(g.samples), 4096))
     nominal = (1 / sps) * (1 + rolloff)
     assert obw.bandwidth < nominal  # 99% energy sits inside the full-support bandwidth
@@ -132,6 +132,25 @@ def test_snr_estimate_degrades_but_stays_in_the_right_range_at_low_snr() -> None
     assert result.snr_db == pytest.approx(esn0_db, abs=8.0)
 
 
+def test_snr_estimate_on_a_real_signal_uses_the_one_sided_frequency_axis() -> None:
+    """`welch()` gives real input a one-sided PSD (see test_spectrum.py); `snr_psd` must build
+    its own `freqs` to match (`welch_freqs`), not assume a full `nfft`-length two-sided one, or
+    it picks a bogus occupied band. A real *recording* of a genuinely band-limited signal (the
+    real part of an up-converted complex baseband one, as a real IF capture would be) is the
+    valid ground truth here - an undamped tone has no finite occupied bandwidth for this
+    estimator's in-band/guard-band definition to apply to, and isn't a fair test of it."""
+    sps = 8.0
+    esn0_db = 20.0
+    spec = SignalSpec("qpsk", sps=sps, frame=None, offset=0.2)
+    noise_db = -esn0_db + 10 * np.log10(sps)
+    scene = Scene(1 << 17, (spec,), noise_db=noise_db)
+    g = generate(scene, seed=11)
+    result = snr_psd(g.samples.real.astype(np.float64), 4096)
+    # a real recording reads a few dB low (see snr_psd's Limits): only one of the two mirrored
+    # lobes is kept, and the occupied-bandwidth fit is less accurate on a single, off-centre one.
+    assert result.snr_db == pytest.approx(esn0_db, abs=5.0)
+
+
 @pytest.mark.parametrize("rolloff", [0.2, 0.25, 0.35, 0.5])
 def test_rolloff_fit_recovers_the_true_value(rolloff: float) -> None:
     sps = 4.0
@@ -139,6 +158,6 @@ def test_rolloff_fit_recovers_the_true_value(rolloff: float) -> None:
     scene = Scene(1 << 17, (spec,), noise_db=-25.0)
     g = generate(scene, seed=7)
     psd = welch(g.samples, 4096)
-    freqs = np.fft.fftshift(np.fft.fftfreq(len(psd)))
+    freqs = welch_freqs(len(g.samples), 4096, real=False)
     beta = rolloff_fit(psd, freqs, 1 / sps)
     assert beta == pytest.approx(rolloff)

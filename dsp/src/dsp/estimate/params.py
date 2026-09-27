@@ -9,13 +9,14 @@ cycles per sample of the *channelised* signal unless stated otherwise.
 
 import math
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 from dsp import _scipy
 from dsp.estimate.lines import find_lines
-from dsp.spectrum import welch, welch_dof
+from dsp.spectrum import welch, welch_dof, welch_freqs
 
 Complex = NDArray[np.complex128]
 Float = NDArray[np.float64]
@@ -85,7 +86,7 @@ class SnrEstimate:
     noise_density: float  # per unit normalised frequency
 
 
-def snr_psd(x: Complex, nfft: int = 1024, obw: OccupiedBandwidth | None = None) -> SnrEstimate:
+def snr_psd(x: NDArray[Any], nfft: int = 1024, obw: OccupiedBandwidth | None = None) -> SnrEstimate:
     """SNR from the PSD: power inside the occupied band, over the noise density outside it.
 
     This is an in-band-power-over-noise-power ratio, not exactly Es/N0: the occupied band (99 %
@@ -99,19 +100,25 @@ def snr_psd(x: Complex, nfft: int = 1024, obw: OccupiedBandwidth | None = None) 
     Limits: this is one of the three estimators PLAN §5 M2 calls for (PSD in-band vs guard);
     M2M4 and eigenvalue/MDL are not yet implemented, so there is no cross-check by agreement
     yet, and this estimator alone degrades below about 10 dB Es/N0, where the occupied
-    bandwidth it depends on is itself harder to measure.
+    bandwidth it depends on is itself harder to measure. A real (not complex-baseband) signal
+    off-centre keeps only one of its two mirrored lobes (see `welch`), and reads a few dB low
+    as a result; it has no finite occupied bandwidth to measure at all for an undamped tone,
+    which this method is not meant to estimate an SNR for.
     """
+    real = not np.iscomplexobj(x)
     psd = welch(x, nfft)
-    freqs = np.fft.fftshift(np.fft.fftfreq(len(psd)))
+    freqs = welch_freqs(len(x), nfft, real)
     obw = obw or occupied_bandwidth(psd, freqs, dof=welch_dof(len(x), nfft))
     inside = (freqs >= obw.low) & (freqs <= obw.high)
     if not inside.any() or inside.all():
         raise ValueError("no guard band outside the occupied bandwidth to measure noise from")
     noise_density = float(np.median(psd[~inside]))
     signal_density = float(np.mean(psd[inside])) - noise_density
-    # A bin spans 1/nfft of the unit band, so bins_in/nfft is the occupied band's bandwidth:
-    # density * bandwidth is a physical power, on the same footing as noise_density itself.
-    bandwidth_in = int(inside.sum()) / nfft
+    # A bin spans this much of the unit band (freqs is a uniform grid regardless of nfft
+    # clipping or a real signal's one-sided slice), so bins_in * bin_width is a physical power,
+    # on the same footing as noise_density itself.
+    bin_width = float(freqs[1] - freqs[0]) if len(freqs) > 1 else 1.0
+    bandwidth_in = int(inside.sum()) * bin_width
     signal_power = max(signal_density, 0.0) * bandwidth_in
     noise_power = noise_density * bandwidth_in
     snr = signal_power / noise_power if noise_power > 0 else math.inf
