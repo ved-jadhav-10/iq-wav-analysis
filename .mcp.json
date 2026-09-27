@@ -7,6 +7,12 @@
     "context7": {
       "type": "http",
       "url": "https://mcp.context7.com/mcp"
-    }
+    },
+    "chrome-devtools": 
+    { 
+      "command": "cmd", 
+      
+      "args": ["/c", "npx", "-y", "chrome-devtools-mcp@latest"] }
+
   }
 }
