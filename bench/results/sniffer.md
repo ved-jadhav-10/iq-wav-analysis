@@ -11,10 +11,10 @@ Real signals: noise; am audio tone; real if qpsk at 0.2.
 
 | Outcome | Files | Share |
 |---|---:|---:|
-| correct | 480 | 55.6% |
-| correct, layout by convention | 192 | 22.2% |
-| real proposed as complex by convention | 192 | 22.2% |
-| ambiguous, truth listed | 0 | 0.0% |
+| correct | 456 | 52.8% |
+| correct, layout by convention | 162 | 18.8% |
+| real proposed as complex by convention | 157 | 18.2% |
+| ambiguous, truth listed | 89 | 10.3% |
 | FAIL: truth not listed | 0 | 0.0% |
 | FAIL: wrong format | 0 | 0.0% |
 
@@ -29,13 +29,13 @@ Real signals: noise; am audio tone; real if qpsk at 0.2.
 | ri8 | 6 | 0 | 12 | 0 | 0 | 0 |
 | ri16_le | 6 | 0 | 12 | 0 | 0 | 0 |
 | ri16_be | 6 | 0 | 12 | 0 | 0 | 0 |
-| ri32_le | 6 | 0 | 12 | 0 | 0 | 0 |
-| ri32_be | 6 | 0 | 12 | 0 | 0 | 0 |
+| ri32_le | 6 | 0 | 4 | 8 | 0 | 0 |
+| ri32_be | 6 | 0 | 3 | 9 | 0 | 0 |
 | ru8 | 6 | 0 | 12 | 0 | 0 | 0 |
 | ru16_le | 6 | 0 | 12 | 0 | 0 | 0 |
 | ru16_be | 6 | 0 | 12 | 0 | 0 | 0 |
-| ru32_le | 6 | 0 | 12 | 0 | 0 | 0 |
-| ru32_be | 6 | 0 | 12 | 0 | 0 | 0 |
+| ru32_le | 6 | 0 | 3 | 9 | 0 | 0 |
+| ru32_be | 6 | 0 | 3 | 9 | 0 | 0 |
 | cf32_le | 36 | 18 | 0 | 0 | 0 | 0 |
 | cf32_be | 36 | 18 | 0 | 0 | 0 | 0 |
 | cf64_le | 36 | 18 | 0 | 0 | 0 | 0 |
@@ -43,10 +43,10 @@ Real signals: noise; am audio tone; real if qpsk at 0.2.
 | ci8 | 24 | 12 | 0 | 0 | 0 | 0 |
 | ci16_le | 24 | 12 | 0 | 0 | 0 | 0 |
 | ci16_be | 24 | 12 | 0 | 0 | 0 | 0 |
-| ci32_le | 24 | 12 | 0 | 0 | 0 | 0 |
-| ci32_be | 24 | 12 | 0 | 0 | 0 | 0 |
+| ci32_le | 18 | 6 | 0 | 12 | 0 | 0 |
+| ci32_be | 18 | 6 | 0 | 12 | 0 | 0 |
 | cu8 | 24 | 12 | 0 | 0 | 0 | 0 |
 | cu16_le | 24 | 12 | 0 | 0 | 0 | 0 |
 | cu16_be | 24 | 12 | 0 | 0 | 0 | 0 |
-| cu32_le | 24 | 12 | 0 | 0 | 0 | 0 |
-| cu32_be | 24 | 12 | 0 | 0 | 0 | 0 |
+| cu32_le | 18 | 3 | 0 | 15 | 0 | 0 |
+| cu32_be | 18 | 3 | 0 | 15 | 0 | 0 |

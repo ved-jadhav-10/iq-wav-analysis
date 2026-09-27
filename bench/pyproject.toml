@@ -5,6 +5,9 @@ description = "Sanket benchmark: generator presets, sealed set, null set, result
 requires-python = ">=3.12,<3.13"
 dependencies = ["numpy>=2.5.3", "sanket-dsp"]
 
+[project.scripts]
+bench = "bench.cli:main"
+
 [tool.uv.sources]
 sanket-dsp = { workspace = true }
 

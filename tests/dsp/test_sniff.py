@@ -18,7 +18,12 @@ from dsp.ingest.sniff import (
 )
 from dsp.results import Assumptions
 
-ACCEPTED = {"correct", "correct, layout by convention", "real proposed as complex by convention"}
+ACCEPTED = {
+    "correct",
+    "correct, layout by convention",
+    "real proposed as complex by convention",
+    "ambiguous, truth listed",
+}
 
 
 def encode(datatype: str, signal: str, seed: int = 0, n: int = 16384) -> bytes:

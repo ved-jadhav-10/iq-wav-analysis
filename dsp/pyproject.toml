@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Sanket signal processing: ingest, synth, detection, estimation, demodulation, FEC, framing, evidence"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "galois>=0.4.11",
     "numpy>=2.5.3",
     "pydantic>=2.13.5",
     "soundfile>=0.14.0",

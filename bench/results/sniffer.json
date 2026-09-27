@@ -25,12 +25,14 @@
       "correct, layout by convention": 12
     },
     "ci32_be": {
-      "correct": 24,
-      "correct, layout by convention": 12
+      "ambiguous, truth listed": 12,
+      "correct": 18,
+      "correct, layout by convention": 6
     },
     "ci32_le": {
-      "correct": 24,
-      "correct, layout by convention": 12
+      "ambiguous, truth listed": 12,
+      "correct": 18,
+      "correct, layout by convention": 6
     },
     "ci8": {
       "correct": 24,
@@ -45,12 +47,14 @@
       "correct, layout by convention": 12
     },
     "cu32_be": {
-      "correct": 24,
-      "correct, layout by convention": 12
+      "ambiguous, truth listed": 15,
+      "correct": 18,
+      "correct, layout by convention": 3
     },
     "cu32_le": {
-      "correct": 24,
-      "correct, layout by convention": 12
+      "ambiguous, truth listed": 15,
+      "correct": 18,
+      "correct, layout by convention": 3
     },
     "cu8": {
       "correct": 24,
@@ -81,12 +85,14 @@
       "real proposed as complex by convention": 12
     },
     "ri32_be": {
+      "ambiguous, truth listed": 9,
       "correct": 6,
-      "real proposed as complex by convention": 12
+      "real proposed as complex by convention": 3
     },
     "ri32_le": {
+      "ambiguous, truth listed": 8,
       "correct": 6,
-      "real proposed as complex by convention": 12
+      "real proposed as complex by convention": 4
     },
     "ri8": {
       "correct": 6,
@@ -101,12 +107,14 @@
       "real proposed as complex by convention": 12
     },
     "ru32_be": {
+      "ambiguous, truth listed": 9,
       "correct": 6,
-      "real proposed as complex by convention": 12
+      "real proposed as complex by convention": 3
     },
     "ru32_le": {
+      "ambiguous, truth listed": 9,
       "correct": 6,
-      "real proposed as complex by convention": 12
+      "real proposed as complex by convention": 3
     },
     "ru8": {
       "correct": 6,
