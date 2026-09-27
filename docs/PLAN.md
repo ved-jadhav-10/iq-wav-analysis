@@ -12,13 +12,13 @@ Related: [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · 
 
 *Checked against the repository on **27 September 2026**. This section is the only place status is tracked; update it whenever an item lands. The milestones themselves are defined in [§5](#5-milestones).*
 
-**Overall:** M0 is partly done. The product identity and the analysis workspace UI are built and tested, but they run only on synthetic demo data generated in the browser. There is no Python code, no backend, no CI and no signal processing yet, so Sanket has not analysed a real recording. M1–M8 have not started.
+**Overall:** M0's work is done and waiting on its first CI run. `sanket` starts one local process that serves the workspace UI, and the Python workspace, tests, licence gate, pre-commit hooks and offline smoke test are in place. The UI still runs only on synthetic demo data generated in the browser, and there is no signal processing yet, so Sanket has not analysed a real recording. M1–M8 have not started.
 
 | Stage | State | Exit gate met |
 |---|---|---|
 | Idea submission (external, due 30 Sep) | In progress: docs done, deck not started | — |
-| M0 Foundations and identity | In progress: identity and workspace UI done; Python, backend and CI tooling open | No |
-| M1 Ingest, evidence model, ground-truth lab, bench v0 | Not started | No |
+| M0 Foundations and identity | All items built and passing locally; CI workflow written but not yet run | No: needs a green CI run on both platforms |
+| M1 Ingest, evidence model, ground-truth lab, bench v0 | In progress: evidence model, SigMF datatypes, reader and SigMF metadata done | No |
 | M2 Spectrum, detection, estimation, real tiles | Not started | No |
 | M3 Synchronisation and demodulation | Not started | No |
 | M4 Modulation classification | Not started | No |
@@ -40,14 +40,28 @@ Related: [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · 
 - [x] Analysis workspace on a deterministic synthetic capture: WebGL2 waterfall, uPlot PSD, constellation and FSK tone views, evidence cards, hypothesis ledger, frames and assumptions tables
 - [x] 26 unit tests pass; lint, typecheck and production build clean (all re-run 27 Sep)
 - [x] Browser check in both themes at 390/1180/1512 px: no console errors, no requests beyond localhost
-- [ ] Python 3.12 + uv workspace for `dsp/`, `ml/`, `backend/`, `bench/` (uv and Python 3.12.14 are installed; the workspace itself isn't created)
-- [ ] FastAPI skeleton serving the built frontend; `sanket` start command
-- [ ] CI on Windows and Ubuntu (no `.github/` yet)
-- [ ] pre-commit hooks; `THIRD_PARTY.md`
-- [ ] Playwright smoke test with sockets blocked
-- [ ] Claude Code setup for M0 ([tooling map](../.claude/CLAUDE_SKILLS_MCP.md#1-tooling-by-milestone))
+- [x] Python 3.12 + uv workspace for `dsp/`, `ml/`, `backend/`, `bench/`; ruff, pyright (strict on `dsp/`) and pytest clean; `ml/` kept out of the product install
+- [x] FastAPI app serving the built frontend and `GET /api/v1/health`; `sanket` start command binding 127.0.0.1 by default; no CDN-backed `/docs` pages
+- [x] Python tests may only open loopback connections (pytest-socket)
+- [x] pre-commit hooks (large-file guard, ruff, ESLint, licence check)
+- [x] `THIRD_PARTY.md` generated from the lockfiles by `tools/third_party.py`, which fails on GPL/AGPL, non-commercial or unrecognised licences
+- [x] Playwright smoke test against `sanket`: every request outside 127.0.0.1 is aborted and fails the test; no console errors
+- [ ] CI on Windows and Ubuntu: `.github/workflows/ci.yml` written; first run needs a push
+- [ ] Claude Code setup for M0 ([tooling map](../.claude/CLAUDE_SKILLS_MCP.md#1-tooling-by-milestone)): project MCP servers, permissions and `plan-status` done; the `ponytail` and `frontend-design` plugins still need installing
 
-**Next, in order:** finish the idea-submission items by 30 September, then close M0's open items and its exit gate, then start M1.
+**M1**
+- [x] Evidence model (`dsp/evidence.py`) with the honesty rules enforced at construction, and `promote()` for downstream proof
+- [x] All 28 SigMF `core:datatype` formats parsed, decoded to normalised samples and encoded; round-trip test for every format; IQ/QI swap
+- [x] Chunked, random-access sample reader with header offset and trailing-byte count
+- [x] SigMF metadata to Parameters: datatype, sample rate and centre frequency MEASURED, or UNKNOWN with a resolve hint, never defaulted; file size checked against the datatype
+- [ ] JSON schema generated from the evidence model; results JSON with `schema_version` and the `Assumptions` block
+- [ ] Raw files without metadata: format sniffer with ranked candidates and a confusion matrix over all formats
+- [ ] Sample-rate candidates (filename hints, WAV `auxi` chunk, SDR device rates, structural matches)
+- [ ] WAV mono and stereo
+- [ ] Ground-truth generator `dsp/synth` (NumPy) with impairments; TorchSig as an independent generator
+- [ ] Bench v0: fixed seeds, sealed set, null set, `bench run`
+
+**Next:** push to get the first CI run and close M0's exit gate; in M1, the results schema and assumptions block, then the format sniffer.
 
 ---
 
@@ -101,7 +115,7 @@ flowchart LR
 One local process tree, no external services. The pieces and the contracts between them:
 
 - **Stage graph.** Each stage is a pure function `run(inputs, params, overrides) → StageResult {parameters, artifacts, warnings, timings}`. Its cache key is the hash of its input artifacts, parameters and stage code version. An analyst override invalidates that stage and its descendants only, which is what makes "correct a stage, re-run the rest, show the diff" (D5) cheap.
-- **Evidence model.** `Parameter {value, unit, level, confidence, method, evidence[], alternatives[], warnings[], resolve_hint}` — the frontend type already exists in [`frontend/src/lib/evidence.ts`](../frontend/src/lib/evidence.ts) and the Python model must match it. Downstream proof may **promote** an upstream value (a CRC pass makes the modulation VERIFIED), and the promotion is recorded as evidence.
+- **Evidence model.** `Parameter {value, unit, uncertainty, level, confidence, method, evidence[], alternatives[], warnings[], resolve_hint, proof}` in [`dsp/src/dsp/evidence.py`](../dsp/src/dsp/evidence.py) is the source of truth; its JSON uses the frontend's camelCase field names. It enforces the honesty rules when a value is built: UNKNOWN has no value and must state why and what would settle it, an ESTIMATED number carries its uncertainty, and VERIFIED requires a CRC, sync-recurrence or re-encode proof. Downstream proof may **promote** an upstream value (a CRC pass makes the modulation VERIFIED), and the promotion is recorded as evidence. The frontend type in [`frontend/src/lib/evidence.ts`](../frontend/src/lib/evidence.ts) predates it: the demo data puts uncertainty inside the unit text. That type is replaced by one generated from the API schema when real results reach the UI (M2).
 - **Hypothesis ledger.** Every blind search writes every candidate it tried — statistic, p-value, corrected threshold, outcome, reason — plus its shuffled-bit false-alarm runs. The D8 hypothesis table renders this ledger directly.
 - **Streaming.** Readers are memory-mapped and chunked; detectors run on chunks; nothing loads a whole file.
 - **Tiles.** The server computes a multi-resolution STFT pyramid quantised to uint8 dB in fixed-size tiles, **max-pooled** between levels so short bursts survive zooming out. The frontend already renders a uint8 dB texture through a LUT shader; switching it from one demo texture to server tiles is an M2 task.
@@ -120,11 +134,13 @@ One local process tree, no external services. The pieces and the contracts betwe
 - **Repository layout.**
 
   ```
-  frontend/   React + TS + Vite — exists (identity, workspace, demo data)
+  frontend/   React + TS + Vite (identity, workspace, demo data; e2e/ holds the Playwright tests)
   dsp/        ingest, synth (ground-truth generator), detect, estimate, sync, demod, gf2, deinterleave, fec, framing, evidence
   ml/         AMC training, evaluation, ONNX export, model card
   backend/    FastAPI app, job runner, storage, exports, packaging
   bench/      generator presets, sealed set, null set, results, perf, decoder-truth harness
+  tests/      Python tests, one folder per package
+  tools/      repo scripts (THIRD_PARTY.md and licence check)
   docs/       plan, standards, dossier
   ```
 
@@ -179,10 +195,10 @@ Dependencies: **M0 → M1 → M2 → M3 → (M4 ∥ M5) → M6 → M8**, with **
 
 ### M1 — Ingest, evidence model, ground-truth lab, bench v0
 
-- **Evidence model** in `dsp/evidence` matching the frontend type; JSON schema generated from it; every result validated against the schema.
+- **Evidence model** in `dsp/evidence` (§3); JSON schema generated from it; every result validated against the schema.
 - **Ingest:**
   - SigMF full `core:datatype` vocabulary; raw formats in both byte orders and IQ/QI; WAV mono (analytic signal, flagged HYPOTHESIS for digital labels) and stereo (quadrature check plus an analyst prompt)
-  - memory-mapped chunked reader; file-size-versus-datatype consistency check (ORACLE's metadata says 32-bit, its data is complex128)
+  - chunked, random-access reader with memory bounded by the chunk size; file-size-versus-datatype consistency check (ORACLE's metadata says 32-bit, its data is complex128)
   - **format sniffer** that proposes ranked candidates and never picks silently: header detection, then every datatype × byte order scored on float validity, spectral non-whiteness, lag-1 autocorrelation, I/Q power balance and DC; report the margin over the runner-up. IQ/QI stays an analyst toggle — a swap only mirrors the spectrum. Validated with a confusion matrix over all format permutations.
   - **sample-rate candidates**, ranked: filename hints, the WAV `auxi` chunk, standard SDR device rates, and structural matches (a recognised symbol rate × candidate Fs within 0.1 % promotes it to HYPOTHESIS). With no candidate, output in normalised units.
   - an `Assumptions` block in every output

@@ -10,7 +10,7 @@ Every result shows the evidence behind it and how sure we are. Nothing is guesse
 | **Organisation** | NTRO (National Technical Research Organisation) |
 | **Category / theme** | Software. Theme is listed as Space Technology on recent mirrors; confirm on [sih.gov.in](https://sih.gov.in). |
 | **Idea submission deadline** | **30 September 2026** |
-| **Status** | M0 in progress: product identity and the analysis workspace UI are built and run on synthetic demo data; Python tooling, backend and CI are next, and signal processing starts in M1. Details in [PLAN §0](docs/PLAN.md#0-progress). |
+| **Status** | M0 built: `sanket` serves the analysis workspace UI (synthetic demo data), with tests, licence gate and offline smoke test; waiting on the first CI run. Signal processing starts in M1. Details in [PLAN §0](docs/PLAN.md#0-progress). |
 
 ---
 
@@ -102,27 +102,39 @@ iq-wav-analysis/
 ├── ml/              (M4) AMC training, evaluation, ONNX export
 ├── backend/         (M0) FastAPI app: serves the UI; later uploads, jobs, SSE progress, SQLite storage, exports
 ├── bench/           (M1) Sealed benchmark, null set, rival comparisons, results
+├── tests/           Python tests, one folder per package
+├── tools/           Repo scripts: THIRD_PARTY.md generation and licence check
 ├── data/            Datasets and captures (git-ignored; only manifests are committed)
 ├── docs/            Plan, standards to beat, source dossier
 ├── reports/         Research report behind the plan (sources in research_notes/)
-└── .claude/         Claude Code project config: CLAUDE.md, tooling map, later settings, skills and agents (dev-time only)
+└── .claude/         Claude Code project config: CLAUDE.md, tooling map, settings, skills (dev-time only)
 ```
 
 ## Getting started
 
-The frontend runs today on a deterministic synthetic capture generated in the browser (clearly labelled *Synthetic demo*). It needs **Node.js 22**:
+Sanket runs today on a deterministic synthetic capture generated in the browser (clearly labelled *Synthetic demo*); signal processing starts in M1. You need **Node.js 22**, [uv](https://docs.astral.sh/uv/) and **Python 3.12** (pinned; `uv python install 3.12`).
 
 ```bash
-cd frontend
-npm install
-npm run dev        # http://localhost:5173
-npm test           # unit tests (FFT, colormaps, generator, view maths)
-npm run lint && npm run typecheck && npm run build
+uv sync                              # Python workspace + dev tools
+npm ci --prefix frontend
+npm run build --prefix frontend      # sanket serves this build
+uv run sanket                        # http://127.0.0.1:8765
 ```
 
-The build loads nothing from the network: fonts, code and data are bundled.
+Checks, as CI runs them:
 
-For the Python side (set up in M0): **Python 3.12** (pinned; `uv python install 3.12`) and [uv](https://docs.astral.sh/uv/). Optional: **WSL2 Ubuntu 22.04+** for TorchSig; radioconda for GNU Radio; an RTL-SDR dongle for receive-only captures.
+```bash
+uv run ruff check && uv run ruff format --check && uv run pyright && uv run pytest
+uv run python tools/third_party.py --check       # licences + THIRD_PARTY.md
+cd frontend
+npm run lint && npm run typecheck && npm test && npm run build
+npx playwright install chromium                  # once
+npm run e2e                                      # offline smoke test against sanket
+```
+
+For UI work, `npm run dev` in `frontend/` gives hot reload at http://localhost:5173. Run `uv run pre-commit install` once per clone. Nothing loads from the network: fonts, code and data are bundled.
+
+Optional: **WSL2 Ubuntu 22.04+** for TorchSig; radioconda for GNU Radio; an RTL-SDR dongle for receive-only captures.
 
 ## Lawful use
 
@@ -147,4 +159,4 @@ The tool does not capture, transmit or decrypt. Record the provenance of every r
 
 ## Credits
 
-We credit every library we use in this README and in `THIRD_PARTY.md` (generated from the lockfiles in M0). Public SIH26147 repositories were studied as benchmarks, not copied. Most have no licence, which means all rights are reserved.
+We credit every library we ship in [`THIRD_PARTY.md`](THIRD_PARTY.md), generated from the lockfiles; CI fails on GPL/AGPL, non-commercial or unrecognised licences. Public SIH26147 repositories were studied as benchmarks, not copied. Most have no licence, which means all rights are reserved.

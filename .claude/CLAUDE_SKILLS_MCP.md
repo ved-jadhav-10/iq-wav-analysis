@@ -15,14 +15,14 @@ This lists the Claude Code skills, plugins, MCP servers, custom project skills, 
 |---|---|---|
 | **Every change, from M0** | — | `code-review` on every change (`/code-review high` on sync, `gf2` and FEC code); `ponytail` left on; `run` to see a change working in the app; Context7 for current library docs; `simplify` before closing a milestone's exit gate |
 | **Idea submission** (now → 30 Sep) | `gh auth login`; GitHub MCP (read-only token); `sanket-brand` *(custom)* | `chrome-browser` to confirm the PS, template and theme on sih.gov.in; `rival-scan` *(custom)*, or the [STANDARDS §10](../docs/STANDARDS_TO_BEAT.md#10-how-to-refresh-this-document) queries by hand, to refresh the rival matrix; Playwright MCP for workspace screenshots, labelled *synthetic demo data*; `pptx` for the deck; `artifact-diagramming` for the architecture diagram; `claim-check` *(custom)* on every number in the deck |
-| **M0** Foundations | Python 3.12 via uv (installed); `update-config` hooks ([§10](#10-hooks-and-permissions)); plugins `ponytail` and `frontend-design`; Playwright and Context7 MCP; `webapp-testing`; `plan-status` *(custom)* | Context7 for uv, FastAPI and GitHub Actions; `webapp-testing` to write the socket-blocked Playwright smoke test; `run` to check that `sanket` starts one process serving the UI; `plan-status` to update PLAN §0; `fewer-permission-prompts` once there is some usage history |
+| **M0** Foundations | Done: Python 3.12 via uv; Playwright and Context7 MCP (`.mcp.json`); permissions and pre-commit ([§10](#10-hooks-and-permissions)); `plan-status` *(custom)*. **Still to install:** plugins `ponytail` and `frontend-design` ([§5](#5-plugins)) | Context7 for uv, FastAPI and GitHub Actions; `run` to check that `sanket` starts one process serving the UI; `plan-status` to update PLAN §0; `fewer-permission-prompts` once there is some usage history |
 | **M1** Ingest, evidence, ground truth, bench v0 | Merge the [§9](#9-claudemd-rules) rules into `.claude/CLAUDE.md`; `skill-creator`, then create `gen-iq`, `inspect-iq`, `sigmf-check` and `bench-run` *(custom)*; `evidence-auditor` subagent; plugin `superpowers` (trial it here: M1 is the first milestone with exact ground truth) | `superpowers` test-first against `dsp/synth` truth; `gen-iq`, `inspect-iq` and `sigmf-check` on every format round trip; `dataviz` for the sniffer confusion matrix (an exit-gate artifact); optional GNU Radio MCP to cross-check the generator; optional `sdr-skills` after reading it |
 | **M2** Spectrum, detection, estimation, tiles | Serena MCP; Chrome DevTools MCP; `dsp-reviewer` subagent | `superpowers` for detectors and estimators; `frontend-design` for the tiled level-of-detail waterfall; Chrome DevTools to measure first tile ≤ 2 s and 60 fps pan/zoom; `dataviz` for per-SNR-bucket detection and estimation results; `bench-run`; IQEngine as the reference for tiles |
 | **M3** Sync and demodulation | — | `superpowers`; `dsp-reviewer`; `/code-review high`; `dataviz` for BER-vs-theory curves (exit gate: within 1 dB); `frontend-design` for the eye diagram |
 | **M4** Modulation classification | Jupyter, Hugging Face and arXiv MCP; `eval-amc` *(custom)* | `deep-research` and arXiv on low-SNR and open-set AMC; Jupyter for training and evaluation experiments; Hugging Face for dataset cards and licences; `eval-amc`, which drives `dataviz` for accuracy-vs-SNR curves, confusion matrices and reliability diagrams |
 | **M5** GF(2), interleavers, FEC | `fec-catalogue` *(custom)* | `superpowers`; `deep-research` and arXiv on blind code and interleaver identification; `pdf` for CCSDS, DVB-S2 and 802.11 tables; `fec-catalogue` for each catalogue entry; `bench-run` on the null set (exit gate: 0 false accepts); `/code-review high` |
 | **M6** Framing | — | `superpowers`; `bench-run` to measure the blind-sync false-alarm rate (≤ 10⁻⁶ per stream) |
-| **M7** Analyst workflow and reports | Motion (npm package) only if a transition needs it; shadcn MCP only if we adopt shadcn/ui components ([§7](#7-uidesign-toolkit-notes)) | `frontend-design` for the open-recording flow, overrides, before/after diff, history, batch and compare views; `webapp-testing` and Playwright MCP for the open → analyse → override → export E2E; `pdf` to check generated PDF reports; `sanket-brand` for report styling; `security-review` on uploads and export filenames; Chrome DevTools for regressions |
+| **M7** Analyst workflow and reports | Motion (npm package) only if a transition needs it; shadcn MCP only if we adopt shadcn/ui components ([§7](#7-uidesign-toolkit-notes)) | `frontend-design` for the open-recording flow, overrides, before/after diff, history, batch and compare views; `@playwright/test` (`frontend/e2e/`) for the open → analyse → override → export E2E, with Playwright MCP for debugging it; `pdf` to check generated PDF reports; `sanket-brand` for report styling; `security-review` on uploads and export filenames; Chrome DevTools for regressions |
 | **M8** Hardening, validation, 1.0 | `decoder-truth` and `judge-drill` *(custom)* | `decoder-truth` for real-capture ground truth; `bench-run` on the sealed set; `dataviz` and `xlsx` for `bench/VALIDATION.md` and the head-to-head; `security-review` for the release review; `rival-scan` on `loop` or `schedule` until the finale; `claim-check` on the README, deck and docs; `/ponytail-audit` before the release freeze; `pptx` and `artifact-design` for finale material; `judge-drill` before the finale |
 
 ---
@@ -57,7 +57,7 @@ These are already available in Claude Code. Invoke one by name (e.g. `/code-revi
 | `simplify` | Clean-up pass on finished code | Before each exit gate |
 | `run` | Launch the app and confirm a change works end to end | M0 onward |
 | `init` | Refresh `.claude/CLAUDE.md` from the codebase once `dsp/` and `backend/` exist, keeping the [§9](#9-claudemd-rules) rules | M1 |
-| `update-config` | Set up the hooks and permissions in [§10](#10-hooks-and-permissions) | M0 |
+| `update-config` | Change the permissions or add hooks in `.claude/settings.json` ([§10](#10-hooks-and-permissions)) | When needed |
 | `fewer-permission-prompts` | Build an allowlist of safe read-only commands from real usage | M0, once there is history |
 | `skill-creator` | Build and evaluate the custom skills in [§8](#8-custom-project-skills) | Idea submission, M0, M1, M4, M5, M8 |
 | `chrome-browser` | Read sih.gov.in in your own Chrome session. The portal blocks automated fetches, so this is the reliable way to confirm PS details and dates. | Idea submission; again when the finale date is announced |
@@ -74,13 +74,9 @@ Not needed: `claude-api` (there's no LLM in the product), `computer-use`, `built
 
 ---
 
-## 4. Skills to install
+## 4. Skills considered and dropped
 
-| Skill | Use it for | Milestones | Install |
-|---|---|---|---|
-| `webapp-testing` | Script-based Playwright testing of the local app. For CI-style runs it is lighter than the Playwright MCP server, because it adds no per-tool-call context. | M0 (smoke test), M7 (E2E) | Not installed. It's in Anthropic's public skills repo: `/plugin marketplace add anthropics/skills`, then install the plugin that contains it (`/plugin` lists them). |
-
-**Considered and dropped:**
+- `webapp-testing`: the E2E tests use `@playwright/test` directly (`frontend/e2e/`, run by CI), so a skill for writing Playwright scripts adds nothing.
 - `brand-guidelines` applies **Anthropic's** brand, not ours.
 - `theme-factory` applies preset themes, which would override our fixed identity.
 - `sanket-brand` *(custom, [§8](#8-custom-project-skills))* replaces both. The identity was fixed in M0 ([PLAN §4](../docs/PLAN.md#4-product-identity-fixed)).
@@ -108,8 +104,8 @@ Use **project scope** (`--scope project`, written to `.mcp.json` and committed) 
 | Server | Why we need it | When | Install | Notes |
 |---|---|---|---|---|
 | **GitHub** (official, [github/github-mcp-server](https://github.com/github/github-mcp-server)) | Rival scans (repo trees, READMEs, commits); later our own issues, PRs and Actions logs | Idea submission onward | `claude mcp add --transport http github https://api.githubcopilot.com/mcp/ --header "Authorization: Bearer <FINE_GRAINED_PAT>"` | User scope. Use a fine-grained PAT with read-only access for scanning. The local Docker image supports `--read-only`. |
-| **Context7** ([upstash/context7](https://github.com/upstash/context7)) | Up-to-date docs for uv, FastAPI, React, Vite, PyTorch, ONNX Runtime, SciPy, `sigmf` | M0 onward | `claude mcp add --scope project --transport http context7 https://mcp.context7.com/mcp` | An API key from context7.com is optional (higher limits): add `--header "Authorization: Bearer <KEY>"` at user scope. |
-| **Playwright** ([microsoft/playwright-mcp](https://github.com/microsoft/playwright-mcp)) | Drive the React GUI: take screenshots for the deck, check the waterfall and evidence cards, upload a bench file, debug E2E tests | Idea submission (screenshots), M0 (smoke test), M7 (E2E) | `claude mcp add --scope project playwright npx @playwright/mcp@latest` | Works on the accessibility tree, so no vision model is needed. |
+| **Context7** ([upstash/context7](https://github.com/upstash/context7)) | Up-to-date docs for uv, FastAPI, React, Vite, PyTorch, ONNX Runtime, SciPy, `sigmf` | M0 onward | Configured in `.mcp.json` | An API key from context7.com is optional (higher limits): add `--header "Authorization: Bearer <KEY>"` at user scope. |
+| **Playwright** ([microsoft/playwright-mcp](https://github.com/microsoft/playwright-mcp)) | Drive the React GUI: take screenshots for the deck, check the waterfall and evidence cards, upload a bench file, debug E2E tests | Idea submission (screenshots), M2 and M7 (checking UI changes, debugging E2E) | Configured in `.mcp.json` | Works on the accessibility tree, so no vision model is needed. Uses `cmd /c npx` because native Windows needs the wrapper; on Linux or macOS, override it in user scope with plain `npx`. The CI E2E tests use `@playwright/test`, not this server. |
 | **Serena** ([oraios/serena](https://github.com/oraios/serena)) | LSP-based, symbol-level code retrieval and editing: Claude reads the one function it needs instead of whole files, which keeps DSP and FEC review cheaper | M2 onward, once `dsp/` is big enough to benefit | `claude mcp add --scope user serena -- serena start-mcp-server --context claude-code --project-from-cwd` | Older `uvx … --context ide-assistant` instructions circulating online are outdated. |
 | **Chrome DevTools** (official, [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp)) | Performance traces and console/network inspection for the WebGL2 waterfall: frame budget, GPU memory and tile fetches, which Playwright's accessibility tree can't see | M2 (first-tile and 60 fps gates), M7, M8 | `claude mcp add chrome-devtools-mcp -- npx -y chrome-devtools-mcp`, or `/plugin marketplace add ChromeDevTools/chrome-devtools-mcp`, then `/plugin install chrome-devtools-mcp` | Needs Chrome remote debugging enabled locally. The waterfall already renders on demo data, so it can be used as soon as it's installed. |
 | **Jupyter** ([datalayer/jupyter-mcp-server](https://github.com/datalayer/jupyter-mcp-server), ★1.3k, BSD-3) | Notebook experiments with Claude running cells and reading outputs: AMC training and evaluation, estimator sweeps | M4 (optionally M2) | `/plugin marketplace add datalayer/jupyter-mcp-server`, then `/plugin install datalayer` | Needs a running JupyterLab. |
@@ -144,7 +140,7 @@ The frontend is an analyst instrument, not a marketing site, and its identity is
 
 ## 8. Custom project skills
 
-Put each skill in `.claude/skills/<name>/SKILL.md` and commit it. Build and test them with `skill-creator`. None exists yet.
+Put each skill in `.claude/skills/<name>/SKILL.md` and commit it. Build and test them with `skill-creator`. `plan-status` exists; the rest are created in the milestone shown.
 
 | Skill | What it does | Runs | Output | Create in |
 |---|---|---|---|---|
@@ -183,7 +179,7 @@ description: Generate a synthetic SigMF IQ recording with exact ground truth (mo
 
 ## 9. `CLAUDE.md` rules
 
-**Location:** [`.claude/CLAUDE.md`](CLAUDE.md), which Claude Code loads automatically. Merge this block into it once `dsp/` exists (M1); until then most rules have no code to apply to:
+**Location:** [`.claude/CLAUDE.md`](CLAUDE.md), which Claude Code loads automatically. This block was merged into it in M1, when `dsp/` got code; that file is now the live copy, and this one is the reference:
 
 ```markdown
 ## Project rules (SIH26147)
@@ -209,17 +205,9 @@ description: Generate a synthetic SigMF IQ recording with exact ground truth (mo
 
 ## 10. Hooks and permissions
 
-Set these up in M0 with the `update-config` skill, which gets the hook schema right, in `.claude/settings.json`.
-
-- **Lint on edit (Python):** a `PostToolUse` hook on `Edit|Write` that runs `uv run ruff check --fix --quiet` and `uv run ruff format --quiet` on the edited `.py` file.
-- **Lint on edit (frontend):** the same pattern for `frontend/**/*.{ts,tsx}` with `eslint --fix`. The frontend has no Prettier config; add one in M0 first if you want a formatter in the hook.
-- **Optional `Stop` hook:** `uv run pytest -q -x --lf`, so a turn doesn't end with failing tests. Turn it off during large refactors.
-- **Allowlist**, to cut down permission prompts:
-  - `Bash(uv run pytest:*)`, `Bash(uv run ruff:*)`, `Bash(uv run pyright:*)`, `Bash(uv run python -m bench:*)`
-  - `Bash(npm test:*)`, `Bash(npm run lint:*)`, `Bash(npm run typecheck:*)`, `Bash(npm run build:*)`
-  - `Bash(gh api:*)` (read-only)
-
-  Later, run `fewer-permission-prompts` to extend it from real usage.
+- **Lint and format:** done by **pre-commit** (`.pre-commit-config.yaml`: large-file guard, ruff check and format, ESLint, licence check) rather than Claude Code edit hooks, so it applies to every commit whoever or whatever wrote the code. Install once per clone with `uv run pre-commit install`. CI runs the same checks.
+- **Permissions:** `.claude/settings.json` (committed) allows the test, lint, typecheck, build, e2e, licence and read-only `gh` commands without prompting. Extend it with `fewer-permission-prompts` once there is real usage, or edit it with `update-config`. Personal overrides go in `.claude/settings.local.json`, which is git-ignored.
+- **Optional `Stop` hook**, not set up: `uv run pytest -q -x --lf`, so a turn doesn't end with failing tests. Add it with `update-config` if turns start ending red.
 
 **Cost monitoring (optional, personal):** [ryoppippi/ccusage](https://github.com/ryoppippi/ccusage) reads local Claude Code session logs and reports daily, monthly and per-session cost, with no API key. `npx ccusage@latest` gives a one-off report; `npx ccusage@latest monthly` gives the aggregate.
 

@@ -1,0 +1,96 @@
+"""The evidence model: every value Sanket reports is a Parameter (PLAN §3).
+
+The honesty rules are enforced when a Parameter is built, so a result that breaks them can't
+exist: UNKNOWN states why and what would settle it, an ESTIMATED number carries its
+uncertainty, and VERIFIED requires a CRC, sync-recurrence or re-encode proof.
+"""
+
+from enum import StrEnum
+from typing import Annotated, Literal, Self
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic.alias_generators import to_camel
+
+
+class EvidenceLevel(StrEnum):
+    VERIFIED = "VERIFIED"
+    MEASURED = "MEASURED"
+    ESTIMATED = "ESTIMATED"
+    HYPOTHESIS = "HYPOTHESIS"
+    UNKNOWN = "UNKNOWN"
+
+
+class _Model(BaseModel):
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        alias_generator=to_camel,
+        populate_by_name=True,
+        serialize_by_alias=True,
+    )
+
+
+Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
+FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
+Value = int | FiniteFloat | str
+
+
+class Alternative(_Model):
+    value: Value
+    confidence: Confidence
+
+
+class Proof(_Model):
+    kind: Literal["crc", "sync_recurrence", "reencode"]
+    detail: str = Field(min_length=1)
+
+
+class Parameter(_Model):
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    value: Value | None
+    unit: str | None = None
+    uncertainty: FiniteFloat | None = Field(
+        default=None, ge=0.0, description="Standard uncertainty (1 sigma), in the value's unit."
+    )
+    level: EvidenceLevel
+    confidence: Confidence | None = None
+    method: str = Field(min_length=1)
+    evidence: tuple[str, ...] = ()
+    alternatives: tuple[Alternative, ...] = ()
+    warnings: tuple[str, ...] = ()
+    resolve_hint: str | None = Field(
+        default=None, description="For UNKNOWN: what additional input would settle it."
+    )
+    proof: Proof | None = None
+
+    @model_validator(mode="after")
+    def _check_honesty(self) -> Self:
+        if self.level is EvidenceLevel.UNKNOWN:
+            if self.value is not None:
+                raise ValueError("an UNKNOWN parameter has no value")
+            if not self.evidence or not self.resolve_hint:
+                raise ValueError("UNKNOWN must state why (evidence) and what would settle it")
+        elif self.value is None:
+            raise ValueError(f"{self.level} requires a value; report UNKNOWN instead")
+        is_number = isinstance(self.value, int | float)
+        if self.level is EvidenceLevel.ESTIMATED and is_number and self.uncertainty is None:
+            raise ValueError("an ESTIMATED number must state its uncertainty")
+        if (self.level is EvidenceLevel.VERIFIED) != (self.proof is not None):
+            raise ValueError("VERIFIED requires a proof, and only VERIFIED carries one")
+        return self
+
+
+def promote(parameter: Parameter, proof: Proof) -> Parameter:
+    """Raise a value to VERIFIED on downstream proof, recording the promotion as evidence."""
+    if parameter.level is EvidenceLevel.UNKNOWN:
+        raise ValueError("an UNKNOWN parameter has no value to verify")
+    note = f"Promoted from {parameter.level} by {proof.kind}: {proof.detail}"
+    return Parameter.model_validate(
+        {
+            **parameter.model_dump(),
+            "level": EvidenceLevel.VERIFIED,
+            "proof": proof,
+            "evidence": (*parameter.evidence, note),
+        }
+    )

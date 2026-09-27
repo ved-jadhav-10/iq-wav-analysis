@@ -1,0 +1,13 @@
+[project]
+name = "sanket-bench"
+version = "0.1.0"
+description = "Sanket benchmark: generator presets, sealed set, null set, results"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bench"]
