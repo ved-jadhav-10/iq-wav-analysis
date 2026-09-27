@@ -1,7 +1,7 @@
 """`bench`: generate the bench sets and score Sanket on them (PLAN §5 M1, bench v0).
 
     uv run bench generate dev|null|sealed [--limit N]   write SigMF files to bench/data/<set>/
-    uv run bench run dev|null|sealed                    score them, write bench/results/
+    uv run bench run dev|null|sealed|torchsig           score them, write bench/results/
 
 Every file follows from its seed (bench/presets.py), so only seeds and results are committed.
 The sealed set's seeds live in bench/sealed/manifest.json and are never changed; its results
@@ -13,6 +13,10 @@ whether the format sniffer, reading each data file as a headerless raw file, pro
 format or honestly ties, and whether the true sample rate is among the rate candidates. For the
 null set it counts VERIFIED values and accepted decodes; no stage can accept a decode yet, and
 the results say so rather than reporting a meaningful zero.
+
+The torchsig set comes from an independent generator (bench/torchsig/export.py, run under WSL2
+with TorchSig); `bench run torchsig` scores it the same way against the labels in its manifest,
+so the sniffer is measured on signals it was never tuned on.
 """
 
 import argparse
@@ -81,37 +85,70 @@ def score_file(meta_path: Path, bench: BenchSet, seed: int) -> dict[str, Any]:
         and a.sample_rate.value == scene.sample_rate
         and a.center_frequency.value == scene.center_frequency
     )
-    param = sniff(rec.data_path).datatype
-    candidates = {alt.value for alt in param.alternatives}
-    if param.value == draw.datatype:
-        sniffed = "correct, by convention" if param.convention else "correct"
-    elif param.value is None:
-        sniffed = "unknown, truth among candidates" if draw.datatype in candidates else "unknown"
-    elif param.convention and str(param.value)[1:] == draw.datatype[1:]:
-        sniffed = "layout by convention"
-    else:
-        sniffed = "wrong"
-    rates = [c.value for c in rate_candidates(rec.data_path.name, draw.datatype)]
-    rate_rank = rates.index(scene.sample_rate) + 1 if scene.sample_rate in rates else None
-    verified = sum(p.level is EvidenceLevel.VERIFIED for p in a.parameters())
     return {
         "seed": seed,
         "datatype": draw.datatype,
         "labels": draw.labels,
         "ingest": "ok" if ingest_ok else "mismatch",
-        "sniffer": sniffed,
-        "sniffed": param.value,
-        "rateRank": rate_rank,
-        "verified": verified,
+        **score_raw(rec.data_path, draw.datatype, scene.sample_rate),
+        "verified": sum(p.level is EvidenceLevel.VERIFIED for p in a.parameters()),
         "acceptedDecodes": 0,
     }
 
 
-def run_set(bench: BenchSet, data: Path) -> dict[str, Any]:
+def score_raw(data_path: Path, datatype: str, sample_rate: float | None) -> dict[str, Any]:
+    """The sniffer's outcome on the data file read as headerless raw samples, and the rank of
+    the true sample rate among the rate candidates."""
+    param = sniff(data_path).datatype
+    candidates = {alt.value for alt in param.alternatives}
+    if param.value == datatype:
+        sniffed = "correct, by convention" if param.convention else "correct"
+    elif param.value is None:
+        sniffed = "unknown, truth among candidates" if datatype in candidates else "unknown"
+    elif param.convention and str(param.value)[1:] == datatype[1:]:
+        sniffed = "layout by convention"
+    else:
+        sniffed = "wrong"
+    rates = [c.value for c in rate_candidates(data_path.name, datatype)]
+    rank = rates.index(sample_rate) + 1 if sample_rate in rates else None
+    return {"sniffer": sniffed, "sniffed": param.value, "rateRank": rank}
+
+
+def score_torchsig(meta_path: Path, entry: dict[str, Any], sample_rate: float) -> dict[str, Any]:
+    """A TorchSig file: SigMF ingest must reproduce the stated datatype and rate, and leave the
+    centre frequency, which TorchSig's baseband metadata doesn't state, UNKNOWN."""
+    a = read_sigmf(meta_path).assumptions
+    ingest_ok = (
+        a.datatype.value == entry["datatype"]
+        and a.datatype.level is EvidenceLevel.MEASURED
+        and a.sample_rate.value == sample_rate
+        and a.sample_rate.level is EvidenceLevel.MEASURED
+        and a.center_frequency.level is EvidenceLevel.UNKNOWN
+    )
+    return {
+        "file": entry["file"],
+        "datatype": entry["datatype"],
+        "labels": {"class": entry["class"]},
+        "ingest": "ok" if ingest_ok else "mismatch",
+        **score_raw(meta_path.with_suffix(".sigmf-data"), entry["datatype"], sample_rate),
+        "verified": sum(p.level is EvidenceLevel.VERIFIED for p in a.parameters()),
+        "acceptedDecodes": 0,
+    }
+
+
+def run_set(bench: BenchSet | None, data: Path) -> dict[str, Any]:
+    """Score a seeded set, or the TorchSig export when `bench` is None."""
     manifest = json.loads((data / "manifest.json").read_text(encoding="utf-8"))
-    rows = [
-        score_file(data / f"{e['file']}.sigmf-meta", bench, e["seed"]) for e in manifest["files"]
-    ]
+    if bench is None:
+        rate = float(manifest["sampleRate"])
+        rows = [
+            score_torchsig(data / f"{e['file']}.sigmf-meta", e, rate) for e in manifest["files"]
+        ]
+    else:
+        rows = [
+            score_file(data / f"{e['file']}.sigmf-meta", bench, e["seed"])
+            for e in manifest["files"]
+        ]
     ranks = [r["rateRank"] for r in rows if r["rateRank"] is not None]
     summary: dict[str, Any] = {
         "files": len(rows),
@@ -128,11 +165,11 @@ def run_set(bench: BenchSet, data: Path) -> dict[str, Any]:
     }
     return {
         "benchVersion": BENCH_VERSION,
-        "set": bench.name,
-        "generator": GENERATOR_VERSION,
+        "set": bench.name if bench else "torchsig",
+        "generator": GENERATOR_VERSION if bench else manifest["generator"],
         "numpy": np.__version__,
         "summary": summary,
-        "files": None if bench.totals_only else rows,
+        "files": None if bench and bench.totals_only else rows,
     }
 
 
@@ -144,6 +181,15 @@ def markdown(results: dict[str, Any]) -> str:
         f"Generated by `uv run bench run {results['set']}` (bench {results['benchVersion']}, "
         f"generator {results['generator']}, NumPy {results['numpy']}). Do not edit by hand.",
         "",
+        *(
+            [
+                "An independent generator: TorchSig's signals, exported by "
+                "`bench/torchsig/export.py` under WSL2. The sniffer was never tuned on them.",
+                "",
+            ]
+            if results["set"] == "torchsig"
+            else []
+        ),
         "| Measure | Value |",
         "|---|---|",
         f"| Files | {s['files']} |",
@@ -169,20 +215,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("generate", "run"):
         p = sub.add_parser(name)
-        p.add_argument("set", choices=("dev", "null", "sealed"))
+        seeded = ("dev", "null", "sealed")
+        # The torchsig set is exported under WSL2 (bench/torchsig/export.py), only scored here.
+        p.add_argument("set", choices=seeded if name == "generate" else (*seeded, "torchsig"))
         p.add_argument("--data", type=Path, default=None, help="default: bench/data/<set>")
         if name == "generate":
             p.add_argument("--limit", type=int, default=None)
     args = parser.parse_args(argv)
-    bench = sets()[args.set]
-    data = args.data or DATA / bench.name
+    bench = None if args.set == "torchsig" else sets()[args.set]
+    data = args.data or DATA / args.set
     if args.command == "generate":
+        assert bench is not None
         entries = generate_set(bench, data, args.limit)
         print(f"wrote {len(entries)} files to {data}")
         return 0
     results = run_set(bench, data)
     RESULTS.mkdir(exist_ok=True)
-    stem = RESULTS / f"bench-v0-{bench.name}"
+    stem = RESULTS / f"bench-v0-{args.set}"
     stem.with_suffix(".json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
     stem.with_suffix(".md").write_text(markdown(results), encoding="utf-8")
     print(json.dumps(results["summary"], indent=2))

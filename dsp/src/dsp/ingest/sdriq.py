@@ -89,7 +89,13 @@ def read_sdriq(path: Path) -> Recording:
         name=path.name,
         segments=(Segment(path, HEADER_BYTES, payload),),
         datatype=datatype,
-        data_offset=stated("data_offset", HEADER_BYTES, f"{_METHOD}: fixed 32-byte header"),
+        data_offset=stated(
+            "data_offset",
+            HEADER_BYTES,
+            f"{_METHOD}: fixed 32-byte header",
+            level=level,
+            evidence=check,
+        ),
         sample_rate=sample_rate,
         center_frequency=stated(
             "center_frequency", float(center), _METHOD, level=level, evidence=check

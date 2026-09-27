@@ -12,6 +12,7 @@ from dsp.ingest.sniff import (
     BLOCKS,
     MIN_BYTES,
     detect_container,
+    extension_hint,
     prediction_error,
     sniff,
     sniff_blocks,
@@ -126,3 +127,55 @@ def test_raw_file_that_cannot_be_sniffed_leaves_iq_order_unknown(tmp_path: Path)
     a = read_raw(path).assumptions
     assert a.datatype.level is EvidenceLevel.UNKNOWN
     assert a.iq_order is not None and a.iq_order.level is EvidenceLevel.UNKNOWN
+
+
+# -- file extensions: hints that order a tie, never evidence ----------------------------------
+
+
+def write_as(tmp_path: Path, name: str, data: bytes) -> Path:
+    path = tmp_path / name
+    path.write_bytes(data)
+    return path
+
+
+def test_extension_orders_a_tie_but_leaves_it_unknown(tmp_path: Path) -> None:
+    data = encode("ci32_le", "noise")  # ties with ci16_le: the width can't be told apart
+    plain = sniff(write_as(tmp_path, "x.bin", data)).datatype
+    hinted = sniff(write_as(tmp_path, "x.cs16", data)).datatype
+    assert plain.level is hinted.level is EvidenceLevel.UNKNOWN
+    assert plain.alternatives[0].value == "ci32_le"
+    assert hinted.alternatives[0].value == "ci16_le"
+    assert sorted(a.value for a in plain.alternatives) == sorted(
+        a.value for a in hinted.alternatives
+    )
+    assert any(".bin names no format" in e for e in plain.evidence)
+    assert any("listed first among the tied candidates" in e for e in hinted.evidence)
+
+
+def test_an_agreeing_extension_changes_nothing(tmp_path: Path) -> None:
+    data = encode("cu8", "qpsk, 2 sps, offset 0.2")
+    assert sniff(write_as(tmp_path, "x.cu8", data)).datatype == sniff_bytes(data).datatype
+
+
+def test_a_contradicting_extension_is_warned_not_obeyed(tmp_path: Path) -> None:
+    data = encode("cu8", "qpsk, 2 sps, offset 0.2")
+    param = sniff(write_as(tmp_path, "x.cf32", data)).datatype
+    assert (param.level, param.value) == (EvidenceLevel.HYPOTHESIS, "cu8")
+    assert ".cf32 suggests cf32_le" in param.warnings[0]
+
+
+def test_an_extension_never_supplies_a_format_the_samples_cant(tmp_path: Path) -> None:
+    data = np.random.default_rng(0).integers(0, 256, 200_000, dtype=np.uint8).tobytes()
+    param = sniff(write_as(tmp_path, "x.cu8", data)).datatype
+    assert (param.level, param.alternatives) == (EvidenceLevel.UNKNOWN, ())
+    assert any("don't support it" in e for e in param.evidence)
+
+
+@pytest.mark.parametrize(
+    ("name", "datatypes"),
+    [("REC.CU8", ("cu8",)), ("a.cs8", ("ci8",)), ("a.cs16", ("ci16_le",)),
+     ("a.cfile", ("cf32_le",)), ("a.fc32", ("cf32_le",)), ("a.dat", ()), ("a.sigmf-data", None)],
+)  # fmt: skip
+def test_extension_hints(name: str, datatypes: tuple[str, ...] | None) -> None:
+    hint = extension_hint(name)
+    assert (hint.datatypes if hint else None) == datatypes

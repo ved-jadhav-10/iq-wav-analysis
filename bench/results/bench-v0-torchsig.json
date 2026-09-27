@@ -1,0 +1,1116 @@
+{
+  "benchVersion": "0.1.0",
+  "set": "torchsig",
+  "generator": "torchsig 2.2.0",
+  "numpy": "2.5.3",
+  "summary": {
+    "files": 84,
+    "ingestMismatches": 0,
+    "sniffer": {
+      "correct": 79,
+      "correct, by convention": 4,
+      "unknown, truth among candidates": 1
+    },
+    "snifferWrong": 0,
+    "trueRateAmongCandidates": 84,
+    "trueRateMedianRank": 4.0,
+    "verifiedValues": 0,
+    "acceptedDecodes": 0,
+    "decodingStages": [],
+    "note": "No stage can accept a decode yet (FEC and framing are M5/M6), so acceptedDecodes is 0 by construction; the null-set gate becomes meaningful when they land."
+  },
+  "files": [
+    {
+      "file": "ts-bpsk-0",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "bpsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-bpsk-1",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "bpsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-bpsk-2",
+      "datatype": "ci8",
+      "labels": {
+        "class": "bpsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-bpsk-3",
+      "datatype": "cu8",
+      "labels": {
+        "class": "bpsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-bpsk-4",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "bpsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-bpsk-5",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "bpsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-qpsk-0",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "qpsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-qpsk-1",
+      "datatype": "ci8",
+      "labels": {
+        "class": "qpsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-qpsk-2",
+      "datatype": "cu8",
+      "labels": {
+        "class": "qpsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-qpsk-3",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "qpsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-qpsk-4",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "qpsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-qpsk-5",
+      "datatype": "ci8",
+      "labels": {
+        "class": "qpsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-8psk-0",
+      "datatype": "ci8",
+      "labels": {
+        "class": "8psk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-8psk-1",
+      "datatype": "cu8",
+      "labels": {
+        "class": "8psk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-8psk-2",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "8psk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-8psk-3",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "8psk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-8psk-4",
+      "datatype": "ci8",
+      "labels": {
+        "class": "8psk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-8psk-5",
+      "datatype": "cu8",
+      "labels": {
+        "class": "8psk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-16qam-0",
+      "datatype": "cu8",
+      "labels": {
+        "class": "16qam"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-16qam-1",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "16qam"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-16qam-2",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "16qam"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-16qam-3",
+      "datatype": "ci8",
+      "labels": {
+        "class": "16qam"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-16qam-4",
+      "datatype": "cu8",
+      "labels": {
+        "class": "16qam"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-16qam-5",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "16qam"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-64qam-0",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "64qam"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-64qam-1",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "64qam"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-64qam-2",
+      "datatype": "ci8",
+      "labels": {
+        "class": "64qam"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-64qam-3",
+      "datatype": "cu8",
+      "labels": {
+        "class": "64qam"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-64qam-4",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "64qam"
+      },
+      "ingest": "ok",
+      "sniffer": "unknown, truth among candidates",
+      "sniffed": null,
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-64qam-5",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "64qam"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-16apsk-0",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "16apsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-16apsk-1",
+      "datatype": "ci8",
+      "labels": {
+        "class": "16apsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-16apsk-2",
+      "datatype": "cu8",
+      "labels": {
+        "class": "16apsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-16apsk-3",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "16apsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-16apsk-4",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "16apsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-16apsk-5",
+      "datatype": "ci8",
+      "labels": {
+        "class": "16apsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-2fsk-0",
+      "datatype": "ci8",
+      "labels": {
+        "class": "2fsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-2fsk-1",
+      "datatype": "cu8",
+      "labels": {
+        "class": "2fsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-2fsk-2",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "2fsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-2fsk-3",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "2fsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-2fsk-4",
+      "datatype": "ci8",
+      "labels": {
+        "class": "2fsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-2fsk-5",
+      "datatype": "cu8",
+      "labels": {
+        "class": "2fsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-4fsk-0",
+      "datatype": "cu8",
+      "labels": {
+        "class": "4fsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-4fsk-1",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "4fsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-4fsk-2",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "4fsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-4fsk-3",
+      "datatype": "ci8",
+      "labels": {
+        "class": "4fsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-4fsk-4",
+      "datatype": "cu8",
+      "labels": {
+        "class": "4fsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-4fsk-5",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "4fsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-2gmsk-0",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "2gmsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-2gmsk-1",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "2gmsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-2gmsk-2",
+      "datatype": "ci8",
+      "labels": {
+        "class": "2gmsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-2gmsk-3",
+      "datatype": "cu8",
+      "labels": {
+        "class": "2gmsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-2gmsk-4",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "2gmsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-2gmsk-5",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "2gmsk"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-ook-0",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "ook"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-ook-1",
+      "datatype": "ci8",
+      "labels": {
+        "class": "ook"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-ook-2",
+      "datatype": "cu8",
+      "labels": {
+        "class": "ook"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-ook-3",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "ook"
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-ook-4",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "ook"
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-ook-5",
+      "datatype": "ci8",
+      "labels": {
+        "class": "ook"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-4ask-0",
+      "datatype": "ci8",
+      "labels": {
+        "class": "4ask"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-4ask-1",
+      "datatype": "cu8",
+      "labels": {
+        "class": "4ask"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-4ask-2",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "4ask"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-4ask-3",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "4ask"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-4ask-4",
+      "datatype": "ci8",
+      "labels": {
+        "class": "4ask"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-4ask-5",
+      "datatype": "cu8",
+      "labels": {
+        "class": "4ask"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-fm-0",
+      "datatype": "cu8",
+      "labels": {
+        "class": "fm"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-fm-1",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "fm"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-fm-2",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "fm"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-fm-3",
+      "datatype": "ci8",
+      "labels": {
+        "class": "fm"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-fm-4",
+      "datatype": "cu8",
+      "labels": {
+        "class": "fm"
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-fm-5",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "fm"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-am-dsb-0",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "am-dsb"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-am-dsb-1",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "am-dsb"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-am-dsb-2",
+      "datatype": "ci8",
+      "labels": {
+        "class": "am-dsb"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-am-dsb-3",
+      "datatype": "cu8",
+      "labels": {
+        "class": "am-dsb"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-am-dsb-4",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "am-dsb"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-am-dsb-5",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "am-dsb"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-ofdm-64-0",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "ofdm-64"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-ofdm-64-1",
+      "datatype": "ci8",
+      "labels": {
+        "class": "ofdm-64"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-ofdm-64-2",
+      "datatype": "cu8",
+      "labels": {
+        "class": "ofdm-64"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-ofdm-64-3",
+      "datatype": "cf32_le",
+      "labels": {
+        "class": "ofdm-64"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-ofdm-64-4",
+      "datatype": "ci16_le",
+      "labels": {
+        "class": "ofdm-64"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "file": "ts-ofdm-64-5",
+      "datatype": "ci8",
+      "labels": {
+        "class": "ofdm-64"
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    }
+  ]
+}

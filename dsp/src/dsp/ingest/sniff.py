@@ -22,6 +22,10 @@ well; complex is then proposed by a stated convention. So are weakly structured 
 which the asymmetric margin can't separate from improper I/Q. IQ versus QI order only mirrors the
 spectrum and is not scored. The data is assumed to start at byte 0 unless a known header is
 found. The code lengths are model estimates for ranking, not the output of a real compressor.
+
+A recorder's file extension (`.cu8`, `.cs16`, `.cfile`, ...) is only a hint: it orders the
+candidates of an UNKNOWN tie, hinted format first, and is warned about when it disagrees with the
+proposal. It never decides a format, raises a level or breaks a tie.
 """
 
 import math
@@ -69,6 +73,43 @@ Container = Literal["wav"]
 
 
 @dataclass(frozen=True)
+class ExtensionHint:
+    extension: str
+    datatypes: tuple[str, ...]  # empty for generic extensions that name no format
+    source: str
+
+
+def _hint(extension: str, datatype: str | None, source: str) -> ExtensionHint:
+    return ExtensionHint(extension, (datatype,) if datatype else (), source)
+
+
+# What the recorders that use each extension write. Integer and float widths wider than a byte
+# are the host order of the machines those tools run on, which is little-endian.
+EXTENSIONS = {
+    h.extension: h
+    for h in (
+        _hint(".cu8", "cu8", "rtl_sdr and rtl_433 write 8-bit unsigned I/Q as .cu8"),
+        _hint(".cs8", "ci8", "hackrf_transfer and rtl_433 write 8-bit signed I/Q as .cs8"),
+        _hint(".sc8", "ci8", "UHD's sc8 wire format is 8-bit signed I/Q"),
+        _hint(".cs16", "ci16_le", "rtl_433 and SoapySDR tools write 16-bit signed I/Q as .cs16"),
+        _hint(".sc16", "ci16_le", "UHD's sc16 format is 16-bit signed I/Q"),
+        _hint(".cf32", "cf32_le", "rtl_433 and SoapySDR tools write 32-bit float I/Q as .cf32"),
+        _hint(".fc32", "cf32_le", "UHD's fc32 format is 32-bit float I/Q"),
+        _hint(".cfile", "cf32_le", "GNU Radio's file sink writes complex float32 as .cfile"),
+        *(
+            _hint(ext, None, f"{ext} is used for recordings of any format")
+            for ext in (".raw", ".bin", ".dat", ".iq")
+        ),
+    )
+}
+
+
+def extension_hint(name: str) -> ExtensionHint | None:
+    """What a recording's file extension suggests about its format, or None if nothing."""
+    return EXTENSIONS.get(Path(name).suffix.lower())
+
+
+@dataclass(frozen=True)
 class Score:
     bits_per_byte: float  # estimated code length; lower explains more
     residual_bits: float  # log2 of the prediction residual per component, in its own units
@@ -86,6 +127,7 @@ class FormatSniff:
     container: Container | None
     candidates: tuple[Candidate, ...]  # best first
     bytes_scored: int
+    hint: ExtensionHint | None = None
 
     @property
     def datatype(self) -> Parameter:
@@ -111,14 +153,14 @@ def sniff(path: Path, *, block_bytes: int = BLOCK_BYTES, blocks: int = BLOCKS) -
         chunks = [
             _read(file, start, block_bytes) for start in _block_starts(size, block_bytes, blocks)
         ]
-    return sniff_blocks(chunks)
+    return sniff_blocks(chunks, extension_hint(path.name))
 
 
-def sniff_blocks(chunks: list[bytes]) -> FormatSniff:
+def sniff_blocks(chunks: list[bytes], hint: ExtensionHint | None = None) -> FormatSniff:
     """Rank every datatype by its mean score over blocks that each start sample-aligned."""
     total = sum(len(c) for c in chunks)
     if total < MIN_BYTES:
-        return FormatSniff(None, (), 0)
+        return FormatSniff(None, (), 0, hint)
     candidates: list[Candidate] = []
     for datatype in ALL_DATATYPES:
         fmt = SampleFormat.parse(datatype)
@@ -135,7 +177,7 @@ def sniff_blocks(chunks: list[bytes]) -> FormatSniff:
         )
     # Stable order on ties: complex before real, then the SigMF vocabulary order.
     candidates.sort(key=lambda c: (round(c.score.bits_per_byte, 9), c.datatype[0] != "c"))
-    return FormatSniff(None, tuple(candidates), total)
+    return FormatSniff(None, tuple(candidates), total, hint)
 
 
 def score(raw: bytes, fmt: SampleFormat) -> Score:
@@ -325,15 +367,22 @@ def _narrower(best: Candidate, ranked: tuple[Candidate, ...]) -> Candidate | Non
 def _datatype_parameter(result: FormatSniff) -> Parameter:
     method = f"Format sniffer: code length of each SigMF datatype under an order-{ORDER} predictor"
 
+    hint = result.hint
+
     def unknown(why: str, alternatives: tuple[Candidate, ...] = ()) -> Parameter:
+        tied = [c.datatype for c in alternatives]
         return Parameter(
             id="datatype",
             name="Sample format",
             value=None,
             level=EvidenceLevel.UNKNOWN,
             method=method,
-            evidence=(why, *_ranking(result)),
-            alternatives=tuple(Alternative(value=c.datatype) for c in alternatives),
+            evidence=(why, *_ranking(result), *_hint_evidence(hint, tied)),
+            # Only the order of the tied candidates follows the extension, never their number.
+            alternatives=tuple(
+                Alternative(value=d)
+                for d in sorted(tied, key=lambda d: not hint or d not in hint.datatypes)
+            ),
             resolve_hint=FORMAT_HINT,
         )
 
@@ -404,6 +453,7 @@ def _datatype_parameter(result: FormatSniff) -> Parameter:
             "recording."
         )
     alternatives = [c for c in ranked if c.datatype != value][:3]
+    disagrees = hint is not None and bool(hint.datatypes) and value not in hint.datatypes
     return Parameter(
         id="datatype",
         name="Sample format",
@@ -413,6 +463,30 @@ def _datatype_parameter(result: FormatSniff) -> Parameter:
         evidence=evidence,
         alternatives=tuple(Alternative(value=c.datatype) for c in alternatives),
         convention=convention,
+        warnings=(
+            f"The file extension {hint.extension} suggests {', '.join(hint.datatypes)} "
+            f"({hint.source}), but the samples score {value} better. The extension may be "
+            "wrong, or the file converted; check the recording tool.",
+        )
+        if hint and disagrees
+        else (),
+    )
+
+
+def _hint_evidence(hint: ExtensionHint | None, tied: list[str]) -> tuple[str, ...]:
+    if hint is None:
+        return ()
+    if not hint.datatypes:
+        return (f"The file extension {hint.extension} names no format ({hint.source}).",)
+    named = ", ".join(hint.datatypes)
+    if any(d in hint.datatypes for d in tied):
+        return (
+            f"The file extension {hint.extension} suggests {named} ({hint.source}), so it is "
+            "listed first among the tied candidates; an extension is a hint, not evidence.",
+        )
+    return (
+        f"The file extension {hint.extension} suggests {named} ({hint.source}), but the samples "
+        "don't support it" + (": it is not among the tied candidates." if tied else "."),
     )
 
 

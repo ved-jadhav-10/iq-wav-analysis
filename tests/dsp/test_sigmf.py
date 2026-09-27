@@ -48,7 +48,8 @@ def test_missing_or_invalid_sample_rate_is_unknown_never_defaulted(
     rec = read_sigmf(write(tmp_path, global_))
     assert rec.sample_rate.level is EvidenceLevel.UNKNOWN
     assert rec.sample_rate.value is None
-    assert rec.sample_rate.resolve_hint == RATE_HINT
+    assert rec.sample_rate.resolve_hint and RATE_HINT in rec.sample_rate.resolve_hint
+    assert rec.sample_rate.alternatives  # the standard SDR device rates
 
 
 @pytest.mark.parametrize("datatype", [None, "cf16_le", 7])

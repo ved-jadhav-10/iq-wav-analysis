@@ -1,0 +1,4161 @@
+{
+  "benchVersion": "0.1.0",
+  "set": "dev",
+  "generator": "0.1.0",
+  "numpy": "2.5.3",
+  "summary": {
+    "files": 200,
+    "ingestMismatches": 0,
+    "sniffer": {
+      "correct": 102,
+      "correct, by convention": 98
+    },
+    "snifferWrong": 0,
+    "trueRateAmongCandidates": 124,
+    "trueRateMedianRank": 21.0,
+    "verifiedValues": 0,
+    "acceptedDecodes": 0,
+    "decodingStages": [],
+    "note": "No stage can accept a decode yet (FEC and framing are M5/M6), so acceptedDecodes is 0 by construction; the null-set gate becomes meaningful when they land."
+  },
+  "files": [
+    {
+      "seed": 0,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 1,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "conv 1/2 + convolutional",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 2,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "uncoded",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "2fsk",
+            "chain": "RS(255,223)",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "8fsk",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": 14,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 3,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "am"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 34,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 4,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": 16,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 5,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8fsk",
+            "chain": "conv 1/2 + helical",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": 17,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 6,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8fsk",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 15,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 7,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "conv 1/2 + helical",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "2fsk",
+            "chain": "conv 1/2 + convolutional",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 33,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 8,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "uncoded",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 9,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "conv 7/8",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 10,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "uncoded",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 11,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "conv 1/2 + helical",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "qpsk",
+            "chain": "RS(255,223)",
+            "sync": "Barker-13",
+            "pulse": "rect"
+          },
+          {
+            "modulation": "fm"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 31,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 12,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "conv 1/2 + block",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 13,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "conv 1/2 + convolutional",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "am"
+          },
+          {
+            "modulation": "fm"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 36,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 14,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "conv 1/2 + helical",
+            "sync": "Barker-13",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 15,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "conv 1/2 + block",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 16,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "LDPC(576) + block",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cf32_le",
+      "rateRank": 21,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 17,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "64qam",
+            "chain": "conv 1/2 + block",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": 33,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 18,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "conv 1/2 + helical",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "8fsk",
+            "chain": "RS(255,223)",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 14,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 19,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "CCSDS ASM",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 20,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "fm"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 21,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8fsk",
+            "chain": "LDPC(576) + block",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "16qam",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "8psk",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "POCSAG",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 22,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "64qam",
+            "chain": "RS(255,223)",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 23,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "uncoded",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "16qam",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "am"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 24,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 10,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 25,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "fm"
+          },
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2 + helical",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 26,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "conv 3/4",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cf32_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 27,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": 33,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 28,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 29,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 30,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "conv 1/2 + helical",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": 13,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 31,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "am"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 32,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "RS(255,223) + conv 1/2, CCSDS-like",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 14,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 33,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 34,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cf32_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 35,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "LDPC(576) + block",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": 19,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 36,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "LDPC(576) + block",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": 11,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 37,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "64qam",
+            "chain": "conv 7/8",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "8psk",
+            "chain": "LDPC(576) + block",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 3,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 38,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": 14,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 39,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "conv 1/2 + helical",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "qpsk",
+            "chain": "conv 1/2 + helical",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "64qam",
+            "chain": "uncoded",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": 36,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 40,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "conv 3/4",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 41,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 42,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "conv 1/2",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 43,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "conv 1/2 + helical",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": 31,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 44,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8fsk",
+            "chain": "conv 1/2",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 45,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 46,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 3,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 47,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "RS(255,223) + conv 1/2, CCSDS-like",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 30,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 48,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": 30,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 49,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "conv 1/2 + block",
+            "sync": "CCSDS ASM",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 50,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "POCSAG",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": 19,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 51,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "conv 7/8",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 52,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 3/4",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "16qam",
+            "chain": "RS(255,223)",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": 30,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 53,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": 24,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 54,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": 37,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 55,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "RS(255,223) + conv 1/2, CCSDS-like",
+            "sync": "POCSAG",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cf32_le",
+      "rateRank": 11,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 56,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "conv 1/2 + helical",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "2fsk",
+            "chain": "conv 1/2 + block",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 18,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 57,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8fsk",
+            "chain": "conv 1/2 + block",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cf32_le",
+      "rateRank": 2,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 58,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "uncoded",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 59,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "conv 1/2 + helical",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": 39,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 60,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 61,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "64qam",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": 29,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 62,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "noise"
+          },
+          {
+            "modulation": "am"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 63,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "conv 3/4",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "2fsk",
+            "chain": "conv 1/2",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 64,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "RS(255,223)",
+            "sync": "Barker-13",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": 17,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 65,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "POCSAG",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 66,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "Barker-13",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 67,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "conv 1/2 + convolutional",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": 32,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 68,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "fm"
+          },
+          {
+            "modulation": "16qam",
+            "chain": "LDPC(576) + block",
+            "sync": "POCSAG",
+            "pulse": "rect"
+          },
+          {
+            "modulation": "am"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 33,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 69,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "64qam",
+            "chain": "conv 7/8",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 13,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 70,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "LDPC(576) + block",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 1,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 71,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "fm"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 18,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 72,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "64qam",
+            "chain": "conv 7/8",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 37,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 73,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2 + block",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 74,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "fm"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 26,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 75,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "conv 1/2 + block",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 76,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "qpsk",
+            "chain": "RS(255,223) + conv 1/2, CCSDS-like",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 77,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "64qam",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 78,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "conv 1/2 + convolutional",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 20,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 79,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": 3,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 80,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "conv 1/2 + block",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 81,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "qpsk",
+            "chain": "conv 3/4",
+            "sync": "POCSAG",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 82,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "RS(255,223)",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": 13,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 83,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "uncoded",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 84,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "conv 7/8",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 85,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "conv 1/2 + block",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 11,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 86,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": 30,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 87,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "uncoded",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cf32_le",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 88,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "64qam",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "CCSDS ASM",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": 33,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 89,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "conv 1/2 + helical",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 90,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "uncoded",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 6,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 91,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "64qam",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "Barker-13",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 92,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "64qam",
+            "chain": "conv 1/2",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 93,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "am"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 12,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 94,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "LDPC(576) + block",
+            "sync": "POCSAG",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": 24,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 95,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "64qam",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2 + helical",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 96,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "Barker-13",
+            "pulse": "rect"
+          },
+          {
+            "modulation": "8fsk",
+            "chain": "conv 1/2",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 97,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "conv 1/2",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 98,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 99,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "conv 1/2 + block",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 39,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 100,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "conv 1/2",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": 8,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 101,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 102,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "RS(255,223) + conv 1/2, CCSDS-like",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "bpsk",
+            "chain": "conv 3/4",
+            "sync": "CCSDS ASM",
+            "pulse": "rect"
+          },
+          {
+            "modulation": "64qam",
+            "chain": "conv 1/2",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": 25,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 103,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "fm"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": 37,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 104,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "conv 7/8",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 105,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "am"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": 14,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 106,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "RS(255,223)",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": 33,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 107,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "conv 1/2 + helical",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 8,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 108,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "RS(255,223) + conv 1/2, CCSDS-like",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 109,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 7/8",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": 29,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 110,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "conv 1/2 + block",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": 31,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 111,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": 14,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 112,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": 14,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 113,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "8psk",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "am"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 28,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 114,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "fm"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 115,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "conv 1/2 + block",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 116,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 35,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 117,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": 37,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 118,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "am"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 119,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8fsk",
+            "chain": "LDPC(576) + block",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 120,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 121,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": 33,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 122,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8fsk",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 123,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "conv 1/2 + helical",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": 37,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 124,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8fsk",
+            "chain": "RS(255,223)",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 20,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 125,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "conv 1/2 + convolutional",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "16qam",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "POCSAG",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 38,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 126,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "am"
+          },
+          {
+            "modulation": "qpsk",
+            "chain": "conv 7/8",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 2,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 127,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "am"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 128,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "fm"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 129,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": 38,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 130,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "uncoded",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 131,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "conv 1/2 + block",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 132,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8fsk",
+            "chain": "LDPC(576) + block",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cf32_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 133,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": 13,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 134,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 1,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 135,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "LDPC(576) + block",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "am"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 136,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "LDPC(576) + block",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "4fsk",
+            "chain": "conv 3/4",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "bpsk",
+            "chain": "conv 1/2 + block",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cf32_le",
+      "rateRank": 8,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 137,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "conv 1/2 + block",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": 7,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 138,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 139,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "am"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 140,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "RS(255,223) + conv 1/2, CCSDS-like",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 6,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 141,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "conv 1/2 + convolutional",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 7,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 142,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 143,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": 36,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 144,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "am"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 30,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 145,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "conv 1/2 + convolutional",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "64qam",
+            "chain": "conv 7/8",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 146,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "conv 7/8",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "noise"
+          },
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 21,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 147,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "conv 7/8",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 148,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "conv 1/2",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 19,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 149,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "64qam",
+            "chain": "conv 1/2 + convolutional",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cf32_le",
+      "rateRank": 39,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 150,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "fm"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 151,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 7/8",
+            "sync": "POCSAG",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 152,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cf32_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 153,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cf32_le",
+      "rateRank": 10,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 154,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "uncoded",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "16qam",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cf32_le",
+      "rateRank": 8,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 155,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "conv 1/2",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "2fsk",
+            "chain": "conv 3/4",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 3,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 156,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "RS(255,223)",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 33,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 157,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cf32_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 158,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8fsk",
+            "chain": "uncoded",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": 22,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 159,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "64qam",
+            "chain": "RS(255,223)",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": 19,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 160,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "conv 3/4",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 161,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 162,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 163,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8fsk",
+            "chain": "RS(255,223)",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 164,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "noise"
+          },
+          {
+            "modulation": "fm"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 165,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "conv 3/4",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "4fsk",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": 31,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 166,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "conv 1/2 + helical",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 38,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 167,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": 23,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 168,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "conv 3/4",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "fm"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 169,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "fm"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 34,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 170,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "RS(255,223)",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 4,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 171,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 172,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": 32,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 173,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 8,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 174,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "RS(255,223)",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 175,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 176,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 177,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "LDPC(576) + block",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": 38,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 178,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "noise"
+          },
+          {
+            "modulation": "16qam",
+            "chain": "RS(255,223)",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 179,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "RS(255,223) + conv 1/2, CCSDS-like",
+            "sync": "CCSDS ASM",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": 14,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 180,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "conv 1/2 + helical",
+            "sync": "CCSDS ASM",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cf32_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 181,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 182,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "conv 1/2 + block",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci8",
+      "rateRank": 6,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 183,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "conv 1/2 + helical",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 33,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 184,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "qpsk",
+            "chain": "conv 7/8",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 36,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 185,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "2fsk",
+            "chain": "conv 1/2 + block",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": 18,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 186,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": 8,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 187,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "uncoded",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cu8",
+      "rateRank": 18,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 188,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "Barker-13",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cf32_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 189,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8fsk",
+            "chain": "conv 1/2 + block",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": 14,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 190,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8fsk",
+            "chain": "conv 1/2",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 191,
+      "datatype": "cu8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "conv 1/2 + 802.11",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "cu8",
+      "rateRank": 37,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 192,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "4fsk",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": 31,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 193,
+      "datatype": "ci16_be",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "fm"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_be",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 194,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8psk",
+            "chain": "conv 1/2 + LTE QPP",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct",
+      "sniffed": "ci16_le",
+      "rateRank": 2,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 195,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cf32_le",
+      "rateRank": null,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 196,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "8fsk",
+            "chain": "conv 1/2",
+            "sync": "POCSAG",
+            "pulse": "rrc"
+          },
+          {
+            "modulation": "noise"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": 29,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 197,
+      "datatype": "ci8",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "64qam",
+            "chain": "RS(255,223) + conv 1/2, CCSDS-like",
+            "sync": "POCSAG",
+            "pulse": "rect"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci8",
+      "rateRank": 29,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 198,
+      "datatype": "cf32_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "16qam",
+            "chain": "RS(204,188) + conv 2/3, DVB-like",
+            "sync": "CCSDS ASM",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "cf32_le",
+      "rateRank": 2,
+      "verified": 0,
+      "acceptedDecodes": 0
+    },
+    {
+      "seed": 199,
+      "datatype": "ci16_le",
+      "labels": {
+        "signals": [
+          {
+            "modulation": "bpsk",
+            "chain": "LDPC(576) + block",
+            "sync": "Barker-13",
+            "pulse": "rrc"
+          }
+        ]
+      },
+      "ingest": "ok",
+      "sniffer": "correct, by convention",
+      "sniffed": "ci16_le",
+      "rateRank": 6,
+      "verified": 0,
+      "acceptedDecodes": 0
+    }
+  ]
+}

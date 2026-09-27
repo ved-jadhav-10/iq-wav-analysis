@@ -25,6 +25,7 @@ from dsp.ingest.assumptions import (
     iq_order,
 )
 from dsp.ingest.formats import SampleFormat
+from dsp.ingest.rate import center_frequency_parameter, rate_candidates, sample_rate_parameter
 from dsp.ingest.reader import Segment, SegmentReader
 from dsp.results import Assumptions
 
@@ -206,8 +207,8 @@ def _recording(
         segments=segments,
         datatype=datatype,
         data_offset=data_offset,
-        sample_rate=_measurement(global_.get(SAMPLE_RATE.key), SAMPLE_RATE, "S/s"),
-        center_frequency=_center_frequency(captures),
+        sample_rate=_sample_rate(global_.get(SAMPLE_RATE.key), name, fmt),
+        center_frequency=_center_frequency(captures, name),
     )
 
 
@@ -284,10 +285,30 @@ def _datatype(raw: object, channels: object) -> Parameter:
     return DATATYPE.measured(fmt.datatype)
 
 
-def _center_frequency(captures: list[dict[str, Any]]) -> Parameter:
+def _sample_rate(raw: object, name: str, fmt: SampleFormat | None) -> Parameter:
+    """The stated rate, or UNKNOWN with the file-name and device-rate candidates."""
+    rate = _measurement(raw, SAMPLE_RATE, "S/s")
+    if rate.level is not EvidenceLevel.UNKNOWN:
+        return rate
+    datatype = fmt.datatype if fmt else None
+    return sample_rate_parameter(
+        rate_candidates(PurePosixPath(name).name, datatype),
+        datatype,
+        f"{SAMPLE_RATE.key} in SigMF metadata; candidates from the file name and SDR device rates",
+        rate.evidence[0],
+    )
+
+
+def _center_frequency(captures: list[dict[str, Any]], name: str) -> Parameter:
     first = _measurement(
         captures[0].get(CENTER_FREQUENCY.key), CENTER_FREQUENCY, "Hz", allow_zero=True
     )
+    if first.level is EvidenceLevel.UNKNOWN:
+        return center_frequency_parameter(
+            PurePosixPath(name).name,
+            f"{CENTER_FREQUENCY.key} in SigMF metadata; candidates from the file name",
+            first.evidence[0],
+        )
     changes = [
         f"capture {i} (from sample {c.get('core:sample_start')}) is at {c[CENTER_FREQUENCY.key]} Hz"
         for i, c in enumerate(captures[1:], start=1)
