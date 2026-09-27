@@ -134,6 +134,9 @@ def main() -> int:
                     "core:description": f"TorchSig {torchsig.__version__} {class_name}, "
                     f"impairment level {IMPAIRMENT_LEVEL}",
                     "core:recorder": "torchsig",
+                    "core:extensions": [
+                        {"name": "torchsig", "version": torchsig.__version__, "optional": True}
+                    ],
                 },
                 "captures": [{"core:sample_start": 0}],
                 "annotations": [annotation(c) for c in sample.component_signals],
