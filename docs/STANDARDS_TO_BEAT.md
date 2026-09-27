@@ -71,11 +71,10 @@ These are tools to learn from or build on. Star counts and pushes are as of 26 S
 | [galois](https://github.com/mhostetter/galois) 0.4.11 | Finite fields (Numba), BCH and RS codes | MIT | **Primary GF/RS dependency.** Makes the RS Galois-field Fourier test straightforward. |
 | scikit-commpy 0.8.0, reedsolo 1.7.0, pyldpc 0.7.9 | Python FEC | BSD-3 / public domain / MIT | commpy (last release 2022) and pyldpc (2020) are stale: vendor the functions we need; don't depend on them. **Known pitfalls are in [§6](#6-engineering-lessons-from-rivals-free-bug-reports).** |
 | komm 0.34.0 | Most active Python comms toolbox | **GPL-3.0** | Reference only; keep out of the product |
-| PySDR code | Textbook examples (FSM/TSM/FAM, etc.) | **CC BY-NC-SA** | Learn from it; don't copy it into the product |
+| [PySDR](https://pysdr.org) | Free IQ/DSP textbook with code examples (FSM/TSM/FAM, etc.) | **CC BY-NC-SA** | Onboarding and method reference; don't copy its code into the product |
 | Sionna 2.1 | NVIDIA link-level simulator, now on PyTorch | Apache-2.0 | Too heavy for an air-gapped CPU install |
 | onnxruntime 1.30, numba 0.67, sigmf 1.13 | Inference, JIT, metadata | MIT / BSD / LGPL | All have Windows wheels; numpy 2.5 needs Python 3.12+ |
 | Reference decoders: readsb, AIS-catcher, rtl_433, multimon-ng, SatDump; redsea | Ground-truth decoders for real captures | GPL; redsea MIT | Run as subprocesses in the test harness only |
-| [PySDR](https://pysdr.org) | Free IQ/DSP textbook | CC | Team onboarding |
 
 ---
 
@@ -304,7 +303,7 @@ Other teams found these bugs by testing against ground truth. We should design t
 | D1 | **Deep-learning AMC evaluated on public datasets** (RadioML 2018.01A, TorchSig/Sig53, HisarMod) with a full −20 to +30 dB curve, calibration and open-set noise rejection | sigma and Devansh evaluate only on their own synthetic data; RadioFry's RadioML models are "experimental, not production" |
 | D2 | **Web GUI (React/TS, WebGL) with sigma-level blind decoding depth**, running air-gapped | The deepest decoders are desktop apps (sigma, Vertex); the web apps (Devansh, SignalScope, Pinpoint) decode far less |
 | D3 | **Open sealed benchmark plus head-to-head results** against public rival tools, including a null set for false-accept rate | ICHNOVA's sealed set is 30 files, BPSK/QPSK only; nobody benchmarks rivals |
-| D4 | **Committed, licensed, Indian over-the-air recordings** with protocol-level ground truth (ADS-B CRC, AIS CRC, FM RDS, NOAA/Meteor over India, Indian HF via KiwiSDR) | sigma's recordings aren't in its repo; ICHNOVA's are mostly foreign time stations |
+| D4 | **Committed, licensed, Indian over-the-air recordings** with protocol-level ground truth (Indian NAVTEX and other HF via KiwiSDR, ADS-B CRC, AIS CRC, Meteor-M LRPT; NOAA APT and FM RDS only if confirmed on air in India) | sigma's recordings aren't in its repo; ICHNOVA's are mostly foreign time stations |
 | D5 | **Analyst-in-the-loop:** correct any stage and every later stage re-runs automatically, with a before/after diff | Devansh re-runs 3 overrides and only records feedback; sigma's workbench is manual |
 | D6 | **Multi-GB streaming through the entire chain**, not just detection | Pinpoint streams 2 GiB (detection only); sigma stops at 10 M samples |
 | D7 | **Overlapping co-channel and frequency-hopping signals** (detect and label, even when decoding isn't possible) | No rival attempts this |
@@ -327,8 +326,8 @@ These are **targets, not claims.** A number moves into the deck only after a `be
 | Estimation | Symbol rate / SNR / CFO error | sigma: SNR within 0.3 dB, rate within 1 Hz on its own files | Rate ≤ 0.1% at ≥ 10 dB; SNR ±1 dB over 0–20 dB; CFO ≤ 1% of Rs, reported per SNR bucket |
 | AMC, public data | RadioML 2018.01A, 24 classes, held-out, **with corrected SNR labels** | None published; ~10K-parameter models reach about 58–60% averaged / 92–96% peak in papers | ≥ 93% at SNR ≥ +10 dB; ≥ 55% averaged over all 26 SNRs (stretch: 60%); full curve published with a ≤ 50K-parameter model |
 | AMC, open set | Held-out modulations as unknowns, per SNR bin | None published | AUROC ≥ 0.90 at ≥ 6 dB; FPR@95%TPR and OSCR reported |
-| AMC, real signals | Accuracy on labelled real captures (Phase 8) | None published; papers show about 96% → 35% sim-to-real drops | Report before/after fine-tuning; target ≥ 85% at ≥ 10 dB |
-| AMC, in scope | ≥ 12 digital classes, TorchSig-impaired, **independent** generator | sigma: 99% at 4 dB, own synthetic | ≥ 95% at ≥ 6 dB; ≥ 80% at 0 dB; noise/unknown rejection ≥ 99% |
+| AMC, real signals | Accuracy on labelled real captures (PLAN M8) | None published; papers show about 96% → 35% sim-to-real drops | Report before/after fine-tuning; target ≥ 85% at ≥ 10 dB |
+| AMC, in scope | ≥ 12 digital classes, TorchSig-impaired, **independent** generator | sigma: 99% at 4 dB, own synthetic | ≥ 95% at ≥ 6 dB; ≥ 80% at 0 dB; noise-only rejection ≥ 99% (unseen modulations: see the open-set row) |
 | FEC ID: convolutional | Code + generators + puncturing, soft decisions | sigma: works "at several percent BER" | ≥ 95% at raw channel BER ≤ 2% (K ≤ 7), with LLR input |
 | FEC ID: RS | n, k, field polynomial, first root, alignment | sigma: identifies with errors present | ≥ 95% at symbol-error rate after the inner decoder ≤ 1% (or on uncoded-inner streams at channel BER ≤ 10⁻³) |
 | FEC ID: LDPC | Catalogue matrix + alignment | sigma: standards catalogue | ≥ 95% at Es/N0 ≥ the code's decoding threshold + 1 dB, via soft syndrome scoring |
@@ -364,7 +363,7 @@ Our column shows **targets** and must say so on the slide. The point is to show 
 
 ## 10. How to refresh this document
 
-- **Automated:** the `rival-scan` project skill (see [CLAUDE_SKILLS_MCP.md](../claude/CLAUDE_SKILLS_MCP.md)) re-runs the searches and diffs the results against this file.
+- **Automated:** the `rival-scan` custom skill ([CLAUDE_SKILLS_MCP §8](../.claude/CLAUDE_SKILLS_MCP.md#8-custom-project-skills); not created yet) will re-run the searches and diff the results against this file. Until it exists, run the queries below by hand.
 - **Queries used on 26 Sep:** `SIH26147`, `SIH 26147`, `26147 in:name,description,readme`, `iq wav signal parameter extraction`, `NTRO signal analysis`, `automated model analysis .IQ .wav`, `modulation classification iq wav created:>2026-08-15`, and `sigmf created:>2026-08-20`.
 - **Before each pitch:** re-check the top 8. `sigma` and `Pinpoint` were both pushed on the day of this snapshot.
 - **Unauthenticated GitHub API limit:** 60 requests/hour. Run `gh auth login` to raise it.

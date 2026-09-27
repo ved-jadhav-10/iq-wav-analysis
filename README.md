@@ -10,7 +10,7 @@ Every result shows the evidence behind it and how sure we are. Nothing is guesse
 | **Organisation** | NTRO (National Technical Research Organisation) |
 | **Category / theme** | Software. Theme is listed as Space Technology on recent mirrors; confirm on [sih.gov.in](https://sih.gov.in). |
 | **Idea submission deadline** | **30 September 2026** |
-| **Status** | M0: product identity and the analysis workspace UI are built (running on synthetic demo data); the signal-processing backend starts in M1. See [docs/PLAN.md](docs/PLAN.md). |
+| **Status** | M0 in progress: product identity and the analysis workspace UI are built and run on synthetic demo data; Python tooling, backend and CI are next, and signal processing starts in M1. Details in [PLAN §0](docs/PLAN.md#0-progress). |
 
 ---
 
@@ -44,8 +44,8 @@ flowchart TD
 | Stage | What it does | Main methods |
 |---|---|---|
 | Ingest | Reads the file; never guesses the format silently | SigMF `core:datatype`, WAV header, quadrature check on stereo WAV, memory-mapped chunked reads |
-| Detect | Finds every signal in time and frequency | Welch PSD, streaming spectrogram, CFAR-style thresholding with hysteresis |
-| Estimate | Measures each signal | Occupied bandwidth, M2M4 SNR, cyclostationary / Oerder-Meyr symbol rate, M-th-power CFO, higher-order cumulants |
+| Detect | Finds every signal in time and frequency | Welch PSD, streaming spectrogram, OS-CFAR with hysteresis at 2–3 FFT sizes merged by non-maximum suppression |
+| Estimate | Measures each signal | Occupied bandwidth, RRC roll-off, SNR from three estimators (PSD, M2M4, eigenvalue/MDL) whose agreement sets the confidence, Oerder-Meyr / cyclostationary symbol rate, M-th-power CFO, higher-order cumulants |
 | Sync | Locks onto timing and carrier | RRC matched filter, Gardner / Mueller-Müller, Costas loop, FSK discriminator |
 | Classify | Names the modulation | Explainable cumulant rules + a tiny (~10K-parameter) 1-D CNN on [I, Q, \|x\|, Δφ] after resampling to fixed samples-per-symbol; trained on our own impaired generator; layered unknown-signal rejection (SNR gate → energy score → prototype distance); disagreement is shown, not hidden |
 | Demodulate | Produces soft bits (LLRs) | PSK/QAM slicers with Gray demapping, FSK detection, phase-ambiguity candidates |
@@ -71,7 +71,7 @@ This design builds on ideas from public SIH26147 prototypes. They include Devans
 
 We state these up front; they are not buried in fine print:
 
-- **Absolute sample rate and centre frequency cannot be recovered from a headerless file.** We read them from SigMF or the WAV header, or ask the analyst, and print the assumption on every report. Relative values (symbol rate as a fraction of sample rate, bandwidth as a fraction of the recording) are still estimated.
+- **Absolute sample rate and centre frequency are never assumed for a headerless file.** We read them from SigMF or the WAV header. Otherwise we rank candidates (filename hints, the WAV `auxi` chunk, standard SDR device rates) and promote one to HYPOTHESIS only when a structural match supports it, such as a recognised symbol rate. With no candidate we report normalised units and ask the analyst. The assumption is printed on every report. Relative values (symbol rate as a fraction of sample rate, bandwidth as a fraction of the recording) are still estimated.
 - **Blind FEC and interleaver identification is catalogue-bounded and probabilistic.** A result is VERIFIED only with CRC, sync-word or re-encode proof. The acceptance threshold rises with the number of hypotheses tried.
 - **Pseudo-random interleavers with an unknown permutation are practically unrecoverable.** We test a catalogue of *standard* permutations (3GPP turbo, LTE QPP, 802.11, DVB-S2). Anything else is reported as UNKNOWN with the bounds we can measure, such as its period. General permutation recovery is an open research problem, so we don't claim a seed search.
 - **Blind code identification needs enough clean data.** Hard-decision rank methods fail on long codes at high raw BER. For example, at 3% BER a 2,040-bit RS(255,223) row is almost never error-free. So we set identification targets per code family and use soft decisions: convolutional codes at channel BER, RS after the inner decoder, LDPC at Es/N0.
@@ -88,7 +88,7 @@ We state these up front; they are not buried in fine print:
 | ML | PyTorch for training; **ONNX Runtime** (FP32, no signal processing inside the graph) for CPU inference; our own impaired generator for training; TorchSig as an independent test generator (WSL2); RadioML 2018.01A only as a public comparison benchmark | RadioML has documented SNR-label and class-name flaws and a non-commercial licence |
 | Metadata | `sigmf` Python package | Standard input/output format |
 | API | FastAPI + Uvicorn, SQLite, server-sent events for progress | One local process, no Redis or Postgres, air-gap friendly |
-| GUI | React + TypeScript (Vite). Waterfall from a server-side tiled STFT pyramid (uint8 dB tiles) drawn as WebGL2 textures with a colormap shader (deck.gl or regl). uPlot for PSD and time plots. Density-texture constellation. Components borrowed from [IQEngine](https://github.com/IQEngine/IQEngine) (MIT, React/TS over FastAPI). | Handles multi-GB recordings smoothly; changing contrast needs no re-fetch |
+| GUI | React + TypeScript (Vite) + Tailwind. Waterfall drawn with raw WebGL2 as uint8 dB (R8) textures through a colormap LUT shader; from M2 it is fed by a server-side tiled STFT pyramid with level of detail (deck.gl TileLayer or regl only if that needs a library). uPlot for PSD and time plots. Density-texture constellation. Components borrowed from [IQEngine](https://github.com/IQEngine/IQEngine) (MIT, React/TS over FastAPI). | Handles multi-GB recordings smoothly; changing contrast needs no re-fetch |
 | Reports | JSON, CSV, PDF, SigMF `.sigmf-meta` annotations | Reusable by other tools |
 | Quality | pytest + Hypothesis, Vitest, Playwright E2E, ruff, pyright, ESLint, `tsc`, GitHub Actions | Measured, not claimed |
 | Packaging | FastAPI serves the built frontend; offline wheelhouse; **PyInstaller one-folder** build with `NUMBA_CACHE_DIR` pointed at a writable directory; no CDN; bundled fonts | Runs with networking switched off; avoids known frozen-Numba failures on Windows |
@@ -98,13 +98,14 @@ We state these up front; they are not buried in fine print:
 ```
 iq-wav-analysis/
 ├── frontend/        React + TypeScript (Vite) workspace: waterfall, PSD, constellation, evidence, hypotheses — built
-├── dsp/             (M1) Python package: ingest, detect, estimate, sync, demod, gf2, deinterleave, fec, framing, evidence
+├── dsp/             (M1) Python package: ingest, synth (ground-truth generator), detect, estimate, sync, demod, gf2, deinterleave, fec, framing, evidence
 ├── ml/              (M4) AMC training, evaluation, ONNX export
-├── backend/         (M0/M1) FastAPI app: uploads, jobs, SSE progress, SQLite storage, exports
+├── backend/         (M0) FastAPI app: serves the UI; later uploads, jobs, SSE progress, SQLite storage, exports
 ├── bench/           (M1) Sealed benchmark, null set, rival comparisons, results
 ├── data/            Datasets and captures (git-ignored; only manifests are committed)
 ├── docs/            Plan, standards to beat, source dossier
-└── claude/          Claude Code tooling notes for building this (dev-time only)
+├── reports/         Research report behind the plan (sources in research_notes/)
+└── .claude/         Claude Code project config: CLAUDE.md, tooling map, later settings, skills and agents (dev-time only)
 ```
 
 ## Getting started
@@ -121,7 +122,7 @@ npm run lint && npm run typecheck && npm run build
 
 The build loads nothing from the network: fonts, code and data are bundled.
 
-For the Python side (from M1): **Python 3.12** (pinned) and [uv](https://docs.astral.sh/uv/). Optional: **WSL2 Ubuntu 22.04+** for TorchSig; radioconda for GNU Radio; an RTL-SDR dongle for receive-only captures.
+For the Python side (set up in M0): **Python 3.12** (pinned; `uv python install 3.12`) and [uv](https://docs.astral.sh/uv/). Optional: **WSL2 Ubuntu 22.04+** for TorchSig; radioconda for GNU Radio; an RTL-SDR dongle for receive-only captures.
 
 ## Lawful use
 
@@ -132,17 +133,18 @@ In India, lawful interception is governed by the **Telecommunications Act 2023, 
 For that reason, recordings come from these sources, in order of preference:
 1. public licensed datasets
 2. remote public KiwiSDR receivers (receive-only, broadcast and safety signals such as NAVTEX)
-3. our own captures, only under the college's umbrella and after checking with the organisers or WPC
+3. our own captures, only under an institutional umbrella and after checking with the organisers or WPC
 
 The tool does not capture, transmit or decrypt. Record the provenance of every recording in its SigMF metadata.
 
 ## Documentation
 
-- [docs/PLAN.md](docs/PLAN.md): the production plan — 1.0 scope, production bar, architecture, product identity, milestones M0–M8
+- [docs/PLAN.md](docs/PLAN.md): the production plan — progress, 1.0 scope, production bar, architecture, product identity, milestones M0–M8
 - [docs/STANDARDS_TO_BEAT.md](docs/STANDARDS_TO_BEAT.md): commercial tools, open-source prior art, 35 verified rival repos, and our measurable targets
-- [claude/CLAUDE_SKILLS_MCP.md](claude/CLAUDE_SKILLS_MCP.md): Claude Code skills, MCP servers, custom skills, CLAUDE.md rules and hooks for building this
-- [docs/SIHPS_ANALYSIS.md](docs/SIHPS_ANALYSIS.md): the source dossier, trimmed to SIH26147 and generic material
+- [.claude/CLAUDE_SKILLS_MCP.md](.claude/CLAUDE_SKILLS_MCP.md): which Claude Code skills, plugins and MCP servers to use in each milestone, plus custom skills, CLAUDE.md rules and hooks
+- [reports/SIH26147 solution research.md](reports/SIH26147%20solution%20research.md): the 2022–2026 research behind the plan's methods and targets
+- [docs/SIHPS_ANALYSIS.md](docs/SIHPS_ANALYSIS.md): the source dossier, trimmed to SIH26147 and generic material (older than the documents above where they differ)
 
 ## Credits
 
-We credit every library we use in this README and in `THIRD_PARTY.md` (to be added). Public SIH26147 repositories were studied as benchmarks, not copied. Most have no licence, which means all rights are reserved.
+We credit every library we use in this README and in `THIRD_PARTY.md` (generated from the lockfiles in M0). Public SIH26147 repositories were studied as benchmarks, not copied. Most have no licence, which means all rights are reserved.

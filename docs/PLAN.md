@@ -4,9 +4,50 @@
 
 This plan is written to ship **Sanket 1.0 as production software**, not a demo. It is organised by milestones with measurable exit gates rather than by calendar weeks or people. Last revised **27 September 2026**.
 
-Related: [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · [Source dossier](SIHPS_ANALYSIS.md) · [Research report](../reports/SIH26147%20solution%20research.md) · [Claude Code tooling](../claude/CLAUDE_SKILLS_MCP.md)
+Related: [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · [Source dossier](SIHPS_ANALYSIS.md) · [Research report](../reports/SIH26147%20solution%20research.md) · [Claude Code tooling](../.claude/CLAUDE_SKILLS_MCP.md)
 
-**Where we are (27 September 2026):** M0 is the only milestone with code. `frontend/` is a working Vite + React 19 + TS + Tailwind 4 workspace UI (waterfall, PSD, constellation, evidence cards, hypothesis ledger, frames/assumptions tables) driven entirely by a synthetic demo signal — no real signal has been processed yet. Nothing exists yet under `dsp/`, `backend/`, `ml/` or `bench/`; there is no Python project, no API, and no CI. M0's remaining items (Python/uv workspace, FastAPI skeleton, CI, pre-commit, Playwright smoke test) are open. M1–M8 have not started. Next concrete step is closing out M0's remaining bullets, then M1 (ingest + evidence model + ground-truth generator + bench v0). SIH idea submission is **30 September 2026** — 3 days out — and the plan/README/docs are the primary submission artifact since no backend exists yet to demo beyond the synthetic UI.
+---
+
+## 0. Progress
+
+*Checked against the repository on **27 September 2026**. This section is the only place status is tracked; update it whenever an item lands. The milestones themselves are defined in [§5](#5-milestones).*
+
+**Overall:** M0 is partly done. The product identity and the analysis workspace UI are built and tested, but they run only on synthetic demo data generated in the browser. There is no Python code, no backend, no CI and no signal processing yet, so Sanket has not analysed a real recording. M1–M8 have not started.
+
+| Stage | State | Exit gate met |
+|---|---|---|
+| Idea submission (external, due 30 Sep) | In progress: docs done, deck not started | — |
+| M0 Foundations and identity | In progress: identity and workspace UI done; Python, backend and CI tooling open | No |
+| M1 Ingest, evidence model, ground-truth lab, bench v0 | Not started | No |
+| M2 Spectrum, detection, estimation, real tiles | Not started | No |
+| M3 Synchronisation and demodulation | Not started | No |
+| M4 Modulation classification | Not started | No |
+| M5 GF(2) kernel, interleavers, FEC | Not started | No |
+| M6 Framing | Not started | No |
+| M7 Analyst workflow and reports | Not started | No |
+| M8 Hardening, validation and 1.0 release | Not started | No |
+
+**Idea submission** ([§9](#9-external-dates-sih))
+- [x] Plan, standards to beat, source dossier and research report
+- [x] Workspace UI to screenshot, labelled *synthetic demo data*
+- [ ] Confirm the template, theme and PS details on sih.gov.in
+- [ ] Re-run the rival scan ([STANDARDS §10](STANDARDS_TO_BEAT.md#10-how-to-refresh-this-document)); `gh` is logged in
+- [ ] Build the deck; every number traced to STANDARDS or labelled as a target
+
+**M0**
+- [x] Vite + React 19 + TypeScript (strict) + Tailwind 4 frontend
+- [x] Product identity (§4): name, mark, colour tokens, evidence levels, type, colormaps
+- [x] Analysis workspace on a deterministic synthetic capture: WebGL2 waterfall, uPlot PSD, constellation and FSK tone views, evidence cards, hypothesis ledger, frames and assumptions tables
+- [x] 26 unit tests pass; lint, typecheck and production build clean (all re-run 27 Sep)
+- [x] Browser check in both themes at 390/1180/1512 px: no console errors, no requests beyond localhost
+- [ ] Python 3.12 + uv workspace for `dsp/`, `ml/`, `backend/`, `bench/` (uv and Python 3.12.14 are installed; the workspace itself isn't created)
+- [ ] FastAPI skeleton serving the built frontend; `sanket` start command
+- [ ] CI on Windows and Ubuntu (no `.github/` yet)
+- [ ] pre-commit hooks; `THIRD_PARTY.md`
+- [ ] Playwright smoke test with sockets blocked
+- [ ] Claude Code setup for M0 ([tooling map](../.claude/CLAUDE_SKILLS_MCP.md#1-tooling-by-milestone))
+
+**Next, in order:** finish the idea-submission items by 30 September, then close M0's open items and its exit gate, then start M1.
 
 ---
 
@@ -80,7 +121,7 @@ One local process tree, no external services. The pieces and the contracts betwe
 
   ```
   frontend/   React + TS + Vite — exists (identity, workspace, demo data)
-  dsp/        ingest, detect, estimate, sync, demod, gf2, deinterleave, fec, framing, evidence
+  dsp/        ingest, synth (ground-truth generator), detect, estimate, sync, demod, gf2, deinterleave, fec, framing, evidence
   ml/         AMC training, evaluation, ONNX export, model card
   backend/    FastAPI app, job runner, storage, exports, packaging
   bench/      generator presets, sealed set, null set, results, perf, decoder-truth harness
@@ -112,29 +153,28 @@ The identity is implemented in [`frontend/`](../frontend/) and is the reference 
 
 ## 5. Milestones
 
-Dependencies: **M0 → M1 → M2 → M3 → (M4 ∥ M5) → M6 → M8**, with **M7** running alongside from M2 onward. Every exit gate is measured in `bench/` or CI, never asserted.
+Dependencies: **M0 → M1 → M2 → M3 → (M4 ∥ M5) → M6 → M8**, with **M7** running alongside from M2 onward. Every exit gate is measured in `bench/` or CI, never asserted. Status is tracked in [§0](#0-progress); the Claude Code skills, plugins and MCP servers for each milestone are mapped in the [tooling map](../.claude/CLAUDE_SKILLS_MCP.md#1-tooling-by-milestone).
 
-| | Milestone | Status |
-|---|---|---|
-| M0 | Foundations and identity | Identity and workspace UI done; repo tooling and CI open |
-| M1 | Ingest, evidence model, ground-truth lab, bench v0 | Not started |
-| M2 | Spectrum, detection, estimation, real tiles in the UI | Not started |
-| M3 | Synchronisation and demodulation | Not started |
-| M4 | Modulation classification | Not started |
-| M5 | GF(2) kernel, interleavers, FEC | Not started |
-| M6 | Framing | Not started |
-| M7 | Analyst workflow and reports | Not started |
-| M8 | Hardening, validation and 1.0 release | Not started |
+| | Milestone |
+|---|---|
+| M0 | Foundations and identity |
+| M1 | Ingest, evidence model, ground-truth lab, bench v0 |
+| M2 | Spectrum, detection, estimation, real tiles in the UI |
+| M3 | Synchronisation and demodulation |
+| M4 | Modulation classification |
+| M5 | GF(2) kernel, interleavers, FEC |
+| M6 | Framing |
+| M7 | Analyst workflow and reports |
+| M8 | Hardening, validation and 1.0 release |
 
 ### M0 — Foundations and identity
 
-- **Done:** Vite + React 19 + TypeScript (strict) + Tailwind 4 frontend; design tokens; the full analysis workspace driven by a deterministic synthetic capture generated in a Web Worker — WebGL2 waterfall (R8 dB texture + LUT shader, zoom/pan/keyboard, detection overlays, hover readout), uPlot PSD locked to the waterfall's frequency window, constellation and FSK tone views, evidence cards, hypothesis ledger, frames and assumptions tables. 26 unit tests (FFT, colormaps, generator, view maths, formatting); lint, typecheck and production build clean; verified in headless Chrome in both themes and at 390/1180/1512 px with no console errors and no network requests beyond localhost.
-- **Remaining:**
-  - Python 3.12 (pinned) + uv workspace for `dsp/`, `ml/`, `backend/`, `bench/`
-  - FastAPI skeleton that serves the built frontend; a `sanket` start command
-  - CI on Windows and Ubuntu: ruff, pyright (strict on `dsp/`), pytest, `tsc`, ESLint, Vitest, build, licence check
-  - pre-commit hooks; `THIRD_PARTY.md` generated from lockfiles
-  - Playwright smoke test (the identity-pass browser checks become the first E2E), run once with sockets blocked
+- **Frontend:** Vite + React 19 + TypeScript (strict) + Tailwind 4; the §4 identity and design tokens; the full analysis workspace driven by a deterministic synthetic capture generated in a Web Worker — WebGL2 waterfall (R8 dB texture + LUT shader, zoom/pan/keyboard, detection overlays, hover readout), uPlot PSD locked to the waterfall's frequency window, constellation and FSK tone views, evidence cards, hypothesis ledger, frames and assumptions tables; unit tests for FFT, colormaps, generator, view maths and formatting.
+- **Python:** 3.12 (pinned) + uv workspace for `dsp/`, `ml/`, `backend/`, `bench/`.
+- **Backend:** FastAPI skeleton that serves the built frontend; a `sanket` start command.
+- **CI** on Windows and Ubuntu: ruff, pyright (strict on `dsp/`), pytest, `tsc`, ESLint, Vitest, build, licence check.
+- pre-commit hooks; `THIRD_PARTY.md` generated from lockfiles.
+- Playwright smoke test (the identity-pass browser checks become the first E2E), run once with sockets blocked.
 - **Exit gate:** a clean clone goes green in CI on both platforms, and `sanket` starts one process that serves the UI with networking off.
 
 ### M1 — Ingest, evidence model, ground-truth lab, bench v0
@@ -147,7 +187,7 @@ Dependencies: **M0 → M1 → M2 → M3 → (M4 ∥ M5) → M6 → M8**, with **
   - **sample-rate candidates**, ranked: filename hints, the WAV `auxi` chunk, standard SDR device rates, and structural matches (a recognised symbol rate × candidate Fs within 0.1 % promotes it to HYPOTHESIS). With no candidate, output in normalised units.
   - an `Assumptions` block in every output
 - **Ground-truth lab:**
-  - NumPy generator as the main source: modulation × pulse shape × FEC × interleaver × framing with CRC, writing SigMF with the truth in annotations; Sig53-style impairments (AWGN, CFO, phase noise, IQ imbalance, multipath/fading, timing drift, clipping, AGC), ±10–20 % samples-per-symbol jitter, an explicit noise class
+  - `dsp/synth`, a NumPy generator, as the main source: modulation × pulse shape × FEC × interleaver × framing with CRC, writing SigMF with the truth in annotations; Sig53-style impairments (AWGN, CFO, phase noise, IQ imbalance, multipath/fading, timing drift, clipping, AGC), ±10–20 % samples-per-symbol jitter, an explicit noise class
   - TorchSig (WSL2) as an **independent** test generator; generate only the subsets needed (full corpus is about 1 TB)
 - **Bench v0:** fixed seeds; a **sealed** held-out set never inspected during development; the null set; `bench run` writes versioned results JSON.
 - **Exit gate:** round-trip tests pass for every format; sniffer confusion matrix published; 0 silent defaults (tested); bench v0 and null set generated.
@@ -187,6 +227,7 @@ The core differentiator (D9): no public implementation of these methods exists.
 - **Interleavers:** block via rank-drop plus a KS test on rank distributions; Forney via an (I, J, phase) grid; helical via the dedicated period/row/column estimators; pseudo-random only against a catalogue of **standard permutations** (3GPP turbo, LTE QPP, 802.11, DVB-S2) — anything else is UNKNOWN with its measured period.
 - **False-alarm control:** every hypothesis counted into the ledger; Holm (or Benjamini–Hochberg) across the whole search; rank matrices always have L ≥ w + 30 rows; every detector also runs on shuffled bits and reports its empirical false-alarm rate.
 - **Decoders:** Numba Viterbi (soft), RS via `galois`, normalised min-sum LDPC.
+- *Stretch:* a gradient-boosted code-family pre-classifier on handcrafted bitstream features (run length, entropy, autocorrelation, rank features) that only **orders** the catalogue search; the full search still runs and decides. Built only if the search misses the §2 performance target; versioned and recorded in results like the AMC model.
 - **Exit gate:** per-family, soft-decision FEC-ID targets from STANDARDS §8; **0 false accepts on ≥ 1,000 null files**.
 
 ### M6 — Framing

@@ -3,6 +3,8 @@
 Sep 21, 2026 · \@Someone · SIH26147 edition, updated Sep 23, 2026
  
 > **Trimmed edition.** This document originally covered two SIH 2026 problem statements. Everything specific to the other one (SIH26053, DRDO LiDAR mapping) has been removed; only SIH26147 (.IQ/.wav signal analysis) and generic material remain. Section letter B and its numbering (B1--B7) are unchanged from the original two-PS edition, so cross-references still match.
+
+> **How this relates to our other documents (27 September 2026).** This dossier is a source snapshot from 23 September and is kept as written. Newer documents supersede it where they differ. The B2 solution plan and the B4 risk table are superseded by [PLAN.md](PLAN.md), and the rival list and "14+ repos" count in B6 by [STANDARDS_TO_BEAT.md](STANDARDS_TO_BEAT.md), which found 35 and lists its corrections in §5.5. The method choices are superseded by the [research report](../reports/SIH26147%20solution%20research.md). The B7 judge questions are still current.
  
 ## Start here: how to read this document
  
