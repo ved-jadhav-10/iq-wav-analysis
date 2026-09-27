@@ -9,6 +9,7 @@ dependencies = ["sanket-backend", "sanket-dsp", "sanket-bench"]
 [dependency-groups]
 dev = [
  "httpx2",
+ "jsonschema>=4.26.0",
  "pre-commit",
  "pyright",
  "pytest",

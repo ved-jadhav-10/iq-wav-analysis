@@ -8,6 +8,7 @@ from typing import Any
 
 from dsp.evidence import EvidenceLevel, Parameter
 from dsp.ingest.formats import SampleFormat
+from dsp.results import Assumptions
 
 FORMAT_HINT = "Choose the sample format from the ranked format candidates."
 RATE_HINT = (
@@ -29,6 +30,15 @@ class SigmfRecording:
     def sample_format(self) -> SampleFormat | None:
         value = self.datatype.value
         return SampleFormat.parse(value) if isinstance(value, str) else None
+
+    @property
+    def assumptions(self) -> Assumptions:
+        return Assumptions(
+            datatype=self.datatype,
+            sample_rate=self.sample_rate,
+            center_frequency=self.center_frequency,
+            iq_order=_iq_order(self.sample_format),
+        )
 
 
 @dataclass(frozen=True)
@@ -106,3 +116,32 @@ def _measurement(raw: object, field: _Field, unit: str, *, allow_zero: bool = Fa
     if not math.isfinite(value) or value < 0 or (value == 0 and not allow_zero):
         return field.unknown(f"{field.key} has an invalid value: {raw!r}")
     return field.measured(value, unit=unit)
+
+
+def _iq_order(fmt: SampleFormat | None) -> Parameter | None:
+    method = "SigMF convention: the in-phase component is stored first"
+    if fmt is None:
+        return Parameter(
+            id="iq_order",
+            name="IQ order",
+            value=None,
+            level=EvidenceLevel.UNKNOWN,
+            method=method,
+            evidence=(
+                "The sample format is unknown, so it isn't known whether samples are complex.",
+            ),
+            resolve_hint=FORMAT_HINT,
+        )
+    if not fmt.is_complex:
+        return None
+    return Parameter(
+        id="iq_order",
+        name="IQ order",
+        value="IQ",
+        level=EvidenceLevel.HYPOTHESIS,
+        method=method,
+        evidence=(
+            "The samples can't confirm it: swapping I and Q only mirrors the spectrum. Toggle it "
+            "if a known carrier sits on the wrong side.",
+        ),
+    )

@@ -6,7 +6,7 @@ uncertainty, and VERIFIED requires a CRC, sync-recurrence or re-encode proof.
 """
 
 from enum import StrEnum
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
@@ -20,13 +20,17 @@ class EvidenceLevel(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
-class _Model(BaseModel):
+class CamelModel(BaseModel):
+    """Immutable, strict about unknown fields, and camelCase in JSON to match the frontend."""
+
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
         alias_generator=to_camel,
         populate_by_name=True,
         serialize_by_alias=True,
+        # Every field is always written, so the published schema marks every field required.
+        json_schema_serialization_defaults_required=True,
     )
 
 
@@ -35,17 +39,53 @@ FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
 Value = int | FiniteFloat | str
 
 
-class Alternative(_Model):
+class Alternative(CamelModel):
     value: Value
     confidence: Confidence
 
 
-class Proof(_Model):
+class Proof(CamelModel):
     kind: Literal["crc", "sync_recurrence", "reencode"]
     detail: str = Field(min_length=1)
 
 
-class Parameter(_Model):
+# The honesty rules restated in JSON Schema, so a consumer that doesn't use this model still
+# enforces them. They must agree with Parameter._check_honesty; tests check both on the same cases.
+_HONESTY_SCHEMA: dict[str, Any] = {
+    "allOf": [
+        {
+            "if": {"properties": {"level": {"const": "UNKNOWN"}}},
+            "then": {
+                "properties": {
+                    "value": {"type": "null"},
+                    "evidence": {"minItems": 1},
+                    "resolveHint": {"type": "string", "minLength": 1},
+                }
+            },
+            "else": {"properties": {"value": {"not": {"type": "null"}}}},
+        },
+        {
+            "if": {"properties": {"level": {"const": "ESTIMATED"}, "value": {"type": "number"}}},
+            "then": {"properties": {"uncertainty": {"type": "number"}}},
+        },
+        {
+            "if": {"properties": {"level": {"const": "VERIFIED"}}},
+            "then": {"properties": {"proof": {"type": "object"}}},
+            "else": {"properties": {"proof": {"type": "null"}}},
+        },
+    ]
+}
+
+
+class Parameter(CamelModel):
+    """A reported value with its evidence level, method and evidence.
+
+    UNKNOWN has no value and states why and what would settle it; an ESTIMATED number carries
+    its uncertainty; VERIFIED, and only VERIFIED, carries a CRC, sync-recurrence or re-encode proof.
+    """
+
+    model_config = ConfigDict(json_schema_extra=_HONESTY_SCHEMA)
+
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
     value: Value | None

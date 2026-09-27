@@ -1,0 +1,432 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Sanket results",
+  "$defs": {
+    "Alternative": {
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Value"
+        },
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        }
+      },
+      "required": [
+        "value",
+        "confidence"
+      ],
+      "title": "Alternative",
+      "type": "object"
+    },
+    "Assumptions": {
+      "additionalProperties": false,
+      "description": "What the analysis took as given about the recording; every result and export carries it.\n\nEach entry is stated even when it is UNKNOWN, so nothing about the input is silently defaulted.",
+      "properties": {
+        "datatype": {
+          "$ref": "#/$defs/Parameter",
+          "description": "Sample format as a SigMF core:datatype."
+        },
+        "sampleRate": {
+          "$ref": "#/$defs/Parameter"
+        },
+        "centerFrequency": {
+          "$ref": "#/$defs/Parameter"
+        },
+        "iqOrder": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Parameter"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "'IQ' or 'QI'. Null only when the datatype is a known real-valued format."
+        }
+      },
+      "required": [
+        "datatype",
+        "sampleRate",
+        "centerFrequency",
+        "iqOrder"
+      ],
+      "title": "Assumptions",
+      "type": "object"
+    },
+    "EvidenceLevel": {
+      "enum": [
+        "VERIFIED",
+        "MEASURED",
+        "ESTIMATED",
+        "HYPOTHESIS",
+        "UNKNOWN"
+      ],
+      "title": "EvidenceLevel",
+      "type": "string"
+    },
+    "Parameter": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "else": {
+            "properties": {
+              "value": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          "if": {
+            "properties": {
+              "level": {
+                "const": "UNKNOWN"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": "null"
+              },
+              "evidence": {
+                "minItems": 1
+              },
+              "resolveHint": {
+                "minLength": 1,
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "level": {
+                "const": "ESTIMATED"
+              },
+              "value": {
+                "type": "number"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "uncertainty": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        {
+          "else": {
+            "properties": {
+              "proof": {
+                "type": "null"
+              }
+            }
+          },
+          "if": {
+            "properties": {
+              "level": {
+                "const": "VERIFIED"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "proof": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      ],
+      "description": "A reported value with its evidence level, method and evidence.\n\nUNKNOWN has no value and states why and what would settle it; an ESTIMATED number carries\nits uncertainty; VERIFIED, and only VERIFIED, carries a CRC, sync-recurrence or re-encode proof.",
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        },
+        "uncertainty": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Standard uncertainty (1 sigma), in the value's unit.",
+          "title": "Uncertainty"
+        },
+        "level": {
+          "$ref": "#/$defs/EvidenceLevel"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "method": {
+          "minLength": 1,
+          "title": "Method",
+          "type": "string"
+        },
+        "evidence": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "alternatives": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Alternative"
+          },
+          "title": "Alternatives",
+          "type": "array"
+        },
+        "warnings": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        },
+        "resolveHint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For UNKNOWN: what additional input would settle it.",
+          "title": "Resolvehint"
+        },
+        "proof": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Proof"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "value",
+        "unit",
+        "uncertainty",
+        "level",
+        "confidence",
+        "method",
+        "evidence",
+        "alternatives",
+        "warnings",
+        "resolveHint",
+        "proof"
+      ],
+      "title": "Parameter",
+      "type": "object"
+    },
+    "Proof": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "crc",
+            "sync_recurrence",
+            "reencode"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "detail": {
+          "minLength": 1,
+          "title": "Detail",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "detail"
+      ],
+      "title": "Proof",
+      "type": "object"
+    },
+    "StageResult": {
+      "additionalProperties": false,
+      "description": "One stage's output. A stage that throws is FAILED with its error; the job carries on.",
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "done",
+            "not-applicable",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "parameters": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Parameter"
+          },
+          "title": "Parameters",
+          "type": "array"
+        },
+        "warnings": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Present exactly when status is failed.",
+          "title": "Error"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "status",
+        "summary",
+        "parameters",
+        "warnings",
+        "error"
+      ],
+      "title": "StageResult",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The results of analysing one recording.",
+  "properties": {
+    "schemaVersion": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schemaversion",
+      "type": "string"
+    },
+    "sanketVersion": {
+      "minLength": 1,
+      "title": "Sanketversion",
+      "type": "string"
+    },
+    "assumptions": {
+      "$ref": "#/$defs/Assumptions"
+    },
+    "stages": {
+      "items": {
+        "$ref": "#/$defs/StageResult"
+      },
+      "title": "Stages",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "sanketVersion",
+    "assumptions",
+    "stages"
+  ],
+  "type": "object"
+}

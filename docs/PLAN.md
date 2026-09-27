@@ -12,13 +12,13 @@ Related: [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · 
 
 *Checked against the repository on **27 September 2026**. This section is the only place status is tracked; update it whenever an item lands. The milestones themselves are defined in [§5](#5-milestones).*
 
-**Overall:** M0 is done: CI is green on Windows and Ubuntu, and `sanket` starts one local process that serves the workspace UI. M1 is in progress: the evidence model and SigMF ingest exist, but the UI still runs only on synthetic demo data generated in the browser, so Sanket has not analysed a real recording. M2–M8 have not started.
+**Overall:** M0 is done: CI is green on Windows and Ubuntu, and `sanket` starts one local process that serves the workspace UI. M1 is in progress: the evidence model, the results schema and SigMF ingest exist, but the UI still runs only on synthetic demo data generated in the browser, so Sanket has not analysed a real recording. M2–M8 have not started.
 
 | Stage | State | Exit gate met |
 |---|---|---|
 | Idea submission (external, due 30 Sep) | In progress: docs done, deck not started | — |
 | M0 Foundations and identity | Done | Yes: CI green on Windows and Ubuntu (27 Sep) |
-| M1 Ingest, evidence model, ground-truth lab, bench v0 | In progress: evidence model, SigMF datatypes, reader and SigMF metadata done | No |
+| M1 Ingest, evidence model, ground-truth lab, bench v0 | In progress: evidence model, results schema, SigMF datatypes, reader and SigMF metadata done | No |
 | M2 Spectrum, detection, estimation, real tiles | Not started | No |
 | M3 Synchronisation and demodulation | Not started | No |
 | M4 Modulation classification | Not started | No |
@@ -54,14 +54,14 @@ Related: [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · 
 - [x] All 28 SigMF `core:datatype` formats parsed, decoded to normalised samples and encoded; round-trip test for every format; IQ/QI swap
 - [x] Chunked, random-access sample reader with header offset and trailing-byte count
 - [x] SigMF metadata to Parameters: datatype, sample rate and centre frequency MEASURED, or UNKNOWN with a resolve hint, never defaulted; file size checked against the datatype
-- [ ] JSON schema generated from the evidence model; results JSON with `schema_version` and the `Assumptions` block
+- [x] JSON schema generated from the evidence model (`dsp/results.schema.json`, honesty rules included, stale-schema test); results JSON with `schemaVersion` and the `Assumptions` block (datatype, sample rate, centre frequency, IQ order — each stated, UNKNOWN if need be)
 - [ ] Raw files without metadata: format sniffer with ranked candidates and a confusion matrix over all formats
 - [ ] Sample-rate candidates (filename hints, WAV `auxi` chunk, SDR device rates, structural matches)
 - [ ] WAV mono and stereo
 - [ ] Ground-truth generator `dsp/synth` (NumPy) with impairments; TorchSig as an independent generator
 - [ ] Bench v0: fixed seeds, sealed set, null set, `bench run`
 
-**Next:** in M1, the results schema and assumptions block, then the format sniffer.
+**Next:** in M1, the format sniffer for raw files, then sample-rate candidates.
 
 ---
 
@@ -96,7 +96,7 @@ Related: [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · 
 | Security | Binds to 127.0.0.1 by default; upload size limits; export filenames sanitised (a rival had path traversal here); no shell interpolation of filenames; dependency audit | Security tests; `pip-audit` and `npm audit` in CI |
 | Reproducibility | Same file + same Sanket version + same settings → byte-identical results JSON. Results record Sanket version, catalogue version, model hash and seeds | Hash test on the bench set |
 | Accessibility | Every control keyboard-reachable; WCAG 2.2 AA contrast in both themes; evidence never conveyed by colour alone; reduced-motion respected | axe checks in E2E; manual keyboard pass per release |
-| Observability | Structured local logs (JSON lines, per job); per-stage timings in results; a "diagnostics bundle" export with logs and versions but no recording data | Tests on the bundle contents |
+| Observability | Structured local logs (JSON lines, per job); per-stage timings in the run record (§3), kept out of the results so they stay reproducible; a "diagnostics bundle" export with logs and versions but no recording data | Tests on the bundle and run-record contents |
 | Licensing | No GPL, AGPL or non-commercial code in the product; `THIRD_PARTY.md` generated from the lockfiles | Licence check in CI fails the build |
 | Data handling | Recordings never leave the machine; the workspace directory is configurable; deleting a job deletes everything derived from it | Tests on deletion |
 | Packaging | One-folder build per platform, one start command, frozen Numba works (pinned numba/llvmlite, writable `NUMBA_CACHE_DIR`, kernels pre-warmed) | Frozen-build smoke test in CI on both platforms |
@@ -114,8 +114,9 @@ flowchart LR
 
 One local process tree, no external services. The pieces and the contracts between them:
 
-- **Stage graph.** Each stage is a pure function `run(inputs, params, overrides) → StageResult {parameters, artifacts, warnings, timings}`. Its cache key is the hash of its input artifacts, parameters and stage code version. An analyst override invalidates that stage and its descendants only, which is what makes "correct a stage, re-run the rest, show the diff" (D5) cheap.
+- **Stage graph.** Each stage is a pure function `run(inputs, params, overrides) → StageResult {parameters, artifacts, warnings}`; its duration goes to the run record. Its cache key is the hash of its input artifacts, parameters and stage code version. An analyst override invalidates that stage and its descendants only, which is what makes "correct a stage, re-run the rest, show the diff" (D5) cheap.
 - **Evidence model.** `Parameter {value, unit, uncertainty, level, confidence, method, evidence[], alternatives[], warnings[], resolve_hint, proof}` in [`dsp/src/dsp/evidence.py`](../dsp/src/dsp/evidence.py) is the source of truth; its JSON uses the frontend's camelCase field names. It enforces the honesty rules when a value is built: UNKNOWN has no value and must state why and what would settle it, an ESTIMATED number carries its uncertainty, and VERIFIED requires a CRC, sync-recurrence or re-encode proof. Downstream proof may **promote** an upstream value (a CRC pass makes the modulation VERIFIED), and the promotion is recorded as evidence. The frontend type in [`frontend/src/lib/evidence.ts`](../frontend/src/lib/evidence.ts) predates it: the demo data puts uncertainty inside the unit text. That type is replaced by one generated from the API schema when real results reach the UI (M2).
+- **Results and run record.** A job writes two documents, each with its own schema version. `results.json` ([`dsp/results.py`](../dsp/src/dsp/results.py), schema generated to `results.schema.json`) holds only what the analysis concluded — the `Assumptions` block, stage results, parameters — and is byte-identical across runs. `run.json` holds how the run went: the job id and the SHA-256 of the results it belongs to, per-stage duration and whether the stage was computed or served from cache, start and end times, peak memory, Sanket version, and hardware class and OS version. It never contains the hostname, username or file paths. `bench perf` reads run records.
 - **Hypothesis ledger.** Every blind search writes every candidate it tried — statistic, p-value, corrected threshold, outcome, reason — plus its shuffled-bit false-alarm runs. The D8 hypothesis table renders this ledger directly.
 - **Streaming.** Readers are memory-mapped and chunked; detectors run on chunks; nothing loads a whole file.
 - **Tiles.** The server computes a multi-resolution STFT pyramid quantised to uint8 dB in fixed-size tiles, **max-pooled** between levels so short bursts survive zooming out. The frontend already renders a uint8 dB texture through a LUT shader; switching it from one demo texture to server tiles is an M2 task.
@@ -129,7 +130,7 @@ One local process tree, no external services. The pieces and the contracts betwe
   | `GET /jobs/{id}/results` | Stage results, parameters, ledger, frames |
   | `GET /tiles/{rec}/{level}/{t}/{f}` | uint8 dB waterfall tile |
   | `POST /jobs/{id}/overrides` | Analyst correction → downstream re-run |
-  | `GET /jobs/{id}/export.{json,csv,pdf,sigmf}` | Exports, each carrying the assumptions block |
+  | `GET /jobs/{id}/export.{json,csv,pdf,sigmf}` | Exports, each carrying the assumptions block; the run record is included unless the analyst opts out |
 
 - **Repository layout.**
 
@@ -259,6 +260,7 @@ The core differentiator (D9): no public implementation of these methods exists.
 - Overrides on any stage → downstream re-run → before/after diff.
 - Job history; batch view; compare view.
 - Exports: JSON (schema-versioned), CSV, PDF report, SigMF annotations; each carries the assumptions block and the Sanket/catalogue/model versions.
+- Run record in exports: an "Include run record (timings, machine details)" checkbox in the export dialog, ticked by default and remembering the last choice; unticked, `run.json` is left out and the PDF drops its timing table. The CLI and batch export take `--no-run-record`.
 - **Exit gate:** Playwright E2E covers open → analyse → override → export, with sockets blocked.
 
 ### M8 — Hardening, validation and 1.0 release
