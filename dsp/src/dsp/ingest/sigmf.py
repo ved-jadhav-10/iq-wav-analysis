@@ -126,6 +126,8 @@ def _datatype(raw: object, data_path: Path, header: int) -> Parameter:
         fmt = SampleFormat.parse(raw)
     except ValueError as error:
         return DATATYPE.unknown(str(error))
+    if not fmt.is_sigmf:
+        return DATATYPE.unknown(f"{raw!r} is not a SigMF core:datatype")
     warnings: tuple[str, ...] = ()
     if data_path.exists() and (extra := (data_path.stat().st_size - header) % fmt.sample_bytes):
         warnings = (

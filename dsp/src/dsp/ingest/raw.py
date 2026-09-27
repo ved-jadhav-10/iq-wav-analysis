@@ -4,12 +4,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dsp.evidence import EvidenceLevel, Parameter
-from dsp.ingest.assumptions import FREQUENCY_HINT, RATE_HINT, iq_order
+from dsp.ingest.assumptions import iq_order
 from dsp.ingest.formats import SampleFormat
+from dsp.ingest.rate import (
+    RateCandidate,
+    center_frequency_parameter,
+    rate_candidates,
+    sample_rate_parameter,
+)
 from dsp.ingest.sniff import FormatSniff, sniff
 from dsp.results import Assumptions
-
-_NO_METADATA = "Raw file: no metadata"
 
 
 @dataclass(frozen=True)
@@ -27,7 +31,14 @@ class RawRecording:
         return SampleFormat.parse(value) if isinstance(value, str) else None
 
     @property
+    def rate_candidates(self) -> tuple[RateCandidate, ...]:
+        """Ranked sample-rate candidates; `rate.structural_test` can promote one."""
+        fmt = self.sample_format
+        return rate_candidates(self.data_path.name, fmt.datatype if fmt else None)
+
+    @property
     def assumptions(self) -> Assumptions:
+        fmt = self.sample_format
         return Assumptions(
             datatype=self.datatype,
             data_offset=Parameter(
@@ -44,10 +55,19 @@ class RawRecording:
                 convention="A raw file is taken to have no header. If the recording tool wrote "
                 "one, enter its length.",
             ),
-            sample_rate=_unknown("sample_rate", "Sample rate", RATE_HINT),
-            center_frequency=_unknown("center_frequency", "Centre frequency", FREQUENCY_HINT),
+            sample_rate=sample_rate_parameter(
+                self.rate_candidates,
+                fmt.datatype if fmt else None,
+                "Sample-rate candidates: file name and standard SDR device rates",
+                "A raw file doesn't record its sample rate.",
+            ),
+            center_frequency=center_frequency_parameter(
+                self.data_path.name,
+                "Centre-frequency candidates: file name",
+                "A raw file doesn't record its centre frequency.",
+            ),
             iq_order=iq_order(
-                self.sample_format,
+                fmt,
                 "Convention for raw I/Q recordings: the in-phase component is stored first",
                 convention="Most SDR tools store I before Q, but a raw file doesn't say. Swap if a "
                 "known carrier sits on the wrong side of the spectrum.",
@@ -60,15 +80,3 @@ def read_raw(path: Path) -> RawRecording:
     if result.container is not None:
         raise ValueError(f"{path.name} is a {result.container.upper()} file, not raw samples")
     return RawRecording(path, result)
-
-
-def _unknown(id_: str, name: str, hint: str) -> Parameter:
-    return Parameter(
-        id=id_,
-        name=name,
-        value=None,
-        level=EvidenceLevel.UNKNOWN,
-        method=_NO_METADATA,
-        evidence=(f"A raw file doesn't record its {name.lower()}.",),
-        resolve_hint=hint,
-    )

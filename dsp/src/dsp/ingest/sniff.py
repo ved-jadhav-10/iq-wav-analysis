@@ -29,6 +29,7 @@ from numpy.typing import NDArray
 from dsp.evidence import Alternative, EvidenceLevel, Parameter
 from dsp.ingest.assumptions import FORMAT_HINT
 from dsp.ingest.formats import ALL_DATATYPES, SampleFormat
+from dsp.ingest.wav import W64_RIFF, W64_WAVE
 
 ORDER = 8
 BLOCK_BYTES = 1 << 16
@@ -77,7 +78,9 @@ class FormatSniff:
 
 def detect_container(head: bytes) -> Container | None:
     """A known container header at the start of the file, or None."""
-    if head[:4] in (b"RIFF", b"RF64", b"BW64") and head[8:12] == b"WAVE":
+    if head[:4] in (b"RIFF", b"RIFX", b"RF64", b"BW64") and head[8:12] == b"WAVE":
+        return "wav"
+    if head[:16] == W64_RIFF and head[24:40] == W64_WAVE:
         return "wav"
     return None
 
@@ -86,7 +89,7 @@ def sniff(path: Path, *, block_bytes: int = BLOCK_BYTES, blocks: int = BLOCKS) -
     """Score every datatype on a few blocks spread across the file; memory stays bounded."""
     size = path.stat().st_size
     with path.open("rb") as file:
-        container = detect_container(file.read(12))
+        container = detect_container(file.read(40))
         if container is not None:
             return FormatSniff(container, (), 0)
         chunks = [

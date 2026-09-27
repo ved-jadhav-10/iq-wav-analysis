@@ -54,3 +54,25 @@ def test_empty_file_yields_nothing(tmp_path: Path) -> None:
 def test_offset_outside_file_is_rejected(recording: tuple[Path, np.ndarray]) -> None:
     with pytest.raises(ValueError, match="outside the file"):
         SampleReader(recording[0], CI16, offset_bytes=10**9)
+
+
+def test_length_bounds_the_samples_read(tmp_path: Path) -> None:
+    path = tmp_path / "x.wav"
+    path.write_bytes(b"HDR!" + CI16.encode(np.array([0.5 + 0.5j, -0.5j, 0.25])) + b"TAIL")
+    with SampleReader(path, CI16, offset_bytes=4, length_bytes=8) as reader:
+        assert (reader.num_samples, reader.trailing_bytes) == (2, 0)
+        np.testing.assert_allclose(reader.read(0, 10), [0.5 + 0.5j, -0.5j], atol=2**-15)
+
+
+def test_length_past_the_end_is_rejected(recording: tuple[Path, np.ndarray]) -> None:
+    with pytest.raises(ValueError, match="overrun"):
+        SampleReader(recording[0], CI16, offset_bytes=4, length_bytes=4000)
+
+
+def test_24_bit_samples_are_read_in_chunks(tmp_path: Path) -> None:
+    fmt = SampleFormat.parse("ci24_le")
+    x = np.exp(2j * np.pi * 0.01 * np.arange(1000)) * 0.9
+    path = tmp_path / "x.iq"
+    path.write_bytes(fmt.encode(x))
+    with SampleReader(path, fmt) as reader:
+        np.testing.assert_allclose(np.concatenate(list(reader.chunks(333))), x, atol=2**-23)

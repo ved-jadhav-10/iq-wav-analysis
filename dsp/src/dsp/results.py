@@ -24,7 +24,10 @@ class Assumptions(CamelModel):
     Each entry is stated even when it is UNKNOWN, so nothing about the input is silently defaulted.
     """
 
-    datatype: Parameter = Field(description="Sample format as a SigMF core:datatype.")
+    datatype: Parameter = Field(
+        description="Sample format as a SigMF core:datatype, or ri24_le/ci24_le (and _be) for "
+        "24-bit integer PCM, which SigMF can't express."
+    )
     data_offset: Parameter = Field(description="Byte offset of the first sample in the data file.")
     sample_rate: Parameter
     center_frequency: Parameter

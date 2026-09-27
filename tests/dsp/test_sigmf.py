@@ -82,3 +82,9 @@ def test_data_offset_is_zero_by_the_sigmf_spec_or_read_from_header_bytes(tmp_pat
 def test_invalid_header_bytes_is_unknown(tmp_path: Path, header: object) -> None:
     rec = read_sigmf(write(tmp_path, {"core:datatype": "cu8"}, [{"core:header_bytes": header}]))
     assert rec.data_offset.level is EvidenceLevel.UNKNOWN
+
+
+def test_the_24_bit_extension_is_not_accepted_as_sigmf(tmp_path: Path) -> None:
+    rec = read_sigmf(write(tmp_path, {"core:datatype": "ri24_le"}))
+    assert rec.datatype.level is EvidenceLevel.UNKNOWN
+    assert "not a SigMF core:datatype" in rec.datatype.evidence[0]

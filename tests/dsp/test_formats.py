@@ -58,3 +58,39 @@ def test_iq_swap_exchanges_components() -> None:
     fmt = SampleFormat.parse("cf32_le")
     raw = np.frombuffer(fmt.encode(np.array([0.1 + 0.2j])), fmt.component_dtype)
     np.testing.assert_allclose(fmt.decode(raw, swap_iq=True), [0.2 + 0.1j], atol=1e-7)
+
+
+@pytest.mark.parametrize("datatype", ["ri24_le", "ri24_be", "ci24_le", "ci24_be"])
+def test_24_bit_extension_round_trips_but_is_not_sigmf(datatype: str) -> None:
+    fmt = SampleFormat.parse(datatype)
+    assert not fmt.is_sigmf and datatype not in ALL_DATATYPES
+    assert fmt.sample_bytes == (6 if fmt.is_complex else 3)
+    samples = np.array([0.5, -0.5, 1.0, -1.0, 2**-23, 0.0] * 2)
+    if fmt.is_complex:
+        samples = samples[:6] + 1j * samples[6:]
+    data = fmt.encode(samples)
+    assert len(data) == len(samples) * fmt.sample_bytes
+    decoded = fmt.decode(fmt.components(data))
+    expected = np.clip(np.real(samples), -1, 1 - 2**-23) + 1j * np.clip(
+        np.imag(samples), -1, 1 - 2**-23
+    )
+    np.testing.assert_allclose(
+        decoded, expected if fmt.is_complex else np.real(expected), atol=2**-24
+    )
+
+
+def test_24_bit_layout_is_three_bytes_per_component() -> None:
+    assert SampleFormat.parse("ri24_le").encode(np.array([-(2**-23)])) == b"\xff\xff\xff"
+    assert SampleFormat.parse("ri24_be").encode(np.array([0.5])) == b"\x40\x00\x00"
+    assert SampleFormat.parse("ri24_le").encode(np.array([0.5])) == b"\x00\x00\x40"
+
+
+@pytest.mark.parametrize("bad", ["ru24_le", "rf24_le", "ri24"])
+def test_24_bit_extension_is_signed_integer_only(bad: str) -> None:
+    with pytest.raises(ValueError):
+        SampleFormat.parse(bad)
+
+
+@pytest.mark.parametrize("datatype", ALL_DATATYPES)
+def test_every_sigmf_datatype_is_sigmf(datatype: str) -> None:
+    assert SampleFormat.parse(datatype).is_sigmf

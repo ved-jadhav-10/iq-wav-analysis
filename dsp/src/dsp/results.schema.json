@@ -48,7 +48,7 @@
       "properties": {
         "datatype": {
           "$ref": "#/$defs/Parameter",
-          "description": "Sample format as a SigMF core:datatype."
+          "description": "Sample format as a SigMF core:datatype, or ri24_le/ci24_le (and _be) for 24-bit integer PCM, which SigMF can't express."
         },
         "dataOffset": {
           "$ref": "#/$defs/Parameter",
