@@ -13,8 +13,14 @@ FREQUENCY_HINT = (
 )
 
 
-def iq_order(fmt: SampleFormat | None, method: str) -> Parameter | None:
-    """IQ order as a stated HYPOTHESIS for complex data, UNKNOWN if the format is, None if real."""
+def iq_order(
+    fmt: SampleFormat | None, method: str, convention: str | None = None
+) -> Parameter | None:
+    """IQ order as a stated HYPOTHESIS for complex data, UNKNOWN if the format is, None if real.
+
+    Pass `convention` when nothing but a convention says I comes first (raw files), so the value
+    is listed for review.
+    """
     if fmt is None:
         return Parameter(
             id="iq_order",
@@ -39,4 +45,5 @@ def iq_order(fmt: SampleFormat | None, method: str) -> Parameter | None:
             "The samples can't confirm it: swapping I and Q only mirrors the spectrum. Toggle it "
             "if a known carrier sits on the wrong side.",
         ),
+        convention=convention,
     )

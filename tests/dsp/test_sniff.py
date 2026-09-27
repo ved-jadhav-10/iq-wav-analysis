@@ -37,7 +37,11 @@ def sniff_bytes(data: bytes):
 def test_every_datatype_is_identified_on_a_structured_signal(datatype: str) -> None:
     signal = "qpsk, 2 sps, offset 0.2" if datatype[0] == "c" else "real if qpsk at 0.2"
     param = sniff_bytes(encode(datatype, signal)).datatype
-    assert (param.level, param.value, param.warnings) == (EvidenceLevel.HYPOTHESIS, datatype, ())
+    assert (param.level, param.value, param.convention) == (
+        EvidenceLevel.HYPOTHESIS,
+        datatype,
+        None,
+    )
 
 
 @pytest.mark.parametrize("datatype", ALL_DATATYPES)
@@ -49,7 +53,8 @@ def test_noise_never_yields_a_wrong_format(datatype: str) -> None:
 def test_indistinguishable_layouts_propose_complex_and_say_why() -> None:
     param = sniff_bytes(encode("ri16_le", "noise")).datatype
     assert (param.level, param.value) == (EvidenceLevel.HYPOTHESIS, "ci16_le")
-    assert "ri16_le" in param.warnings[0] and "can't tell them apart" in param.warnings[0]
+    assert param.convention and "ri16_le" in param.convention
+    assert "can't tell them apart" in param.convention
     assert "ri16_le" in {a.value for a in param.alternatives}
 
 

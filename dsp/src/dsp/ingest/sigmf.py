@@ -39,7 +39,7 @@ class SigmfRecording:
             sample_rate=self.sample_rate,
             center_frequency=self.center_frequency,
             iq_order=iq_order(
-                self.sample_format, "SigMF convention: the in-phase component is stored first"
+                self.sample_format, "SigMF specification: the in-phase component is stored first"
             ),
         )
 

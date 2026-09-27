@@ -2,11 +2,15 @@ import json
 from pathlib import Path
 from typing import Any, get_args
 
+import numpy as np
 import pytest
 from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 
-from dsp.evidence import EvidenceLevel, Parameter
+from bench.sniffer import COMPLEX_SIGNALS
+from dsp.evidence import EvidenceLevel, Parameter, Proof, promote
+from dsp.ingest.formats import SampleFormat
+from dsp.ingest.raw import read_raw
 from dsp.ingest.sigmf import read_sigmf
 from dsp.results import (
     SCHEMA_PATH,
@@ -97,6 +101,7 @@ VALID_PARAMETER: dict[str, Any] = {
     "warnings": [],
     "resolveHint": None,
     "proof": None,
+    "convention": None,
 }
 CRC = {"kind": "crc", "detail": "CRC-16 passed on 48 of 48 frames"}
 UNKNOWN = {"value": None, "uncertainty": None, "level": "UNKNOWN"}
@@ -116,6 +121,7 @@ UNKNOWN = {"value": None, "uncertainty": None, "level": "UNKNOWN"}
         pytest.param({"proof": CRC}, id="proof-without-verified"),
         pytest.param({"confidence": 1.5}, id="confidence-out-of-range"),
         pytest.param({"extra": 1}, id="unknown-field"),
+        pytest.param({"convention": "Most tools do this"}, id="convention-not-hypothesis"),
     ],
 )
 def test_schema_and_model_both_enforce_the_honesty_rules(overrides: dict[str, Any]) -> None:
@@ -133,6 +139,10 @@ def test_schema_and_model_both_enforce_the_honesty_rules(overrides: dict[str, An
         pytest.param({"level": "VERIFIED", "proof": CRC}, id="verified-with-proof"),
         pytest.param(
             UNKNOWN | {"evidence": ["No header"], "resolveHint": "Enter it"}, id="unknown"
+        ),
+        pytest.param(
+            {"value": "IQ", "uncertainty": None, "level": "HYPOTHESIS", "convention": "I first"},
+            id="hypothesis-on-a-convention",
         ),
     ],
 )
@@ -197,3 +207,67 @@ def test_stage_status_rules(
 def test_stage_ids_are_unique(results: Results) -> None:
     with pytest.raises(ValidationError, match="unique"):
         Results.model_validate(results.model_dump() | {"stages": results.stages * 2})
+
+
+def raw_results(tmp_path: Path, datatype: str = "ci16_le") -> Results:
+    x = COMPLEX_SIGNALS["noise"](np.random.default_rng(0), 16384) * 0.05
+    path = tmp_path / "capture.bin"
+    path.write_bytes(SampleFormat.parse(datatype).encode(x))
+    return Results(sanket_version="0.1.0", assumptions=read_raw(path).assumptions, stages=())
+
+
+def test_needs_review_lists_every_value_taken_on_a_convention(tmp_path: Path) -> None:
+    results = raw_results(tmp_path)
+    items = {(item.stage, item.parameter) for item in results.needs_review}
+    # Noise can't tell complex from real, and a raw file states neither its header nor IQ order.
+    assert items == {(None, "datatype"), (None, "data_offset"), (None, "iq_order")}
+    data = json.loads(results.to_json())
+    VALIDATOR.validate(data)
+    assert [item["parameter"] for item in data["needsReview"]] == [
+        "datatype",
+        "data_offset",
+        "iq_order",
+    ]
+    assert Results.model_validate(data) == results
+
+
+def test_needs_review_is_empty_when_everything_rests_on_evidence(results: Results) -> None:
+    assert results.needs_review == ()
+    assert json.loads(results.to_json())["needsReview"] == []
+
+
+def test_needs_review_includes_stage_parameters(results: Results) -> None:
+    guess = Parameter(
+        id="rotation",
+        name="Phase rotation",
+        value=0,
+        unit="deg",
+        level=EvidenceLevel.HYPOTHESIS,
+        method="Carried forward",
+        convention="The first rotation is kept until sync resolves it.",
+    )
+    stage = StageResult(id="demod", name="Demod", status="done", summary="s", parameters=(guess,))
+    edited = results.model_dump(exclude={"needs_review"}) | {"stages": (*results.stages, stage)}
+    updated = Results.model_validate(edited)
+    assert [(i.stage, i.parameter, i.value) for i in updated.needs_review] == [
+        ("demod", "rotation", 0)
+    ]
+
+
+def test_a_needs_review_list_that_disagrees_with_the_parameters_is_rejected(
+    tmp_path: Path,
+) -> None:
+    data = json.loads(raw_results(tmp_path).to_json())
+    data["needsReview"] = data["needsReview"][:1]  # hides two conventions
+    with pytest.raises(ValidationError, match="doesn't match"):
+        Results.model_validate(data)
+
+
+def test_promotion_clears_the_convention_and_records_it() -> None:
+    guess = Parameter.model_validate(
+        VALID_PARAMETER
+        | {"value": "IQ", "uncertainty": None, "level": "HYPOTHESIS", "convention": "I first"}
+    )
+    verified = promote(guess, Proof(kind="crc", detail="CRC-16 passed on 12 of 12 frames"))
+    assert verified.convention is None
+    assert "taken on a convention: I first" in verified.evidence[-1]

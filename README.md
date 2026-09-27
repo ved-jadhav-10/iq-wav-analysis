@@ -65,6 +65,8 @@ Every value the tool reports carries one of these levels, a confidence, the meth
 | **HYPOTHESIS** | A ranked candidate that isn't confirmed | "QPSK (0.71) or 8PSK (0.24): classifiers disagree" |
 | **UNKNOWN** | Can't be determined, with the reason and what would settle it | "Pseudo-random interleaver: period ≤ 2,048 bits; seed not recoverable" |
 
+Sometimes the evidence can't decide and a convention has to: a raw file doesn't say whether I or Q comes first, so we take I first, as most SDR tools write it. Such a value is always a HYPOTHESIS that names its convention. Every results file lists these values at the top under `needsReview`, so an empty list means nothing in the analysis rests on a guess.
+
 This design builds on ideas from public SIH26147 prototypes. They include Devansh-567's five honesty states and ICHNOVA's refusals that explain what evidence is missing. See [docs/STANDARDS_TO_BEAT.md](docs/STANDARDS_TO_BEAT.md).
 
 ## Honest limits
@@ -75,6 +77,7 @@ We state these up front; they are not buried in fine print:
 - **Blind FEC and interleaver identification is catalogue-bounded and probabilistic.** A result is VERIFIED only with CRC, sync-word or re-encode proof. The acceptance threshold rises with the number of hypotheses tried.
 - **Pseudo-random interleavers with an unknown permutation are practically unrecoverable.** We test a catalogue of *standard* permutations (3GPP turbo, LTE QPP, 802.11, DVB-S2). Anything else is reported as UNKNOWN with the bounds we can measure, such as its period. General permutation recovery is an open research problem, so we don't claim a seed search.
 - **Blind code identification needs enough clean data.** Hard-decision rank methods fail on long codes at high raw BER. For example, at 3% BER a 2,040-bit RS(255,223) row is almost never error-free. So we set identification targets per code family and use soft decisions: convolutional codes at channel BER, RS after the inner decoder, LDPC at Es/N0.
+- **A raw file's layout is inferred, never assumed silently.** The format sniffer ranks every SigMF datatype by how well it explains the bytes and reports UNKNOWN when formats tie. For noise and for real low-pass signals, the real and complex readings of the same bytes fit equally well; we then propose complex, which is how raw SDR recordings are usually stored, and list it under `needsReview`.
 - **A mono WAV is real-valued audio, not IQ.** Converting it with a Hilbert transform is an approximation, so digital-modulation labels from mono files are at most HYPOTHESIS.
 - **Modulation classification degrades at low SNR.** We publish the accuracy-vs-SNR curve and suppress labels outside the validated range.
 - **Out of scope:** decrypting protected payloads, live capture, and transmitting. We recover bits, not plaintext.

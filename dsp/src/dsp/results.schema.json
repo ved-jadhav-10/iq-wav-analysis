@@ -169,9 +169,25 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "convention": {
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "level": {
+                "const": "HYPOTHESIS"
+              }
+            }
+          }
         }
       ],
-      "description": "A reported value with its evidence level, method and evidence.\n\nUNKNOWN has no value and states why and what would settle it; an ESTIMATED number carries\nits uncertainty; VERIFIED, and only VERIFIED, carries a CRC, sync-recurrence or re-encode proof.",
+      "description": "A reported value with its evidence level, method and evidence.\n\nUNKNOWN has no value and states why and what would settle it; an ESTIMATED number carries\nits uncertainty; VERIFIED, and only VERIFIED, carries a CRC, sync-recurrence or re-encode proof.\nA value the evidence can't decide, taken on a stated convention instead, is a HYPOTHESIS that\nnames the convention; results list every such value under needsReview.",
       "properties": {
         "id": {
           "minLength": 1,
@@ -295,6 +311,20 @@
             }
           ],
           "default": null
+        },
+        "convention": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Set when the evidence can't decide and the value follows a stated convention instead: the convention and why an analyst should review it. Only on HYPOTHESIS.",
+          "title": "Convention"
         }
       },
       "required": [
@@ -310,7 +340,8 @@
         "alternatives",
         "warnings",
         "resolveHint",
-        "proof"
+        "proof",
+        "convention"
       ],
       "title": "Parameter",
       "type": "object"
@@ -338,6 +369,60 @@
         "detail"
       ],
       "title": "Proof",
+      "type": "object"
+    },
+    "ReviewItem": {
+      "additionalProperties": false,
+      "description": "A value taken on a convention rather than evidence, for the analyst to confirm.",
+      "properties": {
+        "stage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The stage that reported it; null for an assumption.",
+          "title": "Stage"
+        },
+        "parameter": {
+          "description": "The parameter's id.",
+          "title": "Parameter",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Value"
+        },
+        "convention": {
+          "title": "Convention",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage",
+        "parameter",
+        "name",
+        "value",
+        "convention"
+      ],
+      "title": "ReviewItem",
       "type": "object"
     },
     "StageResult": {
@@ -412,11 +497,11 @@
     }
   },
   "additionalProperties": false,
-  "description": "The results of analysing one recording.",
+  "description": "The results of analysing one recording.\n\n`needsReview` is derived from the parameters, never set by hand: it lists every value taken\non a convention, so one field tells a reader or a script whether anything rests on a guess.",
   "properties": {
     "schemaVersion": {
-      "const": "0.2.0",
-      "default": "0.2.0",
+      "const": "0.3.0",
+      "default": "0.3.0",
       "title": "Schemaversion",
       "type": "string"
     },
@@ -434,13 +519,23 @@
       },
       "title": "Stages",
       "type": "array"
+    },
+    "needsReview": {
+      "description": "Every value taken on a convention rather than evidence, derived from the parameters. Empty when nothing rests on a convention.",
+      "items": {
+        "$ref": "#/$defs/ReviewItem"
+      },
+      "readOnly": true,
+      "title": "Needsreview",
+      "type": "array"
     }
   },
   "required": [
     "schemaVersion",
     "sanketVersion",
     "assumptions",
-    "stages"
+    "stages",
+    "needsReview"
   ],
   "type": "object"
 }

@@ -6,15 +6,15 @@ took as given about the recording. A breaking change to the schema is a major ve
 
 import json
 from pathlib import Path
-from typing import Any, Literal, Self
+from typing import Any, Literal, Self, cast
 
-from pydantic import Field, model_validator
+from pydantic import Field, ModelWrapValidatorHandler, computed_field, model_validator
 
-from dsp.evidence import CamelModel, Parameter
+from dsp.evidence import CamelModel, Parameter, Value
 from dsp.ingest.formats import SampleFormat
 
-SchemaVersion = Literal["0.2.0"]
-SCHEMA_VERSION: SchemaVersion = "0.2.0"
+SchemaVersion = Literal["0.3.0"]
+SCHEMA_VERSION: SchemaVersion = "0.3.0"
 SCHEMA_PATH = Path(__file__).with_name("results.schema.json")
 
 
@@ -44,6 +44,16 @@ class Assumptions(CamelModel):
             raise ValueError("IQ order must be stated unless the datatype is real-valued")
         return self
 
+    def parameters(self) -> tuple[Parameter, ...]:
+        entries = (
+            self.datatype,
+            self.data_offset,
+            self.sample_rate,
+            self.center_frequency,
+            self.iq_order,
+        )
+        return tuple(p for p in entries if p is not None)
+
 
 class StageResult(CamelModel):
     """One stage's output. A stage that throws is FAILED with its error; the job carries on."""
@@ -65,13 +75,60 @@ class StageResult(CamelModel):
         return self
 
 
+class ReviewItem(CamelModel):
+    """A value taken on a convention rather than evidence, for the analyst to confirm."""
+
+    stage: str | None = Field(description="The stage that reported it; null for an assumption.")
+    parameter: str = Field(description="The parameter's id.")
+    name: str
+    value: Value
+    convention: str
+
+
 class Results(CamelModel):
-    """The results of analysing one recording."""
+    """The results of analysing one recording.
+
+    `needsReview` is derived from the parameters, never set by hand: it lists every value taken
+    on a convention, so one field tells a reader or a script whether anything rests on a guess.
+    """
 
     schema_version: SchemaVersion = SCHEMA_VERSION
     sanket_version: str = Field(min_length=1)
     assumptions: Assumptions
     stages: tuple[StageResult, ...]
+
+    @computed_field(
+        description="Every value taken on a convention rather than evidence, derived from the "
+        "parameters. Empty when nothing rests on a convention."
+    )
+    @property
+    def needs_review(self) -> tuple[ReviewItem, ...]:
+        located = [(None, p) for p in self.assumptions.parameters()] + [
+            (stage.id, p) for stage in self.stages for p in stage.parameters
+        ]
+        return tuple(
+            ReviewItem(
+                stage=stage, parameter=p.id, name=p.name, value=p.value, convention=p.convention
+            )
+            for stage, p in located
+            if p.convention is not None and p.value is not None
+        )
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def _derived_review(cls, data: Any, handler: ModelWrapValidatorHandler[Self]) -> Self:
+        """needsReview is accepted on input only when it matches what the parameters say."""
+        claimed: Any = None
+        if isinstance(data, dict):
+            fields = cast(dict[str, Any], data)
+            claimed = fields.get("needsReview", fields.get("needs_review"))
+            data = {k: v for k, v in fields.items() if k not in ("needsReview", "needs_review")}
+        results = handler(data)
+        if claimed is not None:
+            items = cast(list[Any], claimed)
+            if [ReviewItem.model_validate(item) for item in items] != list(results.needs_review):
+                raise ValueError("needsReview doesn't match the conventions in the parameters")
+        return results
 
     @model_validator(mode="after")
     def _check(self) -> Self:

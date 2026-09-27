@@ -91,8 +91,8 @@ def outcome(case: Case) -> str:
             "ambiguous, truth listed" if case.datatype in alternatives else "FAIL: truth not listed"
         )
     if param.value == case.datatype:
-        return "correct, layout by convention" if param.warnings else "correct"
-    if param.value == twin(case.datatype) and param.warnings and case.datatype[0] == "r":
+        return "correct, layout by convention" if param.convention else "correct"
+    if param.value == twin(case.datatype) and param.convention and case.datatype[0] == "r":
         return "real proposed as complex by convention"
     return "FAIL: wrong format"
 

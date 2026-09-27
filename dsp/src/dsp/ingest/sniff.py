@@ -252,18 +252,18 @@ def _datatype_parameter(result: FormatSniff) -> Parameter:
         *_ranking(result),
         "IQ and QI order are not scored: swapping I and Q only mirrors the spectrum.",
     )
-    warnings: tuple[str, ...] = ()
+    convention = None
     if gain >= LAYOUT_MARGIN:
         value = complex_.datatype
     elif gain <= -LAYOUT_MARGIN:
         value = real.datatype
     else:
         value = complex_.datatype
-        warnings = (
+        convention = (
             f"The complex ({complex_.datatype}) and real ({real.datatype}) readings fit equally "
             "well, so the samples can't tell them apart. Complex is proposed because raw SDR "
             f"recordings are usually complex I/Q; choose {real.datatype} if this is a real-valued "
-            "recording.",
+            "recording."
         )
     alternatives = [c for c in ranked if c.datatype != value][:3]
     return Parameter(
@@ -274,7 +274,7 @@ def _datatype_parameter(result: FormatSniff) -> Parameter:
         method=method,
         evidence=evidence,
         alternatives=tuple(Alternative(value=c.datatype) for c in alternatives),
-        warnings=warnings,
+        convention=convention,
     )
 
 
