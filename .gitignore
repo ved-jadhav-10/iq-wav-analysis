@@ -10,6 +10,10 @@ build/
 # Datasets, captures and generated recordings: only manifests are committed
 data/
 
+# Reference repos cloned for reading only. Several are non-commercial or unlicensed, so they must
+# never be committed here - CI fails on non-commercial licences in the tree.
+temp_repos/
+
 # Playwright
 frontend/test-results/
 frontend/playwright-report/

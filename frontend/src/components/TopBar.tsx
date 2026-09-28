@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { FileAudio, FolderOpen, Moon, Sun, WifiOff } from 'lucide-react'
 import { BRAND } from '@/brand'
 import { useTheme } from '@/hooks/theme'
+import { VIEWS, type ViewId } from '@/lib/views'
 import { Logo } from './Logo'
 
 interface Props {
@@ -11,10 +12,23 @@ interface Props {
   synthetic: boolean
   opening: boolean
   openError: string | null
+  view: ViewId
+  onViewChange: (view: ViewId) => void
   onOpen: (path: string) => void
+  onOpenSettings: () => void
 }
 
-export function TopBar({ fileName, isDemo, synthetic, opening, openError, onOpen }: Props) {
+export function TopBar({
+  fileName,
+  isDemo,
+  synthetic,
+  opening,
+  openError,
+  view,
+  onViewChange,
+  onOpen,
+  onOpenSettings,
+}: Props) {
   const { theme, toggle } = useTheme()
   const [path, setPath] = useState('')
 
@@ -35,6 +49,35 @@ export function TopBar({ fileName, isDemo, synthetic, opening, openError, onOpen
           </span>
         </div>
       </div>
+
+      <div className="h-5 w-px bg-border max-sm:hidden" aria-hidden />
+
+      <nav aria-label="Workspace section" className="flex shrink-0 items-center gap-0.5 max-md:hidden">
+        {VIEWS.map((v) => {
+          const selected = v.id === view
+          
+          return (
+            <button
+              key={v.id}
+              type="button"
+              onClick={() => {
+                if (v.id === 'assumptions') {
+                  onOpenSettings()
+                } else {
+                  onViewChange(v.id)
+                }
+              }}
+              aria-current={selected ? 'page' : undefined}
+              title={`${v.hint} (Alt+${v.digit})`}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium tracking-wide uppercase transition-colors ${
+                selected ? 'bg-surface-2 text-foreground' : 'text-muted-foreground hover:bg-surface-2/60 hover:text-foreground'
+              }`}
+            >
+              {v.label}
+            </button>
+          )
+        })}
+      </nav>
 
       <div className="h-5 w-px bg-border max-sm:hidden" aria-hidden />
 

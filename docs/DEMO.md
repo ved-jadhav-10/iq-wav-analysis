@@ -19,6 +19,10 @@ To open a file, paste its full path into the path box in the top bar and press *
 Opening `scene` takes about 45 s. The server builds the tiles and analyses every signal before it
 answers, so wait for "Opening…" to clear.
 
+The workspace never scrolls as a page: every section fills the window and long content scrolls
+inside its own panel. If a view ever does scroll as a whole, that is a layout bug — see the
+invariants in [UI.md](UI.md).
+
 ## 1. `data/demo/scene.sigmf-meta`: the main demo
 
 Four signals at 1 MS/s, about 1 s long.
@@ -32,6 +36,12 @@ Four signals at 1 MS/s, about 1 s long.
 
 What to click, and what each view proves:
 
+- **Section nav** (top bar, left of the file name). **Survey** is the default and shows everything
+  at once; **Waterfall** gives the spectrogram the whole display. `Alt+1`–`Alt+2` also switch.
+  **Assumptions** is the third item, but it opens a modal over the current view rather than
+  replacing the workspace, so it can be summoned and dismissed from anywhere. The per-detection
+  deep dive works the same way: press **Full screen** in the evidence panel to open it over the
+  workspace, and `Esc` to come back. See [UI.md](UI.md) for the layout.
 - **Waterfall.** Each box is a detection, positioned in time and frequency. The badges in the
   Detections list never rely on colour alone: each carries a glyph and a word.
 - **#1 QPSK → pipeline rail.** Every stage has its own evidence level. Sync, Classify, FEC and
@@ -47,6 +57,8 @@ What to click, and what each view proves:
 - **#2 FM.** The rail stops after Classify, and the ledger explains why no search ran.
 - **#4 QPSK?.** An honest UNKNOWN. Open the FEC card's evidence: it says how many hypotheses were
   tried, and that none reached a significant CRC result.
+- **Drag the gutter** between the plot and the evidence panel, or collapse the panel to a tab. The
+  position is remembered for the next recording.
 - **Theme toggle** (top right). The same evidence in dark mode.
 
 ## 2. `data/demo/scene_widen.sigmf-meta`: deeper chains

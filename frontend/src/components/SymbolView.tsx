@@ -216,7 +216,8 @@ export function SymbolView({ detection, demo }: { detection: Detection; demo?: D
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || width === 0 || !hasCanvas) return
-    const ctx = setupCanvas(canvas, width, height)
+    const canvasW = kind === 'psk' ? height : width
+    const ctx = setupCanvas(canvas, canvasW, height)
     if (!ctx) return
     if (kind === 'psk') {
       if (demo) drawConstellation(ctx, height, demo.constellation, theme === 'dark')
@@ -253,11 +254,12 @@ export function SymbolView({ detection, demo }: { detection: Detection; demo?: D
           </span>
         )}
       </div>
-      <div ref={wrapRef} className="flex justify-center">
+      <div ref={wrapRef} className="flex justify-center w-full min-w-0 overflow-hidden">
         {hasCanvas ? (
           <canvas
             ref={canvasRef}
-            style={{ width: kind === 'psk' ? height : width, height }}
+            style={{ width: kind === 'psk' ? height : width, height, maxWidth: '100%' }}
+            className="block"
             role="img"
             aria-label={
               kind === 'psk'

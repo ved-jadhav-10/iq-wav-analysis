@@ -1,0 +1,143 @@
+# The Sanket workspace UI
+
+One shell, several focused views. This is the reference for how the frontend is laid out and — more
+importantly — for the layout invariants that three separate bugs violated. Read the invariants
+before changing any height, grid or canvas measurement.
+
+## The shell
+
+Everything is inside one column, fixed to the viewport:
+
+```
+TopBar      48px   logo · section nav · file name · open box · offline badge · theme
+Workspace          the selected section, fills the remaining height
+StatusBar    24px   version, provenance, tile shape
+```
+
+The shell is `h-full min-h-0`. `html, body, #root` are already `height: 100%` in
+`styles/index.css`, so there is no reason for a section to be taller than the window. **The page
+itself must never scroll.** Long content scrolls inside its own panel: the evidence rail, the
+search ledger and the assumptions view all have their own `overflow-y-auto`.
+
+## Sections
+
+The section decides which regions are on screen and how they're laid out. State lives in `App`,
+above the recording-keyed `Workspace`, so opening another recording keeps your section but resets
+zoom and selection — those are genuinely different lifetimes.
+
+| Nav item | Layout | Shows |
+|---|---|---|
+| **Survey** | Detections + pipeline rail, then the plot column, then the resizable evidence panel | Everything at once. The default. |
+| **Waterfall** | Detection chips in a strip, then the plot column full width | The spectrogram and its power spectrum, nothing competing for the display |
+| **Assumptions** | A modal, not a section | Everything the analysis took as given, over whatever is on screen |
+
+Switch by clicking the nav in the top bar, or with `Alt+1`–`Alt+2`. The choice is persisted in
+`localStorage` under `sanket.view.v1`, because a demo that reopens the tool on Survey and has to be
+clicked back mid-talk costs a beat. A bare `1`–`3` is deliberately *not* used: it would fight numeric
+fields and the demo worker's inputs.
+
+The **Assumptions** item keeps its place in the nav but does not switch the workspace. It opens the
+Settings / Assumptions modal instead, because a modal can be summoned over any section and dismissed,
+which a section could not do. `TopBar` dispatches on it; `App` renders no view for it. The
+per-detection deep dive is handled the same way, as a full-screen overlay.
+
+The nav list lives in `lib/views.ts` and is the only place an item is declared, so the button and the
+behaviour cannot drift apart. Its definitions, digit mapping and wrap-around stepping are covered by
+`lib/views.test.ts`.
+
+## The Signal overlay
+
+The per-detection deep dive is a full-screen overlay, **not** a fourth section. You open it to read
+one signal end to end and then come back out; giving it a section meant the waterfall lost a third
+of the display every time anyone wanted a constellation.
+
+Launch it from **Full screen** in the evidence panel's header. `Esc` closes it and focus lands on
+the close button on open. It shows the constellation and every pipeline stage on the left, the
+search ledger on the right, and each side scrolls on its own.
+
+## The resizable split
+
+`components/SplitPane.tsx` and `hooks/useSplit.ts` give the plot column and the evidence panel a
+draggable, persisted split (`sanket.split.v1`, default 0.68).
+
+- Pointer events, not `mousedown`/`mousemove`, so a drag survives leaving the window.
+- The gutter is a focusable `role="separator"` with arrow-key support (shift for bigger steps), so
+  the split is reachable without a pointer.
+- The fraction is of the space **after** the fixed rail, not of the whole container. A percentage of
+  the container hands the rail's width to the plot and leaves the panel short.
+- Neither pane can be dragged below 340px.
+- The panel also collapses to a tab on the right edge, for when the plot is the point.
+
+The split only applies at 1280px and above. Below that the three panels stack and a gutter would
+have nothing useful to divide, so `App` renders a plain grid instead.
+
+## Layout invariants
+
+These are not stylistic. Each one is a bug that already shipped once.
+
+1. **Every grid that contains a plot has an explicit `grid-rows`.** With no `grid-template-rows`
+   the implicit row is content-sized, so the plot sizes to its own content and overflows the box
+   that was supposed to contain it. `SplitPane` uses `grid-rows-[minmax(0,1fr)]`.
+
+2. **The canvas must never be able to size its own container.** The waterfall's canvas is
+   `absolute inset-0 size-full`. If the element containing it ever has an `auto` height, `height:
+   100%` resolves against the canvas's `height` *attribute* instead of the parent. The parent then
+   grows to match, the `ResizeObserver` measures that grown size and writes it back to the
+   attribute. The result is a ratchet: the plot sticks at whatever it was first measured at and
+   never shrinks. It held the waterfall at 2681px inside a 956px box. `Waterfall.tsx` therefore
+   rejects a zero-height report and anything taller than four viewports.
+
+3. **`min-h-0` on every flex or grid child that should shrink.** A flex item's default
+   `min-height: auto` refuses to shrink below its content. This is why the evidence rail grew to
+   fit all nine pipeline stages in an auto-height row and dragged the page to 3165px. A wrapper that
+   is only a grid item must also carry a definite height (`h-full` on the child) for its own
+   `overflow-y-auto` to engage.
+
+4. **The plot column carries `flex-1`.** Without it, in the Waterfall section — where it is a flex
+   child rather than a grid item — the waterfall's own `flex-1` had no definite space and collapsed
+   to zero, leaving the power spectrum and an empty void.
+
+5. **Evidence is never colour-only** (PLAN §4). The split, the section nav and the detection chips
+   all carry words and glyphs as well as colour.
+
+## Checking a layout change
+
+The browser screenshot tool is unreliable, and eyeballing pixels is worse: two rounds of this work
+went wrong because a screenshot was read by eye. Measure the DOM instead. A throwaway Playwright
+script is the fastest way, and it is how the numbers above were obtained:
+
+```js
+const page = await ctx.newPage()
+await page.goto('http://127.0.0.1:8765')
+await page.waitForSelector('[aria-label^="Waterfall of the capture"]')
+const m = await page.evaluate(() => ({
+  doc: document.documentElement.scrollHeight,
+  view: window.innerHeight,
+  wf: Math.round(document.querySelector('[role="img"]').getBoundingClientRect().height),
+  canvas: document.querySelector('canvas').height,
+}))
+```
+
+`doc` must equal `view` in every section, and `canvas` must equal `wf`. Playwright's bundled
+Chromium may be a broken install; point `executablePath` at an older
+`%LOCALAPPDATA%\ms-playwright\chromium-<build>\chrome-win64\chrome.exe` if it fails to launch.
+
+## Known compromise
+
+Below 1280px the three-panel Survey is cramped: the plot column and the evidence panel stack, and
+the waterfall gets roughly 150px. Bounding the page to the viewport is what starves it. This was
+true of the original fixed layout too, and the split is off in that range by design. It is not a
+regression to fix casually — a narrow-window layout is real work, and the presentation target is a
+wide display.
+
+## Where the code is
+
+| File | Role |
+|---|---|
+| `lib/views.ts` | The nav list, digit mapping, persistence. `views.test.ts` covers it. |
+| `components/SplitPane.tsx` | The two-pane grid and the gutter |
+| `hooks/useSplit.ts` | Drag, arrow keys, clamping, persistence |
+| `hooks/useMediaQuery.ts` | Where the split applies and where the grid stacks |
+| `components/SignalOverlay.tsx` | The full-screen deep dive |
+| `App.tsx` | Section branching, the plot column, the evidence rail |
+| `TopBar.tsx` | The section nav, the open box, the theme toggle |

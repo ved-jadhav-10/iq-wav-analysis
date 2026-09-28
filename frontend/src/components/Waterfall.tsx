@@ -76,7 +76,14 @@ export function Waterfall({ source, full, view, onViewChange, detections, select
     const el = plotRef.current
     if (!el) return
     const ro = new ResizeObserver(([entry]) => {
-      setSize({ w: entry.contentRect.width, h: entry.contentRect.height })
+      // Ignore a zero-height report (the plot is briefly unlaid out) and anything taller than the
+      // window. The canvas is absolutely positioned with `size-full`, so if the plot's own height
+      // is ever auto, `height: 100%` resolves against the canvas's `height` attribute instead -
+      // which makes the plot size itself, and the measurement then confirms it. Bounding here
+      // breaks that loop instead of letting the plot stick at whatever it was first measured at.
+      const h = entry.contentRect.height
+      if (h === 0 || h > window.innerHeight * 4) return
+      setSize({ w: entry.contentRect.width, h })
     })
     ro.observe(el)
     return () => ro.disconnect()

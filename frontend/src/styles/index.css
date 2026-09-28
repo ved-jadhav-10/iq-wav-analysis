@@ -32,27 +32,27 @@
 }
 
 .dark {
-  --background: #0a0e14;
-  --surface: #0f141b;
-  --surface-2: #151b24;
-  --border: #1e2630;
-  --border-strong: #2a3441;
-  --foreground: #e4eaf0;
-  --muted-foreground: #8a97a4;
-  --subtle-foreground: #5d6a77;
-  --primary: #22d3ee;
-  --primary-foreground: #06121a;
-  --ring: #22d3ee;
-  --danger: #f2605a;
+  --background: #000000;
+  --surface: #121212;
+  --surface-2: #1e1e1e;
+  --border: #2c2c2c;
+  --border-strong: #404040;
+  --foreground: #ffffff;
+  --muted-foreground: #a0aab5;
+  --subtle-foreground: #6c7680;
+  --primary: #90caf9;
+  --primary-foreground: #000000;
+  --ring: #90caf9;
+  --danger: #f48fb1;
 
-  --ev-verified: #3fb950;
-  --ev-measured: #58a6ff;
-  --ev-estimated: #a78bfa;
-  --ev-hypothesis: #e3b341;
-  --ev-unknown: #8b949e;
+  --ev-verified: #4ade80;
+  --ev-measured: #90caf9;
+  --ev-estimated: #c084fc;
+  --ev-hypothesis: #fcd34d;
+  --ev-unknown: #9ca3af;
 
-  --plot-grid: #18202a;
-  --plot-axis: #5d6a77;
+  --plot-grid: #1e1e1e;
+  --plot-axis: #6c7680;
 }
 
 @theme inline {
