@@ -396,6 +396,7 @@ COMB_SPACING_TOLERANCE = 0.3  # relative: how far a tone's spacing may sit from 
 # 2 is deliberately excluded: with only one gap, "evenly spaced" holds for any pair and carries
 # no information, so a 2-tone group always falls through to the power-based test below.
 COMB_TEMPLATE_ORDERS = (4, 8)  # M-FSK orders with enough gaps for spacing to be real evidence
+COMB_POWER_SPREAD_DB = 6.0  # the widest spread of tone SNRs a comb may have
 
 
 def _evenly_spaced(group: Sequence[Detection]) -> bool:
@@ -405,6 +406,11 @@ def _evenly_spaced(group: Sequence[Detection]) -> bool:
     deviation - this pattern is its own evidence, independent of how much noise-floor gap sits
     between the outermost tones."""
     if len(group) not in COMB_TEMPLATE_ORDERS:
+        return False
+    # Random data spends equal time on every tone, so an M-FSK comb's tones have near-equal
+    # power; independent signals that happen to sit evenly spaced usually don't.
+    powers = [d.snr_db for d in group]
+    if max(powers) - min(powers) > COMB_POWER_SPREAD_DB:
         return False
     centres = sorted(d.centre for d in group)
     gaps = np.diff(centres)

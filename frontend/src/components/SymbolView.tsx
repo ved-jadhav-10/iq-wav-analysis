@@ -17,10 +17,7 @@ function setupCanvas(canvas: HTMLCanvasElement, w: number, h: number): CanvasRen
   return ctx
 }
 
-function drawConstellation(ctx: CanvasRenderingContext2D, size: number, points: Float32Array, dark: boolean) {
-  const range = 1.6
-  const pad = 18
-  const scale = (size - pad * 2) / (2 * range)
+function drawConstellationAxes(ctx: CanvasRenderingContext2D, size: number, range: number, scale: number) {
   const cx = size / 2
   const cy = size / 2
   const X = (v: number) => cx + v * scale
@@ -51,15 +48,6 @@ function drawConstellation(ctx: CanvasRenderingContext2D, size: number, points: 
   ctx.setLineDash([])
   ctx.globalAlpha = 1
 
-  ctx.fillStyle = cssVar('--primary')
-  ctx.globalCompositeOperation = dark ? 'lighter' : 'source-over'
-  ctx.globalAlpha = dark ? 0.3 : 0.22
-  for (let i = 0; i < points.length; i += 2) {
-    ctx.fillRect(X(points[i]) - 1, Y(points[i + 1]) - 1, 2, 2)
-  }
-  ctx.globalCompositeOperation = 'source-over'
-  ctx.globalAlpha = 1
-
   ctx.strokeStyle = cssVar('--foreground')
   ctx.lineWidth = 1.25
   for (const [i, q] of [
@@ -84,6 +72,55 @@ function drawConstellation(ctx: CanvasRenderingContext2D, size: number, points: 
   ctx.fillText('I', size - 4, cy - 4)
   ctx.textAlign = 'left'
   ctx.fillText('Q', cx + 4, 11)
+}
+
+/** The demo's own (larger, phase-jittered) point cloud: interleaved I, Q. */
+function drawConstellation(ctx: CanvasRenderingContext2D, size: number, points: Float32Array, dark: boolean) {
+  const range = 1.6
+  const pad = 18
+  const scale = (size - pad * 2) / (2 * range)
+  const cx = size / 2
+  const cy = size / 2
+  const X = (v: number) => cx + v * scale
+  const Y = (v: number) => cy - v * scale
+
+  drawConstellationAxes(ctx, size, range, scale)
+
+  ctx.fillStyle = cssVar('--primary')
+  ctx.globalCompositeOperation = dark ? 'lighter' : 'source-over'
+  ctx.globalAlpha = dark ? 0.3 : 0.22
+  for (let i = 0; i < points.length; i += 2) {
+    ctx.fillRect(X(points[i]) - 1, Y(points[i + 1]) - 1, 2, 2)
+  }
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.globalAlpha = 1
+}
+
+/** A real detection's `analysis.constellation`: symbol-spaced [I, Q] points, unit RMS. */
+function drawConstellationPoints(
+  ctx: CanvasRenderingContext2D,
+  size: number,
+  points: readonly (readonly [number, number])[],
+  dark: boolean,
+) {
+  const range = 1.6
+  const pad = 18
+  const scale = (size - pad * 2) / (2 * range)
+  const cx = size / 2
+  const cy = size / 2
+  const X = (v: number) => cx + v * scale
+  const Y = (v: number) => cy - v * scale
+
+  drawConstellationAxes(ctx, size, range, scale)
+
+  ctx.fillStyle = cssVar('--primary')
+  ctx.globalCompositeOperation = dark ? 'lighter' : 'source-over'
+  ctx.globalAlpha = dark ? 0.35 : 0.28
+  for (const [i, q] of points) {
+    ctx.fillRect(X(i) - 1.25, Y(q) - 1.25, 2.5, 2.5)
+  }
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.globalAlpha = 1
 }
 
 function drawInstFreq(ctx: CanvasRenderingContext2D, w: number, h: number, values: Float32Array) {
@@ -135,8 +172,29 @@ function drawInstFreq(ctx: CanvasRenderingContext2D, w: number, h: number, value
   ctx.setLineDash([])
 }
 
-/** Symbol-domain view for the selected detection: constellation for PSK, tone histogram for FSK. */
-export function SymbolView({ detection, demo }: { detection: Detection; demo: DemoProducts }) {
+function emptyMessage(detection: Detection): string {
+  if (detection.kind === 'cw') {
+    return 'No symbols to plot: this is a steady carrier. Its frequency, drift and C/N0 are in the evidence below.'
+  }
+  if (detection.kind === 'analog') {
+    return 'No symbols to plot: this is an analog signal, kept out of the digital chain. See the evidence below.'
+  }
+  if (detection.kind === 'fsk') {
+    return 'No constellation: non-coherent FSK decides each symbol by tone energy. Tone spacing and timing are in the evidence below.'
+  }
+  return (
+    detection.noFramesReason ??
+    detection.noSearchReason ??
+    'No symbols were recovered for this detection.'
+  )
+}
+
+/** Symbol-domain view for the selected detection: constellation for PSK, tone histogram for FSK
+ * (demo only - a real FSK detection carries no plot data yet), nothing to plot otherwise. `demo` is only
+ * present on the demo path, whose synthetic constellation/instantaneous-frequency arrays have
+ * more points and simulated timing/carrier recovery than the contract's `constellation` field
+ * carries for a real detection. */
+export function SymbolView({ detection, demo }: { detection: Detection; demo?: DemoProducts }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [width, setWidth] = useState(0)
@@ -151,57 +209,66 @@ export function SymbolView({ detection, demo }: { detection: Detection; demo: De
   }, [])
 
   const kind = detection.kind
-  const height = kind === 'qpsk' ? Math.min(width, 300) : 150
+  const hasFskHistogram = kind === 'fsk' && !!demo
+  const hasCanvas = kind === 'psk' || hasFskHistogram
+  const height = kind === 'psk' ? Math.min(width, 300) : 150
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || width === 0 || kind === 'cw') return
+    if (!canvas || width === 0 || !hasCanvas) return
     const ctx = setupCanvas(canvas, width, height)
     if (!ctx) return
-    if (kind === 'qpsk') drawConstellation(ctx, height, demo.constellation, theme === 'dark')
-    else drawInstFreq(ctx, width, height, demo.fskInstFreqHz)
-  }, [kind, width, height, demo, theme])
+    if (kind === 'psk') {
+      if (demo) drawConstellation(ctx, height, demo.constellation, theme === 'dark')
+      else drawConstellationPoints(ctx, height, detection.constellation, theme === 'dark')
+    } else if (hasFskHistogram && demo) {
+      drawInstFreq(ctx, width, height, demo.fskInstFreqHz)
+    }
+  }, [kind, width, height, demo, theme, hasCanvas, hasFskHistogram, detection.constellation])
 
-  const symbols = demo.constellation.length / 2
-  const title = kind === 'fsk' ? 'Instantaneous frequency' : 'Constellation'
-  const subtitle =
-    kind === 'qpsk'
+  const symbols = demo ? demo.constellation.length / 2 : detection.constellation.length
+  const title = kind === 'psk' ? 'Constellation' : hasFskHistogram ? 'Instantaneous frequency' : 'Symbols'
+  const subtitle = demo
+    ? kind === 'psk'
       ? `${integer.format(symbols)} symbols after matched filter, Gardner timing and Costas loop`
-      : kind === 'fsk'
+      : hasFskHistogram
         ? `Channelised to ${DEMO_CONFIG.fskChannel.fs / 1000} kS/s · dashed lines are the estimated tones`
         : 'Unmodulated carrier'
+    : kind === 'psk'
+      ? `${integer.format(symbols)} symbols after sync and phase correction`
+      : detection.headline
 
   return (
     <section aria-labelledby="symview-title" className="border-b px-3 pt-3 pb-3">
       <div className="mb-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h2 id="symview-title" className="text-[13px] font-semibold">
-            {title} <span className="num font-normal text-subtle-foreground">· #{detection.id}</span>
+            {title}
           </h2>
           <p className="text-xs text-muted-foreground">{subtitle}</p>
         </div>
-        {kind === 'qpsk' && (
+        {kind === 'psk' && demo && (
           <span className="num shrink-0 rounded-[3px] bg-surface-2 px-1.5 py-0.5 text-2xs text-muted-foreground">
             EVM {(demo.evm * 100).toFixed(1)}&nbsp;%
           </span>
         )}
       </div>
       <div ref={wrapRef} className="flex justify-center">
-        {kind === 'cw' ? (
-          <p className="w-full rounded-md border border-dashed px-3 py-6 text-center text-xs text-muted-foreground">
-            No symbols to plot: this is a steady carrier. Its frequency, drift and C/N0 are in the evidence below.
-          </p>
-        ) : (
+        {hasCanvas ? (
           <canvas
             ref={canvasRef}
-            style={{ width: kind === 'qpsk' ? height : width, height }}
+            style={{ width: kind === 'psk' ? height : width, height }}
             role="img"
             aria-label={
-              kind === 'qpsk'
-                ? `QPSK constellation, ${symbols} symbols, EVM ${(demo.evm * 100).toFixed(1)} percent`
+              kind === 'psk'
+                ? `${detection.label} constellation, ${symbols} symbols`
                 : 'Histogram of instantaneous frequency with two peaks at the FSK tones'
             }
           />
+        ) : (
+          <p className="w-full rounded-md border border-dashed px-3 py-6 text-center text-xs text-muted-foreground">
+            {emptyMessage(detection)}
+          </p>
         )}
       </div>
     </section>

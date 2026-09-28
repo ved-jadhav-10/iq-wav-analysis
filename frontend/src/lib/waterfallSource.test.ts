@@ -22,6 +22,8 @@ function recording(overrides: Partial<RecordingInfo> = {}): RecordingInfo {
     name: 'capture.sigmf-meta',
     numSamples: 65536,
     real: false,
+    recorder: null,
+    synthetic: false,
     fftSize: 1024,
     hop: 512,
     sampleRate: 1_000_000,

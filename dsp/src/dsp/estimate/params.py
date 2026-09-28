@@ -182,6 +182,25 @@ def fsk_symbol_rate(x: Complex, low: float = 0.01, high: float = 0.5) -> SymbolR
     return SymbolRate(line.frequency, line.uncertainty, line.ratio)
 
 
+def fsk_symbol_rates(
+    x: Complex, low: float = 0.01, high: float = 0.5, count: int = 3
+) -> list[SymbolRate]:
+    """Up to `count` candidate FSK symbol rates for a search to settle: the lowest significant
+    edge-energy line (`fsk_symbol_rate`'s pick), then the strongest, then the next lowest. A
+    filtered or noisy channel can put a spurious line below the true rate."""
+    phase = np.unwrap(np.angle(x))
+    frequency = np.diff(phase) / (2 * np.pi)
+    edges = np.abs(np.diff(frequency)) ** 2
+    lines = find_lines(edges.astype(np.complex128), low, high).lines
+    by_frequency = sorted(lines, key=lambda ln: ln.frequency)
+    ordered = [*by_frequency[:1], *lines[:1], *by_frequency[1:]]
+    out: list[SymbolRate] = []
+    for line in ordered:
+        if all(abs(line.frequency - r.normalised_rate) > 1e-3 * line.frequency for r in out):
+            out.append(SymbolRate(line.frequency, line.uncertainty, line.ratio))
+    return out[:count]
+
+
 @dataclass(frozen=True)
 class CarrierOffset:
     cfo: float  # cycles/sample, at the channel's own centre

@@ -1,3 +1,4 @@
+import type { DetectionReport, Frame, Hypothesis, HypothesisSearch } from '@/lib/analysis'
 import type { Box } from '@/lib/box'
 import type { EvidenceLevel, Parameter, StageResult } from '@/lib/evidence'
 import { DEMO_CONFIG, mulberry32 } from '@/lib/demoSignal'
@@ -5,51 +6,18 @@ import { DEMO_CONFIG, mulberry32 } from '@/lib/demoSignal'
 /*
  * Stage results for the synthetic demo capture. The values are consistent with the generator in
  * lib/demoSignal.ts; they stand in for the backend's /api/v1 analysis response until it exists.
+ *
+ * `Detection` is `DetectionReport` (the same shape a real recording's `analysis` field carries,
+ * see lib/analysis.ts) plus the two things only a waterfall needs to select and draw a box:
+ * a stable `id` and its time/frequency `boxes`. Keeping demo data on the real contract means
+ * BottomPanel/SymbolView/EvidencePanel/PipelineRail don't need a second shape to handle.
  */
 
-export type { Box }
+export type { Box, Frame, Hypothesis, HypothesisSearch }
 
-export interface Hypothesis {
-  layer: 'Interleaver' | 'FEC' | 'Framing'
-  candidate: string
-  statistic: string
-  pValue: number | null
-  threshold: number
-  outcome: 'accepted' | 'rejected'
-  reason: string
-}
-
-export interface HypothesisSearch {
-  tried: number
-  alpha: number
-  correction: string
-  smallestThreshold: number
-  shuffledRuns: number
-  shuffledAccepts: number
-  rows: Hypothesis[]
-}
-
-export interface Frame {
-  index: number
-  startBit: number
-  syncWord: string
-  lengthBits: number
-  crc: 'pass' | 'truncated'
-  headerHex: string
-}
-
-export interface Detection {
+export interface Detection extends DetectionReport {
   id: number
-  label: string
-  kind: 'qpsk' | 'fsk' | 'cw'
-  level: EvidenceLevel
-  headline: string
   boxes: Box[]
-  stages: StageResult[]
-  search: HypothesisSearch | null
-  noSearchReason?: string
-  frames: Frame[]
-  noFramesReason?: string
 }
 
 export interface Assumption {
@@ -437,6 +405,9 @@ function makeFrames(): Frame[] {
   const frames: Frame[] = []
   for (let i = 0; i < 21; i++) {
     const byte = Math.floor(rand() * 256)
+    const payload = Array.from({ length: 12 }, () => Math.floor(rand() * 256).toString(16).padStart(2, '0'))
+      .join('')
+      .toUpperCase()
     frames.push({
       index: i + 1,
       startBit: 312 + i * 2080,
@@ -444,22 +415,44 @@ function makeFrames(): Frame[] {
       lengthBits: i === 20 ? 1576 : 2080,
       crc: i === 20 ? 'truncated' : 'pass',
       headerHex: `A5 3C ${(i + 7).toString(16).toUpperCase().padStart(2, '0')} ${byte.toString(16).toUpperCase().padStart(2, '0')}`,
+      payloadHex: payload,
     })
   }
   return frames
+}
+
+/** Small deterministic point cloud for `Detection.constellation`'s contract shape; the demo
+ * path actually draws from `DemoProducts.constellation` (more points, phase jitter) via
+ * SymbolView's `demo` prop, so this only has to exist and look like unit-RMS QPSK. */
+function makeConstellationPoints(n = 256): [number, number][] {
+  const rand = mulberry32(2601)
+  const sigma = 0.12
+  const points: [number, number][] = []
+  for (let i = 0; i < n; i++) {
+    const ir = (rand() < 0.5 ? -1 : 1) * Math.SQRT1_2
+    const iq = (rand() < 0.5 ? -1 : 1) * Math.SQRT1_2
+    points.push([
+      Number((ir + sigma * (rand() - 0.5)).toFixed(4)),
+      Number((iq + sigma * (rand() - 0.5)).toFixed(4)),
+    ])
+  }
+  return points
 }
 
 export const DETECTIONS: Detection[] = [
   {
     id: 1,
     label: 'QPSK',
-    kind: 'qpsk',
+    kind: 'psk',
     level: 'VERIFIED',
     headline: 'QPSK 25 kBd → conv K=7 → CCSDS frames',
     boxes: [{ t0: qpsk.t0, t1: qpsk.t1, f0: qpsk.fc - qpskBw / 2, f1: qpsk.fc + qpskBw / 2 }],
     stages: qpskStages,
     search: qpskSearch,
+    noSearchReason: null,
     frames: makeFrames(),
+    noFramesReason: null,
+    constellation: makeConstellationPoints(),
   },
   {
     id: 2,
@@ -470,8 +463,10 @@ export const DETECTIONS: Detection[] = [
     boxes: fsk.bursts.map(([t0, t1]) => ({ t0, t1, f0: fsk.fc - fsk.deviation - 4800, f1: fsk.fc + fsk.deviation + 4800 })),
     stages: fskStages,
     search: fskSearch,
+    noSearchReason: null,
     frames: [],
     noFramesReason: 'No recurring sync word was significant, so no frame boundaries are claimed.',
+    constellation: [],
   },
   {
     id: 3,
@@ -485,5 +480,6 @@ export const DETECTIONS: Detection[] = [
     noSearchReason: 'An unmodulated carrier carries no bits, so no code or interleaver search ran.',
     frames: [],
     noFramesReason: 'An unmodulated carrier carries no bits.',
+    constellation: [],
   },
 ]

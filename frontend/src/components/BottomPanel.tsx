@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from 'react'
+import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { CircleSlash, ShieldCheck, X } from 'lucide-react'
 import { ASSUMPTIONS, type Detection } from '@/data/demoAnalysis'
 import { integer, sci } from '@/lib/format'
@@ -92,16 +92,51 @@ function Hypotheses({ detection }: { detection: Detection }) {
   )
 }
 
+function CrcBadge({ crc }: { crc: 'pass' | 'fail' | 'truncated' }) {
+  if (crc === 'pass') {
+    return (
+      <span className="inline-flex items-center gap-1 text-ev-verified">
+        <ShieldCheck className="size-3.5" aria-hidden /> Pass
+      </span>
+    )
+  }
+  if (crc === 'fail') {
+    return (
+      <span className="inline-flex items-center gap-1 text-muted-foreground">
+        <X className="size-3.5" aria-hidden /> Fail
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-ev-unknown">
+      <CircleSlash className="size-3.5" aria-hidden /> Truncated
+    </span>
+  )
+}
+
 function Frames({ detection }: { detection: Detection }) {
   const frames = detection.frames
   if (frames.length === 0) return <Empty>{detection.noFramesReason ?? 'No frames found.'}</Empty>
   const complete = frames.filter((f) => f.crc === 'pass').length
+  const failed = frames.filter((f) => f.crc === 'fail').length
+  const truncated = frames.filter((f) => f.crc === 'truncated').length
   return (
     <div>
       <p className="border-b px-3 py-2 text-xs text-muted-foreground">
         <span className="num text-foreground">{frames.length}</span> frames ·{' '}
-        <span className="num text-foreground">{complete}</span> complete, all passing CRC-16-CCITT ·{' '}
-        <span className="num text-foreground">{frames.length - complete}</span> truncated by the end of the burst
+        <span className="num text-foreground">{complete}</span> pass CRC
+        {failed > 0 && (
+          <>
+            {' '}
+            · <span className="num text-foreground">{failed}</span> fail CRC
+          </>
+        )}
+        {truncated > 0 && (
+          <>
+            {' '}
+            · <span className="num text-foreground">{truncated}</span> truncated by the end of the burst
+          </>
+        )}
       </p>
       <table className="w-full text-xs">
         <caption className="sr-only">Frames found by sync-word correlation</caption>
@@ -113,6 +148,7 @@ function Frames({ detection }: { detection: Detection }) {
             <th className={`${TH} text-right`}>Length</th>
             <th className={TH}>CRC</th>
             <th className={TH}>Header</th>
+            <th className={TH}>Payload</th>
           </tr>
         </thead>
         <tbody>
@@ -123,17 +159,12 @@ function Frames({ detection }: { detection: Detection }) {
               <td className={`${TD} num`}>{f.syncWord}</td>
               <td className={`${TD} num text-right`}>{integer.format(f.lengthBits)}</td>
               <td className={TD}>
-                {f.crc === 'pass' ? (
-                  <span className="inline-flex items-center gap-1 text-ev-verified">
-                    <ShieldCheck className="size-3.5" aria-hidden /> Pass
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-ev-unknown">
-                    <CircleSlash className="size-3.5" aria-hidden /> Truncated
-                  </span>
-                )}
+                <CrcBadge crc={f.crc} />
               </td>
               <td className={`${TD} num tracking-wider`}>{f.headerHex}</td>
+              <td className={`${TD} num max-w-[16ch] truncate tracking-wider`} title={f.payloadHex || undefined}>
+                {f.payloadHex || '—'}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -175,14 +206,23 @@ function Assumptions() {
   )
 }
 
-export function BottomPanel({ detection }: { detection: Detection }) {
+interface Props {
+  detection: Detection
+  /** The Assumptions tab's content: the demo's hardcoded recording-level table by default, or a
+   * real recording's own `<RecordingAssumptionsPanel>` (App.tsx passes it in for that path so
+   * this component doesn't need to know about `lib/api`'s `Assumptions` shape). */
+  assumptionsPanel?: ReactNode
+  assumptionsCount?: number
+}
+
+export function BottomPanel({ detection, assumptionsPanel, assumptionsCount }: Props) {
   const [tab, setTab] = useState<TabId>('hypotheses')
   const tabRefs = useRef<Record<TabId, HTMLButtonElement | null>>({ hypotheses: null, frames: null, assumptions: null })
 
   const counts: Record<TabId, number | null> = {
     hypotheses: detection.search?.tried ?? null,
     frames: detection.frames.length,
-    assumptions: ASSUMPTIONS.length,
+    assumptions: assumptionsCount ?? ASSUMPTIONS.length,
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
@@ -233,7 +273,7 @@ export function BottomPanel({ detection }: { detection: Detection }) {
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} tabIndex={0} className="min-h-0 flex-1 overflow-auto">
         {tab === 'hypotheses' && <Hypotheses detection={detection} />}
         {tab === 'frames' && <Frames detection={detection} />}
-        {tab === 'assumptions' && <Assumptions />}
+        {tab === 'assumptions' && (assumptionsPanel ?? <Assumptions />)}
       </div>
     </section>
   )

@@ -5,6 +5,7 @@ description = "Sanket signal processing: ingest, synth, detection, estimation, d
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "galois>=0.4.11",
+    "numba>=0.67",
     "numpy>=2.5.3",
     "pydantic>=2.13.5",
     "scipy>=1.16",

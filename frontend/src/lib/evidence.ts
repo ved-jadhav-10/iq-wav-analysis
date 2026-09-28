@@ -34,13 +34,20 @@ export interface Parameter {
   convention?: string | null
 }
 
-export type StageId = 'ingest' | 'detect' | 'estimate' | 'sync' | 'classify' | 'demod' | 'deinterleave' | 'fec' | 'frame'
+/** A stage's own id, e.g. 'ingest' | 'detect' | 'estimate' | 'sync' | 'classify' | 'demod' |
+ * 'deinterleave' | 'fec' | 'frame' for the pipeline PLAN §3 names, or 'analyse' for a stage that
+ * reports the whole chain failed before reaching a named one. The backend doesn't constrain it
+ * to a closed set (`dsp.report.StageReport.id` is just a non-empty string), so neither does this. */
+export type StageId = string
 
 export interface StageResult {
   id: StageId
   name: string
-  status: 'done' | 'not-applicable'
+  status: 'done' | 'not-applicable' | 'failed'
   summary: string
   level: EvidenceLevel | null
   parameters: Parameter[]
+  warnings?: string[]
+  /** Present exactly when status is 'failed'. */
+  error?: string
 }

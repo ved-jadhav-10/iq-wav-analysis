@@ -42,6 +42,7 @@ def test_opening_a_recording_returns_its_assumptions_and_pyramid_shape(
     assert body["container"] == "SigMF"
     assert body["numSamples"] == 1 << 16
     assert body["real"] is False
+    assert body["synthetic"] is True and body["recorder"].startswith("sanket dsp.synth")
     assert body["assumptions"]["sampleRate"]["value"] == 1e6
     assert len(body["levels"]) >= 1
     assert body["levels"][0]["rowSpan"] == 1
@@ -80,6 +81,17 @@ def test_a_detection_reports_a_box_in_seconds_and_hz_with_its_own_evidence(
     assert set(params) == {"center_frequency", "bandwidth", "start_sample", "stop_sample", "snr_db"}
     for p in params.values():
         assert p["level"] == "ESTIMATED"
+    # The per-detection analysis (PROTOTYPE_PLAN P1): the real chain runs here (detect through
+    # FEC), but this fixture's signal is uncoded and unframed (`frame=None`), so it can never
+    # decode - no VERIFIED, no frames, and the honest reason is stated.
+    analysis = d["analysis"]
+    assert analysis["level"] != "VERIFIED"
+    assert analysis["frames"] == []
+    assert analysis["noFramesReason"]
+    assert analysis["search"] is not None
+    assert {"detect", "estimate", "sync", "classify", "demod"} <= {
+        s["id"] for s in analysis["stages"]
+    }
 
 
 def test_a_missing_path_is_a_client_error_not_a_500(client: TestClient, tmp_path: Path) -> None:

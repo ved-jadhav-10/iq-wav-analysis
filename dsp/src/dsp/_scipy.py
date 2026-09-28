@@ -109,3 +109,8 @@ def log10_gamma_sf(x: float, shape: float) -> float:
     v = 1.0 / (9.0 * shape)
     z = (np.cbrt(x) - (1.0 - v)) / np.sqrt(v)
     return float(special.log_ndtr(-z) / np.log(10.0))
+
+
+def i0(x: Float) -> Float:
+    """The modified Bessel function of order 0, compiled (numpy's `np.i0` is pure Python)."""
+    return np.asarray(special.i0(x), np.float64)  # pyright: ignore[reportUnknownMemberType]

@@ -1,17 +1,14 @@
 import { useMemo, useState } from 'react'
 import { BRAND } from '@/brand'
-import { DETECTIONS, RECORDING } from '@/data/demoAnalysis'
+import { DETECTIONS, RECORDING, type Detection } from '@/data/demoAnalysis'
 import { useDemoProducts } from '@/hooks/useDemoProducts'
 import { ApiError, fetchLevelGrid, openRecording, type RecordingInfo } from '@/lib/api'
 import type { DemoProducts } from '@/lib/demoSignal'
-import type { DetectionMarker } from '@/lib/detections'
 import type { StageId } from '@/lib/evidence'
 import { integer } from '@/lib/format'
 import { fullView } from '@/lib/view'
 import { sourceFromRecording, type WaterfallSource } from '@/lib/waterfallSource'
 import { BottomPanel } from '@/components/BottomPanel'
-import { DetectionEvidencePanel } from '@/components/DetectionEvidencePanel'
-import { DetectionsPanel } from '@/components/DetectionsPanel'
 import { EvidencePanel } from '@/components/EvidencePanel'
 import { PipelineRail } from '@/components/PipelineRail'
 import { PsdPlot } from '@/components/PsdPlot'
@@ -22,54 +19,61 @@ import { Waterfall } from '@/components/Waterfall'
 
 type Mode = { kind: 'demo'; demo: DemoProducts } | { kind: 'recording'; info: RecordingInfo; source: WaterfallSource }
 
-function NotYetAvailable({ children }: { children: string }) {
-  return <p className="px-3 py-4 text-xs text-muted-foreground italic">{children}</p>
+/** A real detection's `analysis` (the `DetectionReport` contract) plus the `id`/`boxes` the
+ * waterfall and the pipeline rail need - the same shape the demo path's `Detection` already is
+ * (see data/demoAnalysis.ts), so both feed the same panels unchanged. */
+function toDetection(info: RecordingInfo['detections'][number], index: number): Detection {
+  return { ...info.analysis, id: index + 1, boxes: [info.box] }
+}
+
+function EmptyDetections() {
+  return (
+    <nav aria-label="Detections" className="flex flex-col border-r bg-surface max-md:border-r-0 max-md:border-b">
+      <div className="px-3 pt-3 pb-2">
+        <h2 className="eyebrow">Detections</h2>
+      </div>
+      <p className="px-3 pb-4 text-xs text-muted-foreground italic">
+        No signals cleared the significance threshold in this recording.
+      </p>
+    </nav>
+  )
 }
 
 function Workspace({ mode }: { mode: Mode }) {
-  const demo = mode.kind === 'demo' ? mode.demo : null
+  const demo = mode.kind === 'demo' ? mode.demo : undefined
   const source = mode.kind === 'demo' ? mode.demo : mode.source
   const full = useMemo(() => fullView(source.rows, source.hop, source.fs), [source])
   const [view, setView] = useState(full)
   const [selectedId, setSelectedId] = useState(DETECTIONS[0].id)
   const [activeStage, setActiveStage] = useState<StageId | null>(null)
 
-  const realDetections = mode.kind === 'recording' ? mode.info.detections : []
-  // detect's own findings are always ESTIMATED today (dsp.detect.detection_parameters); a real
-  // level is read off the data anyway, rather than assumed, in case that ever changes.
-  const markers: DetectionMarker[] = demo
-    ? DETECTIONS
-    : realDetections.map((d, i) => ({
-        id: i,
-        label: `Signal ${i + 1}`,
-        level: d.parameters[0]?.level ?? 'ESTIMATED',
-        boxes: [d.box],
-      }))
-  const selectedDemo = demo ? (DETECTIONS.find((d) => d.id === selectedId) ?? DETECTIONS[0]) : null
-  // selectedId can be stale (left over from demo mode, or from a recording with fewer signals
-  // than the last one) - clamped to the first real detection, same as selectedDemo's own fallback.
-  const selectedRealIndex =
-    !demo && realDetections.length > 0 ? (selectedId >= 0 && selectedId < realDetections.length ? selectedId : 0) : -1
-  const selectedReal = selectedRealIndex >= 0 ? realDetections[selectedRealIndex] : undefined
-  const selectedMarkerId = selectedDemo?.id ?? selectedRealIndex
+  const detections: Detection[] =
+    mode.kind === 'demo' ? DETECTIONS : mode.info.detections.map(toDetection)
+  // selectedId can be stale (left over from the demo, or a recording with fewer signals than the
+  // last one) - clamped to the first detection, same as the demo path's own fallback below.
+  const selected =
+    detections.find((d) => d.id === selectedId) ?? (detections.length > 0 ? detections[0] : undefined)
 
   function selectDetection(id: number) {
     setSelectedId(id)
     setActiveStage(null)
   }
 
+  const assumptionsPanel =
+    mode.kind === 'recording' ? <RecordingAssumptionsPanel assumptions={mode.info.assumptions} /> : undefined
+
   return (
     <main className="grid flex-1 grid-cols-[216px_minmax(0,1fr)_minmax(320px,380px)] max-xl:grid-cols-[200px_minmax(0,1fr)] max-md:grid-cols-1 xl:min-h-0">
-      {selectedDemo ? (
+      {selected ? (
         <PipelineRail
-          detections={DETECTIONS}
-          selected={selectedDemo}
+          detections={detections}
+          selected={selected}
           onSelectDetection={selectDetection}
           activeStage={activeStage}
           onSelectStage={setActiveStage}
         />
       ) : (
-        <DetectionsPanel detections={realDetections} selectedId={selectedRealIndex} onSelect={selectDetection} />
+        <EmptyDetections />
       )}
 
       <div className="flex min-w-0 flex-col max-xl:h-[780px] xl:min-h-0">
@@ -78,19 +82,19 @@ function Workspace({ mode }: { mode: Mode }) {
           full={full}
           view={view}
           onViewChange={setView}
-          detections={markers}
-          selectedId={selectedMarkerId}
+          detections={detections}
+          selectedId={selected?.id ?? -1}
           onSelect={selectDetection}
         />
         <div className="h-[118px] shrink-0 border-t">
-          <PsdPlot source={source} view={view} detections={markers} selectedId={selectedMarkerId} />
+          <PsdPlot source={source} view={view} detections={detections} selectedId={selected?.id ?? -1} />
         </div>
         <div className="flex h-[232px] shrink-0 flex-col">
-          {mode.kind === 'recording' ? (
+          {selected ? (
+            <BottomPanel detection={selected} assumptionsPanel={assumptionsPanel} />
+          ) : mode.kind === 'recording' ? (
             <RecordingAssumptionsPanel assumptions={mode.info.assumptions} />
-          ) : (
-            <BottomPanel detection={selectedDemo!} />
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -98,19 +102,15 @@ function Workspace({ mode }: { mode: Mode }) {
         aria-label="Symbols and evidence"
         className="border-l bg-surface max-xl:col-span-2 max-xl:border-t max-xl:border-l-0 max-md:col-span-1 xl:min-h-0 xl:overflow-y-auto"
       >
-        {selectedDemo && demo ? (
+        {selected ? (
           <>
-            <SymbolView detection={selectedDemo} demo={demo} />
-            <EvidencePanel detection={selectedDemo} activeStage={activeStage} />
+            <SymbolView detection={selected} demo={demo} />
+            <EvidencePanel detection={selected} activeStage={activeStage} />
           </>
-        ) : selectedReal ? (
-          <DetectionEvidencePanel detection={selectedReal} index={selectedRealIndex} />
         ) : (
-          <NotYetAvailable>
-            Synchronisation, demodulation and per-stage evidence aren't built yet (PLAN M3 onward) — this
-            recording's waterfall, PSD and detections are real; everything downstream of them still needs those
-            stages.
-          </NotYetAvailable>
+          <p className="px-3 py-4 text-xs text-muted-foreground italic">
+            No signals were detected in this recording.
+          </p>
         )}
       </aside>
     </main>
@@ -181,6 +181,7 @@ export default function App() {
       <TopBar
         fileName={recording ? recording.info.name : RECORDING.fileName}
         isDemo={!recording}
+        synthetic={recording?.info.synthetic ?? false}
         opening={opening}
         openError={openError}
         onOpen={openPath}

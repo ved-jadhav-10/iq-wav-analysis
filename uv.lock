@@ -665,6 +665,7 @@ version = "0.1.0"
 source = { editable = "dsp" }
 dependencies = [
     { name = "galois" },
+    { name = "numba" },
     { name = "numpy" },
     { name = "pydantic" },
     { name = "scipy" },
@@ -674,6 +675,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "galois", specifier = ">=0.4.11" },
+    { name = "numba", specifier = ">=0.67" },
     { name = "numpy", specifier = ">=2.5.3" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "scipy", specifier = ">=1.16" },
