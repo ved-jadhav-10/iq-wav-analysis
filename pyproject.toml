@@ -15,6 +15,7 @@ dev = [
  "pyright",
  "pytest",
  "pytest-socket",
+ "pytest-xdist>=3.8.0",
  "ruff",
 ]
 

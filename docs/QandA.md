@@ -2,7 +2,7 @@
 
 The questions we have asked about Sanket and the radio theory behind it, with the answers. Use it to learn the project or to explain it to someone else.
 
-Status is as of **27 September 2026**. [PLAN §0](PLAN.md#0-progress) is the only place progress is tracked; where this document says *built*, *planned* or *after 1.0*, PLAN is the authority. Rival and vendor facts come from [STANDARDS_TO_BEAT.md](STANDARDS_TO_BEAT.md); the problem statement is quoted from [PROBLEM_STATEMENT.md](PROBLEM_STATEMENT.md).
+Status: see [PLAN §0](PLAN.md#0-progress), the only place progress is tracked; where this document says *built*, *planned* or *after 1.0*, PLAN is the authority. Rival and vendor facts come from [STANDARDS_TO_BEAT.md](STANDARDS_TO_BEAT.md); the problem statement is quoted from [PROBLEM_STATEMENT.md](PROBLEM_STATEMENT.md).
 
 **Contents**
 

@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 defaults:
   run:
     # bash stops on the first failing command on both platforms; Windows' default pwsh does not.
@@ -43,7 +47,7 @@ jobs:
           uv run ruff check
           uv run ruff format --check
           uv run pyright
-          uv run pytest
+          uv run pytest -n auto --dist loadfile
 
       - name: Frontend checks
         working-directory: frontend
@@ -56,8 +60,30 @@ jobs:
       - name: Licences and THIRD_PARTY.md
         run: uv run python tools/third_party.py --check
 
+      - name: Get Playwright version
+        id: playwright-version
+        working-directory: frontend
+        run: echo "version=$(node -e "console.log(require('@playwright/test/package.json').version)")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/AppData/Local/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright browsers (cache miss)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies (cache hit, Linux only)
+        if: steps.playwright-cache.outputs.cache-hit == 'true' && runner.os == 'Linux'
+        working-directory: frontend
+        run: npx playwright install-deps chromium
+
       - name: End-to-end smoke test (offline)
         working-directory: frontend
-        run: |
-          npx playwright install --with-deps chromium
-          npm run e2e
+        run: npm run e2e

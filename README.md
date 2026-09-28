@@ -10,7 +10,7 @@ Every result shows the evidence behind it and how sure we are. Nothing is guesse
 | **Organisation** | NTRO (National Technical Research Organisation) |
 | **Category / theme** | Software / Space Technology |
 | **Idea submission deadline** | **30 September 2026** |
-| **Status** | M0 done (CI green on Windows and Ubuntu): `sanket` serves the analysis workspace UI on synthetic demo data. M1 in progress: evidence model, results schema, SigMF ingest and the raw-format sniffer built. Details in [PLAN §0](docs/PLAN.md#0-progress). |
+| **Status** | See [PLAN §0](docs/PLAN.md#0-progress) — the only place progress is tracked. |
 
 ---
 
