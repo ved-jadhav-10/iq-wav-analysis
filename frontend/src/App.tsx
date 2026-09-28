@@ -134,7 +134,7 @@ function StatusBar({ mode }: { mode: Mode | null }) {
           {mode.kind === 'demo' ? mode.demo.bins : mode.source.bins} tile ·{' '}
           {integer.format(mode.kind === 'demo' ? RECORDING.sampleRateHz : mode.source.fs)} S/s · FFT{' '}
           {mode.kind === 'demo' ? mode.demo.fftSize : mode.source.fftSize}, hop{' '}
-          {mode.kind === 'demo' ? mode.demo.hop : mode.source.hop}
+          {integer.format(Math.round(mode.kind === 'demo' ? mode.demo.hop : mode.source.hop))}
         </span>
       )}
     </footer>

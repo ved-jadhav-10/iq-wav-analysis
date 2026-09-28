@@ -3,6 +3,7 @@ import { ChevronRight, TriangleAlert } from 'lucide-react'
 import type { Detection } from '@/data/demoAnalysis'
 import type { Parameter, StageId } from '@/lib/evidence'
 import { EvidenceBadge } from './EvidenceBadge'
+import { formatValue } from '@/lib/format'
 import { LEVEL_FILL } from './levelStyles'
 
 function Confidence({ value, level }: { value: number; level: Parameter['level'] }) {
@@ -38,7 +39,7 @@ export function ParameterCard({ param }: { param: Parameter }) {
             —
           </span>
         ) : (
-          <span className="num text-[15px] font-medium">{param.value}</span>
+          <span className="num text-[15px] font-medium">{formatValue(param.value)}</span>
         )}
         {param.unit && <span className="num text-xs text-muted-foreground">{param.unit}</span>}
       </p>

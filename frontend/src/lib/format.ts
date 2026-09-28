@@ -57,3 +57,11 @@ export function signed(value: number, decimals: number): string {
 }
 
 export const integer = new Intl.NumberFormat('en-US')
+
+/** A Parameter's value for display: integers grouped, other numbers to 6 significant figures
+ * (the unrounded value stays in the results document), strings as they are. */
+export function formatValue(value: string | number): string {
+  if (typeof value === 'string') return value
+  if (Number.isInteger(value)) return integer.format(value)
+  return String(Number(value.toPrecision(6)))
+}

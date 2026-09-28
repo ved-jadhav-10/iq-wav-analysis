@@ -40,8 +40,14 @@ function Hypotheses({ detection }: { detection: Detection }) {
         <Stat label="Strictest threshold" value={sci(s.smallestThreshold)} />
         <Stat
           label="Shuffled-bit accepts"
-          value={`${s.shuffledAccepts} / ${integer.format(s.shuffledRuns)}`}
-          note={s.shuffledAccepts === 0 ? `95 % upper bound ${sci(3 / s.shuffledRuns)}` : undefined}
+          value={s.shuffledRuns === 0 ? 'Not run' : `${s.shuffledAccepts} / ${integer.format(s.shuffledRuns)}`}
+          note={
+            s.shuffledRuns === 0
+              ? 'nothing accepted to re-test'
+              : s.shuffledAccepts === 0
+                ? `95 % upper bound ${sci(3 / s.shuffledRuns)}`
+                : undefined
+          }
         />
         <Stat label="Accepted" value={String(accepted)} note={accepted === 0 ? 'nothing claimed' : undefined} />
       </div>

@@ -80,6 +80,32 @@ check pass (`ruff check`, `ruff format --check`, `pyright`, `pytest -n auto`; fr
 PLAN §0 and this file updated with what landed.
 **Done when:** the check list is green and `docs/DEMO.md` matches the actual UI.
 
+### What landed (P0–P3)
+
+- **P0:** this plan, the shortened PLAN.md, PROGRESS_LOG.md, pytest-xdist, the CI Playwright
+  cache and the format-on-edit hook.
+- **P1:** the whole chain for one detection (`dsp/analyse.py` and the modules it calls),
+  returned as a `DetectionReport` (`dsp/report.py`, mirrored in `frontend/src/lib/analysis.ts`).
+  The backend runs it for every detection on open, and the existing panels draw it.
+  `tools/make_demo.py` writes the demo scenes and verifies them against the truth.
+- **P2, all four items:**
+  - cumulant classify over BPSK/QPSK/8PSK/16QAM
+  - the block-interleaver catalogue, aligned by the conv code's parity syndrome
+  - outer RS(255,223) CCSDS through galois, with the codeword grid found from an error-free
+    codeword
+  - 2-FSK
+  
+  Each has an exact-frames case in `tests/dsp/test_slice.py`. The modules have round-trip tests
+  in `tests/dsp/test_p2_modules.py`. P1 and P2 went in as one commit, because they share
+  `analyse.py`.
+- **P3:** the browser run-through in both themes. It found and fixed:
+  - the waterfall's time axis (it assumed one FFT hop per tile row)
+  - the "Real recording" badge on synthetic files (now read from SigMF `core:recorder`)
+  - a `NaN` in the ledger when nothing was accepted
+  - unrounded parameter values
+
+  It also added [DEMO.md](DEMO.md) and the full check pass.
+
 ### P4 — after the demo (not started now)
 
 Recorded here so the sprint doesn't lose track of what it deferred:
@@ -90,8 +116,21 @@ Recorded here so the sprint doesn't lose track of what it deferred:
    bandwidth fallback below β ≈ 0.1; analog measurements, SSB and Morse CW with their synth
    generators; real/complex branches; OpenAPI-generated TS types; one run of each review agent,
    and a bench re-run.
-2. `tools/check.py`, the check command that picks checks from the changed paths.
-3. Widen toward the full PLAN milestones: M3 → M5 → M6 → M4 → M7 → M8, then close the Open gates
+2. **Prototype gaps found during the sprint:**
+   - `dsp.channel.channelise` only mixes a decimation-1 channel (a wide signal) and doesn't
+     filter it, so neighbours leak in. Filtering alone breaks `snr_psd` and the analog test,
+     which expect noise across the whole channel. Notch the other detections, or rework those
+     estimators.
+   - 2-FSK's rate (`fsk_symbol_rates`) is unreliable on a decimated or crowded channel. It
+     decodes only on its own undecimated channel, which is why `scene_fsk` is a separate file.
+   - Opening a recording is synchronous: the tile pyramid and every detection's analysis run
+     before the response (about 45 s for the demo scene). Move this to a background job.
+   - The per-row time fix (`RecordingInfo.hop` is now samples per row) and the tone-comb power
+     check in `dsp.detect` haven't been re-benched.
+   - Real FSK detections carry no symbol-view data yet (only the demo path draws the tone
+     histogram).
+3. `tools/check.py`, the check command that picks checks from the changed paths.
+4. Widen toward the full PLAN milestones: M3 → M5 → M6 → M4 → M7 → M8, then close the Open gates
    ([PLAN §0](PLAN.md#0-progress)). Rough estimate for full 1.0: about 135–210 agent-hours (2–3
    weeks at ~12 h/day), plus anything that needs the analyst directly (real captures, clean-machine
    tests, dataset downloads).

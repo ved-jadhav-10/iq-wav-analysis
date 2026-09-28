@@ -49,7 +49,9 @@ def test_opening_a_recording_returns_its_assumptions_and_pyramid_shape(
     assert body["dbMax"] > body["dbMin"]
     assert body["sampleRate"] == 1e6
     assert len(body["psdDb"]) == len(body["freqsHz"]) == body["levels"][0]["cols"]
-    assert body["hop"] == body["fftSize"] // 2
+    # Every level-0 row stands for its true duration: together they span the recording.
+    rows = body["levels"][0]["rows"]
+    assert abs(body["hop"] * rows - body["numSamples"]) <= body["fftSize"]
 
 
 def test_an_unknown_sample_rate_omits_hz_rather_than_guessing_one(

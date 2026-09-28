@@ -12,7 +12,7 @@ Related: [Problem statement](PROBLEM_STATEMENT.md) · [README](../README.md) · 
 
 *Checked against the repository on **28 September 2026**. This section tracks the current snapshot only; the full dated narrative for how each stage got here is in [PROGRESS_LOG.md](PROGRESS_LOG.md). Update this section whenever an item lands.*
 
-**Prototype mode is active** ([PROTOTYPE_PLAN.md](PROTOTYPE_PLAN.md)): the project is sprinting toward a demo — one synthetic recording decoding two signals to VERIFIED, one labelled analog, one honestly undecoded. Finishing M2's own exit gate is deferred to Phase P4, after the demo, before any M3 production work.
+**Prototype mode is active** ([PROTOTYPE_PLAN.md](PROTOTYPE_PLAN.md)). The demo target has landed (P0–P3, see [DEMO.md](DEMO.md)): one synthetic recording decodes QPSK and BPSK to VERIFIED frames, labels FM as analog and leaves one signal honestly undecoded. Two more synthetic files show a block interleaver, an outer RS code and 2-FSK. These are prototype paths, not the milestones' production versions. Next comes Phase P4: finish M2's exit gate before any M3 production work.
 
 | Stage | Built | Gate met |
 |---|---|---|
@@ -20,10 +20,10 @@ Related: [Problem statement](PROBLEM_STATEMENT.md) · [README](../README.md) · 
 | M0 Foundations and identity | Yes | Yes (27 Sep) |
 | M1 Ingest, evidence model, ground-truth lab, bench v0 | Yes | Yes (27 Sep) |
 | M2 Spectrum, detection, estimation, real tiles | DSP core, bench numbers, 4 GiB scale test, server tile pyramid, detection results/boxes in the UI | No — see Open gates |
-| M3 Synchronisation and demodulation | Prototype thin slice in progress | No |
-| M4 Modulation classification | Not started (a cumulant-rank prototype may land in P2) | No |
-| M5 GF(2) kernel, interleavers, FEC | Not started (an RS/interleaver prototype may land in P2) | No |
-| M6 Framing and known-system verification | Not started (CCSDS ASM + CRC-16 is the P1 demo target) | No |
+| M3 Synchronisation and demodulation | Prototype: RRC matched filter, square-law timing, M-th power carrier, BPSK/QPSK/8PSK/16QAM demapping, non-coherent 2-FSK (`dsp/sync.py`, `demod.py`, `fsk.py`) | No |
+| M4 Modulation classification | Prototype: fourth-order cumulant ranking, confirmed only by the CRC (`dsp/analyse.py`) | No |
+| M5 GF(2) kernel, interleavers, FEC | Prototype: soft Viterbi K=7 r½ (numba), block-interleaver catalogue aligned by the code syndrome, RS(255,223) via galois (`dsp/fec/`, `dsp/deinterleave.py`); no GF(2) kernel yet | No |
+| M6 Framing and known-system verification | Prototype: CCSDS ASM search, frame length from recurrence, CRC catalogue, Bonferroni-corrected ledger, shuffled-bit re-runs (`dsp/framing.py`, `dsp/analyse.py`) | No |
 | M7 Analyst workflow and reports | Not started | No |
 | M8 Hardening, validation and 1.0 release | Not started | No |
 
@@ -32,13 +32,11 @@ Related: [Problem statement](PROBLEM_STATEMENT.md) · [README](../README.md) · 
 | Gate | Target | Measured | Suspected cause |
 |---|---|---|---|
 | M2 SNR-error | ±1 dB, 0–20 dB | −8.7 dB median error at 0 dB, only inside ±1 dB at ≥ 15 dB — [bench-v0-detect.md](../bench/results/bench-v0-detect.md) | Single estimator (`snr_psd`); M2M4 and eigenvalue/MDL cross-checks not built |
-| M2 false detections | ≤ 0.05/scene | 0.20/scene on linear modulations at 3/6/20 dB — [bench-v0-detect.md](../bench/results/bench-v0-detect.md) | Untraced for linear modulations; M-FSK's share is traced to unshaped tone splatter in `dsp.synth` (see PROGRESS_LOG.md); `merge`/`absorb_sidelobes` in `dsp/detect.py` are the likely place to look next |
-| M2 first tile ≤ 2 s | ≤ 2 s | Not measured yet | `RecordingStore.open` builds the whole pyramid before returning; needs a fast first pass or a background build |
+| M2 false detections | ≤ 0.05/scene | 0.20/scene on linear modulations at 3/6/20 dB — [bench-v0-detect.md](../bench/results/bench-v0-detect.md) | Untraced for linear modulations; M-FSK's share is traced to unshaped tone splatter in `dsp.synth` (see PROGRESS_LOG.md); `merge`/`absorb_sidelobes` in `dsp/detect.py` are the likely place to look next. `merge_tone_combs` also merged 4 independent, roughly evenly spaced signals into one "4-FSK" band; it now also requires the tones' SNRs to agree within 6 dB (not re-benched) |
+| M2 first tile ≤ 2 s | ≤ 2 s | Not benched; opening the 1 s, 4-signal demo scene takes about 45 s by hand ([DEMO.md](DEMO.md)) | `RecordingStore.open` builds the whole pyramid and now also runs every detection's analysis before returning; needs a fast first pass and a background job |
 
 **Next**
-- Land the prototype P1 thin slice: QPSK + BPSK to VERIFIED frames, FM labelled analog, one signal honestly undecoded ([PROTOTYPE_PLAN.md](PROTOTYPE_PLAN.md)).
-- Widen in P2 as time allows: cumulant classify, a block interleaver, RS(255,223), 2-FSK.
-- After the demo (P4): close M2's SNR-error and false-detection gates, then resume M3 production work.
+- P4 ([PROTOTYPE_PLAN.md](PROTOTYPE_PLAN.md)): close M2's SNR-error, false-detection and first-tile gates, and fix the channeliser's decimation-1 leak and 2-FSK's rate estimate on decimated channels. Then resume M3 production work.
 - Confirm the SIH submission template and re-run the rival scan ([§9](#9-external-dates-sih)).
 - Build the idea-submission deck.
 
