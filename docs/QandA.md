@@ -50,7 +50,7 @@ The PS asks for a GUI-based, automated model that takes an `.IQ` or `.wav` file 
 
 The GUI must show sampling frequency, a constellation plot and a waterfall.
 
-**Our design covers every requirement.** What's built today is file ingest (raw `.iq` with the format sniffer, and SigMF), the evidence model, and a demo GUI on synthetic data. Everything else is planned in milestones M1–M8.
+**Our design covers every requirement.** The prototype chain in [DEMO.md](DEMO.md) already runs every PS item end to end on synthetic recordings — sampling frequency, modulation and FEC identification, PSK/QAM/FSK demodulation, block de-interleaving, convolutional (Viterbi) and RS decoding, and bitstream correlation to header/payload — for the modulations and codes built so far. See [PLAN §0](PLAN.md#0-progress) for exactly what's built versus still open.
 
 Where we deliberately deliver something different from a literal reading:
 
@@ -61,8 +61,6 @@ Where we deliberately deliver something different from a literal reading:
 | LDPC | Matched against a catalogue of standard codes (CCSDS, DVB-S2, Wi-Fi, 5G). No generic LDPC reconstruction. |
 | "Training data containing both .IQ and .wav" | Our classifier is trained on our own generator. If the organisers supply labelled data, we evaluate and fine-tune on it (PLAN M4). |
 | "GNU Radio, python, C++" | Python with Numba-compiled kernels. GNU Radio is GPL, so it's used only at development time. |
-
-**Not built yet:** WAV input, the next M1 item.
 
 **Our additions, which the PS doesn't ask for:** offline operation, evidence levels, known-system verification, analyst profiles and receiver capture.
 
@@ -406,9 +404,11 @@ Real recordings of catalogued systems (NAVTEX, AIS, POCSAG, Meteor-M LRPT) must 
 
 ## 5. The screen
 
-The workspace today runs on a **synthetic demo recording** generated in the browser from a fixed seed, and it's labelled so on screen:
+Before a file is opened, the workspace runs on a **synthetic demo recording** generated in the browser from a fixed seed, labelled *Synthetic demo* on screen:
 - The waterfall, spectrum and constellation are really computed from that signal.
 - The analysis results (evidence cards, hypotheses, frames) are **scripted placeholders** showing what the real engine will output.
+
+Opening a real recording — including the synthetic ones in [DEMO.md](DEMO.md) — replaces all of this with the real engine's output: real detections, a real pipeline rail, and for VERIFIED signals, real frames whose payload matches the transmitted bytes.
 
 ### What's in the demo recording?
 

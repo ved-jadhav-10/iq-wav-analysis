@@ -168,7 +168,7 @@ iq-wav-analysis/
 
 ## Getting started
 
-Sanket runs today on a deterministic synthetic capture generated in the browser (clearly labelled *Synthetic demo*); signal processing starts in M1. You need **Node.js 22**, [uv](https://docs.astral.sh/uv/) and **Python 3.12** (pinned; `uv python install 3.12`).
+Sanket opens on a deterministic synthetic capture generated in the browser (clearly labelled *Synthetic demo*). Opening a real recording — including the synthetic ones in [docs/DEMO.md](docs/DEMO.md) — runs the real chain; see [PLAN §0](docs/PLAN.md#0-progress) for current status. You need **Node.js 22**, [uv](https://docs.astral.sh/uv/) and **Python 3.12** (pinned; `uv python install 3.12`).
 
 ```bash
 uv sync                              # Python workspace + dev tools
