@@ -2,14 +2,14 @@ import { useEffect, useRef } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import type { Detection } from '@/data/demoAnalysis'
-import type { DemoProducts } from '@/lib/demoSignal'
 import { decimalsFor, signed } from '@/lib/format'
 import type { View } from '@/lib/view'
+import type { WaterfallSource } from '@/lib/waterfallSource'
 import { cssVar, useTheme } from '@/hooks/theme'
 import { LEVEL_CSS_VAR } from './levelStyles'
 
 interface Props {
-  demo: DemoProducts
+  source: WaterfallSource
   view: View
   detections: Detection[]
   selectedId: number
@@ -23,7 +23,7 @@ function withAlpha(hex: string, alpha: number): string {
 const FONT = '10px "IBM Plex Mono", monospace'
 
 /** Welch PSD sharing the waterfall's frequency window; its x-axis is the frequency axis for both. */
-export function PsdPlot({ demo, view, detections, selectedId }: Props) {
+export function PsdPlot({ source, view, detections, selectedId }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const plotRef = useRef<uPlot | null>(null)
   const viewRef = useRef(view)
@@ -90,7 +90,7 @@ export function PsdPlot({ demo, view, detections, selectedId }: Props) {
       },
     }
 
-    const data: uPlot.AlignedData = [Array.from(demo.freqsHz, (f) => f / 1000), Array.from(demo.psdDb)]
+    const data: uPlot.AlignedData = [Array.from(source.freqsHz, (f) => f / 1000), Array.from(source.psdDb)]
     const plot = new uPlot(opts, data, el)
     plotRef.current = plot
     const ro = new ResizeObserver(() => plot.setSize({ width: el.clientWidth, height: el.clientHeight }))
@@ -100,7 +100,7 @@ export function PsdPlot({ demo, view, detections, selectedId }: Props) {
       plot.destroy()
       plotRef.current = null
     }
-  }, [demo, detections, selectedId, theme])
+  }, [source, detections, selectedId, theme])
 
   return (
     <div className="relative h-full">

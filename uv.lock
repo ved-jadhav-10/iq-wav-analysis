@@ -609,12 +609,14 @@ version = "0.1.0"
 source = { editable = "backend" }
 dependencies = [
     { name = "fastapi" },
+    { name = "sanket-dsp" },
     { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi" },
+    { name = "sanket-dsp", editable = "dsp" },
     { name = "uvicorn" },
 ]
 

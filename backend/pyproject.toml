@@ -3,7 +3,11 @@ name = "sanket-backend"
 version = "0.1.0"
 description = "Sanket local server: serves the UI and the /api/v1 API"
 requires-python = ">=3.12,<3.13"
-dependencies = ["fastapi", "uvicorn"]
+dependencies = [
+    "fastapi",
+    "sanket-dsp",
+    "uvicorn",
+]
 
 [project.scripts]
 sanket = "backend.cli:main"
@@ -14,3 +18,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/backend"]
+
+[tool.uv.sources]
+sanket-dsp = { workspace = true }

@@ -1,11 +1,27 @@
-import { FileAudio, Moon, Sun, WifiOff } from 'lucide-react'
+import { useState, type FormEvent } from 'react'
+import { FileAudio, FolderOpen, Moon, Sun, WifiOff } from 'lucide-react'
 import { BRAND } from '@/brand'
-import { RECORDING } from '@/data/demoAnalysis'
 import { useTheme } from '@/hooks/theme'
 import { Logo } from './Logo'
 
-export function TopBar() {
+interface Props {
+  fileName: string
+  isDemo: boolean
+  opening: boolean
+  openError: string | null
+  onOpen: (path: string) => void
+}
+
+export function TopBar({ fileName, isDemo, opening, openError, onOpen }: Props) {
   const { theme, toggle } = useTheme()
+  const [path, setPath] = useState('')
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    const trimmed = path.trim()
+    if (trimmed && !opening) onOpen(trimmed)
+  }
+
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b bg-surface px-3">
       <div className="flex items-center gap-2.5">
@@ -22,11 +38,38 @@ export function TopBar() {
 
       <div className="flex min-w-0 items-center gap-2">
         <FileAudio className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <span className="num truncate text-xs">{RECORDING.fileName}</span>
+        <span className="num truncate text-xs">{fileName}</span>
         <span className="shrink-0 rounded-[3px] border border-dashed border-border-strong px-1.5 text-2xs font-medium text-muted-foreground uppercase">
-          Synthetic demo
+          {isDemo ? 'Synthetic demo' : 'Real recording'}
         </span>
       </div>
+
+      <form onSubmit={submit} className="flex min-w-0 items-center gap-1.5 max-lg:hidden">
+        <label htmlFor="open-path" className="sr-only">
+          Open a recording by path
+        </label>
+        <input
+          id="open-path"
+          type="text"
+          value={path}
+          onChange={(e) => setPath(e.target.value)}
+          placeholder="Open a recording by path…"
+          className="w-56 rounded-md border border-border-strong bg-surface px-2 py-1 text-xs text-foreground placeholder:text-subtle-foreground"
+        />
+        <button
+          type="submit"
+          disabled={opening || !path.trim()}
+          className="flex shrink-0 items-center gap-1 rounded-md border border-border-strong px-2 py-1 text-xs font-medium text-muted-foreground enabled:hover:bg-surface-2 enabled:hover:text-foreground disabled:opacity-40"
+        >
+          <FolderOpen className="size-3.5" aria-hidden />
+          {opening ? 'Opening…' : 'Open'}
+        </button>
+      </form>
+      {openError && (
+        <span role="alert" className="max-w-[24ch] truncate text-xs text-destructive" title={openError}>
+          {openError}
+        </span>
+      )}
 
       <div className="ml-auto flex items-center gap-2">
         <span

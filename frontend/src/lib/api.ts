@@ -1,0 +1,105 @@
+/**
+ * Client for the `/api/v1/recordings` and `/api/v1/tiles` routes (PLAN §5 M2): opening a real
+ * recording and fetching its server-computed tile pyramid, in place of the synthetic demo
+ * texture. See `dsp/tiles.py` for the tile contract this matches (row-major, fftshifted,
+ * uint8-quantised dB) and `backend/src/backend/app.py` for the routes themselves.
+ */
+import type { Parameter } from './evidence'
+
+export const TILE_ROWS = 256
+export const TILE_COLS = 256
+
+export interface LevelInfo {
+  level: number
+  rows: number
+  cols: number
+  rowSpan: number
+}
+
+export interface Assumptions {
+  datatype: Parameter
+  dataOffset: Parameter
+  sampleRate: Parameter
+  centerFrequency: Parameter
+  iqOrder: Parameter | null
+}
+
+export interface RecordingInfo {
+  id: string
+  container: string
+  name: string
+  numSamples: number
+  real: boolean
+  fftSize: number
+  hop: number
+  /** Hz; null when the Assumptions block leaves the sample rate UNKNOWN - never a default. */
+  sampleRate: number | null
+  dbMin: number
+  dbMax: number
+  /** Hz; null alongside sampleRate. */
+  freqsHz: number[] | null
+  psdDb: number[]
+  levels: LevelInfo[]
+  assumptions: Assumptions
+}
+
+export class ApiError extends Error {}
+
+async function asJson<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null)
+    const detail = typeof body === 'object' && body && 'detail' in body ? String(body.detail) : null
+    throw new ApiError(detail ?? `request failed: ${response.status} ${response.statusText}`)
+  }
+  return response.json() as Promise<T>
+}
+
+export async function openRecording(path: string): Promise<RecordingInfo> {
+  const response = await fetch('/api/v1/recordings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  })
+  return asJson<RecordingInfo>(response)
+}
+
+export async function getRecording(id: string): Promise<RecordingInfo> {
+  return asJson<RecordingInfo>(await fetch(`/api/v1/recordings/${id}`))
+}
+
+interface Tile {
+  rows: number
+  cols: number
+  data: Uint8Array
+}
+
+async function fetchTile(recordingId: string, level: number, row: number, col: number): Promise<Tile> {
+  const response = await fetch(`/api/v1/tiles/${recordingId}/${level}/${row}/${col}`)
+  if (!response.ok) throw new ApiError(`failed to fetch tile ${level}/${row}/${col}`)
+  const rows = Number(response.headers.get('x-tile-rows') ?? 0)
+  const cols = Number(response.headers.get('x-tile-cols') ?? 0)
+  const data = new Uint8Array(await response.arrayBuffer())
+  return { rows, cols, data }
+}
+
+/** A level's whole grid, stitched from its fixed-size tiles (row-major, matching `dsp.tiles`). */
+export async function fetchLevelGrid(recordingId: string, level: LevelInfo): Promise<Uint8Array> {
+  const rowTiles = Math.max(1, Math.ceil(level.rows / TILE_ROWS))
+  const colTiles = Math.max(1, Math.ceil(level.cols / TILE_COLS))
+  const grid = new Uint8Array(level.rows * level.cols)
+  const requests: Promise<void>[] = []
+  for (let rt = 0; rt < rowTiles; rt++) {
+    for (let ct = 0; ct < colTiles; ct++) {
+      requests.push(
+        fetchTile(recordingId, level.level, rt, ct).then((tile) => {
+          for (let r = 0; r < tile.rows; r++) {
+            const destStart = (rt * TILE_ROWS + r) * level.cols + ct * TILE_COLS
+            grid.set(tile.data.subarray(r * tile.cols, (r + 1) * tile.cols), destStart)
+          }
+        }),
+      )
+    }
+  }
+  await Promise.all(requests)
+  return grid
+}

@@ -24,7 +24,7 @@ function Confidence({ value, level }: { value: number; level: Parameter['level']
   )
 }
 
-function ParameterCard({ param }: { param: Parameter }) {
+export function ParameterCard({ param }: { param: Parameter }) {
   const hasDetails = param.evidence.length > 0 || param.alternatives.length > 0
   return (
     <article className="rounded-md border bg-surface px-3 py-2.5">
@@ -78,7 +78,9 @@ function ParameterCard({ param }: { param: Parameter }) {
               {param.alternatives.map((a) => (
                 <div key={a.value} className="flex items-center justify-between gap-2 text-xs">
                   <dt className="num">{a.value}</dt>
-                  <dd className="num text-muted-foreground">{Math.round(a.confidence * 100)}%</dd>
+                  <dd className="num text-muted-foreground">
+                    {a.confidence === null ? 'unranked' : `${Math.round(a.confidence * 100)}%`}
+                  </dd>
                 </div>
               ))}
             </dl>

@@ -2,14 +2,14 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerE
 import { RotateCcw } from 'lucide-react'
 import type { Detection } from '@/data/demoAnalysis'
 import { buildLut, COLORMAPS, type ColormapName } from '@/lib/colormaps'
-import type { DemoProducts } from '@/lib/demoSignal'
 import { decimalsFor, niceTicks, signed } from '@/lib/format'
 import { clampView, zoomAxis, type View } from '@/lib/view'
 import { createWaterfallGl, type WaterfallGl } from '@/lib/waterfallGl'
+import type { WaterfallSource } from '@/lib/waterfallSource'
 import { LEVEL_BORDER, LEVEL_TEXT } from './levelStyles'
 
 interface Props {
-  demo: DemoProducts
+  source: WaterfallSource
   full: View
   view: View
   onViewChange: (v: View) => void
@@ -28,7 +28,7 @@ interface Hover {
 
 const COLORMAP_NAMES = Object.keys(COLORMAPS) as ColormapName[]
 
-export function Waterfall({ demo, full, view, onViewChange, detections, selectedId, onSelect }: Props) {
+export function Waterfall({ source, full, view, onViewChange, detections, selectedId, onSelect }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const plotRef = useRef<HTMLDivElement>(null)
   const glRef = useRef<WaterfallGl | null>(null)
@@ -38,8 +38,8 @@ export function Waterfall({ demo, full, view, onViewChange, detections, selected
 
   const [glError, setGlError] = useState<string | null>(null)
   const [cmap, setCmap] = useState<ColormapName>('sanket')
-  const [floorDb, setFloorDb] = useState(() => Math.round(demo.dbMin + 6))
-  const [ceilDb, setCeilDb] = useState(demo.dbMax)
+  const [floorDb, setFloorDb] = useState(() => Math.round(source.dbMin + 6))
+  const [ceilDb, setCeilDb] = useState(source.dbMax)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [hover, setHover] = useState<Hover | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -55,7 +55,7 @@ export function Waterfall({ demo, full, view, onViewChange, detections, selected
     let gl: WaterfallGl | null = null
     let failure: string | null = null
     try {
-      gl = createWaterfallGl(canvas, demo.tile, demo.bins, demo.rows)
+      gl = createWaterfallGl(canvas, source.tile, source.bins, source.rows)
       if (!gl) failure = 'WebGL2 is not available in this browser, so the waterfall cannot be drawn.'
     } catch (e) {
       failure = e instanceof Error ? e.message : String(e)
@@ -66,11 +66,11 @@ export function Waterfall({ demo, full, view, onViewChange, detections, selected
       gl?.dispose()
       glRef.current = null
     }
-  }, [demo])
+  }, [source])
 
   useEffect(() => {
     glRef.current?.setLut(buildLut(cmap))
-  }, [cmap, demo])
+  }, [cmap, source])
 
   useEffect(() => {
     const el = plotRef.current
@@ -92,12 +92,12 @@ export function Waterfall({ demo, full, view, onViewChange, detections, selected
     if (canvas.width !== w) canvas.width = w
     if (canvas.height !== h) canvas.height = h
     const fSpan = full.f1 - full.f0
-    const dbSpan = demo.dbMax - demo.dbMin
+    const dbSpan = source.dbMax - source.dbMin
     gl.draw(
       [(view.f0 - full.f0) / fSpan, (view.f1 - full.f0) / fSpan, view.t0 / full.t1, view.t1 / full.t1],
-      [(floorDb - demo.dbMin) / dbSpan, (ceilDb - demo.dbMin) / dbSpan],
+      [(floorDb - source.dbMin) / dbSpan, (ceilDb - source.dbMin) / dbSpan],
     )
-  }, [view, floorDb, ceilDb, cmap, size, demo, full])
+  }, [view, floorDb, ceilDb, cmap, size, source, full])
 
   useEffect(() => {
     const el = plotRef.current
@@ -130,10 +130,10 @@ export function Waterfall({ demo, full, view, onViewChange, detections, selected
     const y = clientY - rect.top
     const f = view.f0 + (x / rect.width) * (view.f1 - view.f0)
     const t = view.t0 + (y / rect.height) * (view.t1 - view.t0)
-    const col = Math.min(demo.bins - 1, Math.max(0, Math.floor(((f - full.f0) / (full.f1 - full.f0)) * demo.bins)))
-    const row = Math.min(demo.rows - 1, Math.max(0, Math.floor((t / full.t1) * demo.rows)))
-    const q = demo.tile[row * demo.bins + col]
-    return { x, y, t, f, db: demo.dbMin + (q / 255) * (demo.dbMax - demo.dbMin) }
+    const col = Math.min(source.bins - 1, Math.max(0, Math.floor(((f - full.f0) / (full.f1 - full.f0)) * source.bins)))
+    const row = Math.min(source.rows - 1, Math.max(0, Math.floor((t / full.t1) * source.rows)))
+    const q = source.tile[row * source.bins + col]
+    return { x, y, t, f, db: source.dbMin + (q / 255) * (source.dbMax - source.dbMin) }
   }
 
   function onPointerDown(e: PointerEvent<HTMLDivElement>) {
@@ -246,7 +246,7 @@ export function Waterfall({ demo, full, view, onViewChange, detections, selected
             id="wf-floor"
             aria-label="Floor"
             type="range"
-            min={demo.dbMin}
+            min={source.dbMin}
             max={ceilDb - 3}
             step={1}
             value={floorDb}
@@ -262,7 +262,7 @@ export function Waterfall({ demo, full, view, onViewChange, detections, selected
             id="wf-ceil"
             type="range"
             min={floorDb + 3}
-            max={demo.dbMax}
+            max={source.dbMax}
             step={1}
             value={ceilDb}
             onChange={(e) => setCeilDb(Number(e.target.value))}
