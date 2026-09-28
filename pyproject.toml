@@ -11,6 +11,7 @@ dev = [
  "httpx2",
  "jsonschema>=4.26.0",
  "pre-commit",
+ "psutil>=6.0",
  "pyright",
  "pytest",
  "pytest-socket",
@@ -51,4 +52,7 @@ venv = ".venv"
 testpaths = ["tests"]
 pythonpath = ["tools"]
 # Tests may only open loopback connections: enforces "0 outbound connections" (PLAN §2).
-addopts = ["--import-mode=importlib", "--allow-hosts=127.0.0.1,::1"]
+# "slow" tests (multi-GB scale runs) are excluded by default: run them with `-m slow`, matching
+# how bench's null/sealed sets aren't run during ordinary development either.
+addopts = ["--import-mode=importlib", "--allow-hosts=127.0.0.1,::1", "-m", "not slow"]
+markers = ["slow: writes multi-GB files and/or takes minutes; run explicitly with -m slow"]

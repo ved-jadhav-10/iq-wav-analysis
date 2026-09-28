@@ -339,6 +339,89 @@ def absorb_sidelobes(detections: Sequence[Detection]) -> list[Detection]:
     return kept
 
 
+COMB_TIME_OVERLAP = 0.7  # fraction of the shorter duration two tones must share
+COMB_WIDTH_RATIO = 3.0  # tones must be within this factor of each other's width
+
+
+def _comb_groups(detections: Sequence[Detection]) -> list[list[Detection]]:
+    """Cluster detections that share time extent and are similarly wide: several separate
+    tones of one M-FSK carrier look this way, unlike independent signals, which would need to
+    coincide in duration, start time and bandwidth all at once purely by chance."""
+    remaining = list(detections)
+    groups: list[list[Detection]] = []
+    while remaining:
+        seed = remaining.pop(0)
+        group, rest = [seed], []
+        for d in remaining:
+            close = _overlap((seed.start, seed.stop), (d.start, d.stop)) >= COMB_TIME_OVERLAP * min(
+                seed.duration, d.duration
+            ) and (1 / COMB_WIDTH_RATIO <= d.bandwidth / seed.bandwidth <= COMB_WIDTH_RATIO)
+            (group if close else rest).append(d)
+        remaining = rest
+        groups.append(group)
+    return groups
+
+
+COMB_SPACING_TOLERANCE = 0.3  # relative: how far a tone's spacing may sit from the median one
+# 2 is deliberately excluded: with only one gap, "evenly spaced" holds for any pair and carries
+# no information, so a 2-tone group always falls through to the power-based test below.
+COMB_TEMPLATE_ORDERS = (4, 8)  # M-FSK orders with enough gaps for spacing to be real evidence
+
+
+def _evenly_spaced(group: Sequence[Detection]) -> bool:
+    """Whether the group's tone count matches a valid M-FSK order (with enough tones for
+    spacing to mean anything) and its centres are close to evenly spaced: continuous-phase
+    M-FSK's tones sit at (2k - M + 1) * deviation, an arithmetic progression, whatever the
+    deviation - this pattern is its own evidence, independent of how much noise-floor gap sits
+    between the outermost tones."""
+    if len(group) not in COMB_TEMPLATE_ORDERS:
+        return False
+    centres = sorted(d.centre for d in group)
+    gaps = np.diff(centres)
+    median = float(np.median(gaps))
+    return median > 0 and bool(np.all(np.abs(gaps - median) <= COMB_SPACING_TOLERANCE * median))
+
+
+def merge_tone_combs(detections: Sequence[Detection], reference: Resolution) -> list[Detection]:
+    """Replace a cluster of similarly wide, co-temporal detections with one, when they form a
+    valid M-FSK tone pattern (`_evenly_spaced`): separated M-FSK tones look like several signals
+    to `merge`'s contiguity test (each tone is a narrow line with little energy between it and
+    the next), unlike independent signals, which would need to coincide in duration, start time
+    and bandwidth all at once purely by chance.
+
+    An earlier version of this also merged a cluster whenever its whole span (tones and gaps
+    together) cleared the ordinary significance bar, without needing the spacing pattern; that
+    test turned out to accept almost any two strong, nearby, similarly wide real signals too
+    (their combined average is easily significant on its own, comb or not), merging unrelated
+    signals as if they were one FSK carrier - removed rather than kept as an unsound fallback.
+    A 2-tone (2-FSK) cluster is never merged here for the same reason: with one gap there is no
+    spacing pattern to check, so a genuine 2-FSK carrier only gets merged if `merge`'s own
+    contiguity test (a real gap-significance check, unlike the removed fallback) already treats
+    it as one signal - a known gap, not a silent one (see PLAN M2 §0).
+    """
+    out: list[Detection] = []
+    for group in _comb_groups(detections):
+        if not _evenly_spaced(group):
+            out.extend(group)
+            continue
+        low, high = min(d.low for d in group), max(d.high for d in group)
+        start, stop = min(d.start for d in group), max(d.stop for d in group)
+        mean, _ = band_ratio(reference, low, high, start, stop)
+        out.append(
+            Detection(
+                start=start,
+                stop=stop,
+                low=low,
+                high=high,
+                nfft=reference.spectrogram.nfft,
+                snr_db=10 * math.log10(max(mean - 1, 1e-6)),
+                score=max(d.score for d in group),
+                cells=sum(d.cells for d in group),
+            )
+        )
+    return out
+
+
 def mark_images(detections: Sequence[Detection]) -> list[Detection]:
     """Label a weak detection mirrored across 0 Hz by a much stronger, simultaneous one."""
     out = list(detections)
@@ -375,7 +458,8 @@ def detect_spectrograms(specs: Sequence[Spectrogram], samples: int, real: bool) 
         if spec.grid.rows > 1:
             searches.append(detect_resolution(integrate(spec), timed.floor, searches=count))
     resolutions = tuple(searches)
-    merged = absorb_sidelobes(merge(resolutions))
+    finest_frequency = max(resolutions, key=lambda r: (r.spectrogram.nfft, not r.integrated))
+    merged = absorb_sidelobes(merge_tone_combs(merge(resolutions), finest_frequency))
     finest = resolutions[0]
     refined = [refine_time(d, finest) for d in merged]
     refined.sort(key=lambda d: (d.start, d.low))

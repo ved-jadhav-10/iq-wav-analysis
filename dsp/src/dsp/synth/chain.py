@@ -52,6 +52,20 @@ class SignalSpec:
     pulse: str = "rrc"  # "rrc" or "rect"
     rolloff: float = 0.35
     fsk_index: float = 1.0  # modulation index h: tones h * symbol rate apart
+    # Gaussian premodulation filter bandwidth-time product (0 = an abrupt step at each symbol).
+    # Default 0: a bt sweep over [0.02, 2.0] for the STANDARDS §8 false-detection target (PLAN
+    # §5 M2) found a three-way conflict, not a single wrong-direction mistake. bt in roughly
+    # [0.02, 0.15] does fix detection's splatter (dsp.detect.merge_tone_combs sees one blob
+    # instead of several stray tones), but by then blurring 2/4/8-FSK's discrete tone histogram
+    # toward FM's continuous one, it fails dsp.analog's kurtosis gate
+    # (test_fsk_is_not_mistaken_for_fm_even_though_both_are_constant_envelope) and smears the
+    # sharp transitions dsp.estimate.params.fsk_symbol_rate's edge-rate comb depends on
+    # (test_fsk_symbol_rate_matches_the_true_rate). bt in [0.2, 0.4] fails two of the three at
+    # once. Only bt=0 and bt >~ 0.5-2.0 (weak enough to be close to a no-op) pass every test, and
+    # those barely move the bench numbers. Left as a lever for whoever revisits this, not turned
+    # on by default; a real fix likely needs a filter that reduces splatter without erasing the
+    # discrete-tone signature the other two stages read off the same trajectory.
+    fsk_bt: float = 0.0
     frame: FrameSpec | None = field(default_factory=FrameSpec)
     scrambler: str | None = None
     outer: fec_.ReedSolomon | None = None
@@ -160,8 +174,8 @@ def _signal(
     coded = coded[spec.stream_offset : spec.stream_offset + symbols_needed * width]
     if spec.modulation in FSK:
         symbols = np.zeros(0, np.complex128)
-        x = fsk(coded, FSK[spec.modulation], base, spec.fsk_index / (2 * base))
-        truth |= {"fskIndex": spec.fsk_index, "tones": FSK[spec.modulation]}
+        x = fsk(coded, FSK[spec.modulation], base, spec.fsk_index / (2 * base), spec.fsk_bt)
+        truth |= {"fskIndex": spec.fsk_index, "tones": FSK[spec.modulation], "fskBt": spec.fsk_bt}
     else:
         symbols = map_bits(coded, spec.modulation)
         x = pulse_shape(symbols, base, spec.pulse, spec.rolloff)

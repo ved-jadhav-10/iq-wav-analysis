@@ -83,12 +83,32 @@ def pulse_shape(symbols: Complex, sps: int, shape: str, rolloff: float, span: in
     return np.convolve(up, taps)[span * sps // 2 : span * sps // 2 + len(up)]
 
 
-def fsk(bits: NDArray[Any], order: int, sps: int, deviation: float) -> Complex:
+def _gaussian_taps(sps: int, bt: float, span_symbols: int = 3) -> NDArray[np.float64]:
+    """Gaussian premodulation filter taps (GFSK-style: the same closed form GMSK's premod
+    filter uses, bandwidth-time product `bt`), unit sum so a run of one tone keeps its exact
+    frequency once the filter has settled - only the transitions between tones are smoothed."""
+    n = span_symbols * sps
+    t: NDArray[np.float64] = np.arange(-n, n + 1, dtype=np.float64) / sps
+    h: NDArray[np.float64] = np.exp(-2 * (np.pi * bt * t) ** 2 / np.log(2))
+    return h / np.sum(h)
+
+
+def fsk(bits: NDArray[Any], order: int, sps: int, deviation: float, bt: float = 0.0) -> Complex:
+    """`bt` = 0 (the default) is an abrupt step at each symbol, exact at every sample: what the
+    unit tests below check against. `bt` > 0 passes the tone trajectory through a Gaussian
+    premodulation filter first, as GFSK does, rounding those steps so the transmitted spectrum
+    doesn't splatter between tones (PLAN §5 M2's bench notes); `dsp.synth.chain` is the caller
+    that turns this on for the signals it generates.
+    """
     width = order.bit_length() - 1
     if 1 << width != order:
         raise ValueError("FSK order must be a power of two")
     g = gray_position(_indices(bits, width))
-    frequency = np.repeat((2 * g - order + 1) * deviation, sps)
+    frequency = np.repeat((2 * g - order + 1) * deviation, sps).astype(np.float64)
+    if bt > 0:
+        taps = _gaussian_taps(sps, bt)
+        pad = len(taps) // 2
+        frequency = np.convolve(np.pad(frequency, pad, mode="edge"), taps, mode="valid")
     return np.exp(2j * np.pi * np.cumsum(frequency))
 
 

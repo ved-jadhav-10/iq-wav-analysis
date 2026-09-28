@@ -16,3 +16,6 @@ frontend/playwright-report/
 
 # Personal Claude Code settings
 .claude/settings.local.json
+
+# Local MCP tooling (Serena project cache/config)
+.serena/
