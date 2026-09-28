@@ -70,7 +70,7 @@ Related: [Problem statement](PROBLEM_STATEMENT.md) · [README](../README.md) · 
 - Blind identification and decoding of block, convolutional, helical and catalogued pseudo-random interleavers; convolutional (incl. punctured), Reed-Solomon, concatenated and catalogued LDPC codes.
 - Frame sync discovery, frame length, header fields, CRC checks.
 - A web GUI served locally: waterfall, PSD, constellation, eye diagram, evidence, hypothesis accounting, frames, assumptions. Analyst overrides that re-run downstream stages.
-- Exports: JSON, CSV, PDF, SigMF annotations; profiles as files.
+- Exports: JSON, CSV, PDF, SigMF annotations; profiles as files. The PDF and the UI open with a plain-language summary of the findings, generated from the results.
 - One-folder installable build for Windows 10/11 x64 and Ubuntu 22.04+ that runs with networking switched off. The build opens Sanket in its **own desktop window** (pywebview) over the same local server. The same UI stays reachable from any browser at 127.0.0.1, which is also the fallback when no system webview is available.
 
 **Out of scope for 1.0**:
@@ -85,6 +85,7 @@ Related: [Problem statement](PROBLEM_STATEMENT.md) · [README](../README.md) · 
 **After 1.0** (future scope; not scheduled in any milestone):
 
 - Playable audio: demodulate analog AM, FM and SSB voice to a WAV the analyst can listen to and export. Digital voice (DMR, P25 and similar) stays out, because its voice codecs are patented.
+- Doppler and frequency-drift correction: estimate how a signal's frequency moves over the recording (a low-orbit satellite pass, a moving transmitter, an oscillator warming up), report the drift rate as a Parameter, and remove it before sync. Until then, carrier recovery (the M-th power line plus per-block phase tracking) follows only slow drift, and detection assumes each signal stays at one frequency.
 - Time-domain views: I and Q, amplitude, phase and instantaneous frequency against time for the selected signal. The FSK instantaneous-frequency view is the first of these.
 - OFDM (Wi-Fi, LTE, DVB-T): detect it and estimate its subcarrier spacing and cyclic-prefix length. Until then, OFDM is labelled unknown by the open-set rejection (M4) rather than forced into a single-carrier label.
 - An explain mode that redraws the selected signal on a slow toy carrier, as sine and cosine, so phase flips (PSK), tone changes (FSK) and amplitude steps (QAM) are visible. It is always labelled *illustrative*, because the recording holds no carrier.
@@ -386,8 +387,13 @@ The core differentiator (D9): no public implementation of these methods exists.
 - Overrides on any stage → downstream re-run → before/after diff.
 - Job history; batch view; compare view.
 - Exports: JSON (schema-versioned), CSV, PDF report, SigMF annotations; each carries the assumptions block and the Sanket/catalogue/model versions.
+- **Plain-language summary**, for readers who aren't signal analysts (a supervisor, a case file, a judge):
+  - What it says: a few short sentences per signal, e.g. "A signal was found at +120 kHz. Its modulation is QPSK, verified: 44 of 44 frames passed their CRC." Every sentence comes from one Parameter and states its evidence level in words ("verified by CRC", "estimated", "a guess based on a convention", "could not be determined, because …"). It never states a value more firmly than its level, and an UNKNOWN is said as such, with its reason.
+  - Where it appears: at the top of the PDF report, and as a summary panel in the UI above the pipeline rail. `needsReview` items are listed in it as open questions.
+  - How it's made: deterministic templates over `results.json`, so the same results always give the same text. No LLM, no network (§2 Offline).
+  - Tested: every sentence traces to a Parameter, and a test on each synth preset checks that the level word in each sentence matches that Parameter's level.
 - Run record in exports: an "Include run record (timings, machine details)" checkbox in the export dialog, ticked by default and remembering the last choice; unticked, `run.json` is left out and the PDF drops its timing table. The CLI and batch export take `--no-run-record`.
-- **Exit gate:** Playwright E2E covers open → analyse → override → save profile → apply it to a second recording → export, with sockets blocked. Capture is tested end to end against the simulated recorder.
+- **Exit gate:** Playwright E2E covers open → analyse → override → save profile → apply it to a second recording → export, with sockets blocked; the exported PDF opens with the plain-language summary. Capture is tested end to end against the simulated recorder.
 
 ### M8 — Hardening, validation and 1.0 release
 

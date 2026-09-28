@@ -57,7 +57,7 @@ flowchart TD
 | De-interleave + FEC | Identifies and decodes the coding layers | One bit-packed Numba GF(2) Gaussian-elimination kernel (soft GJETP) reused for code length, sync, puncturing and interleaver period; Galois-field Fourier test for RS; soft syndrome scoring against an LDPC catalogue; Viterbi, RS and min-sum decoders; false-alarm rate measured on shuffled bits |
 | Frame | Finds message structure | Known sync library + blind sync discovery with a significance test; frame length; header fields |
 | Match | Checks the blind results against known public systems and the analyst's saved profiles | Parameter match within tolerances, then the system's own check on this recording (CRC, sync recurrence, diversity copies); every entry counted in the ledger; blind results never overwritten |
-| Report | Shows and exports everything | React GUI, JSON, PDF, SigMF annotations, profiles |
+| Report | Shows and exports everything | React GUI, JSON, PDF, SigMF annotations, profiles; a plain-language summary of the findings, with each value's evidence level in words |
 
 ### Inputs
 
@@ -127,6 +127,7 @@ We state these up front; they are not buried in fine print:
   Sanket can record from a locally connected receiver, but it always analyses the resulting file. We recover bits, not plaintext.
 - **Planned after 1.0** ([PLAN §1](docs/PLAN.md#1-what-10-is)):
   - playable audio from analog signals
+  - Doppler and frequency-drift correction
   - I/Q, amplitude, phase and frequency against time
   - an illustrative sine/cosine explain mode
   - ASK/OOK and ADS-B

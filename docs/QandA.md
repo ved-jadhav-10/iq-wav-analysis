@@ -375,7 +375,7 @@ How Sanket uses it:
 1. **The on-screen analysis:** what each signal is, with the evidence.
 2. **The recovered data:** a frame table with each frame's start, header and payload, exportable as bits, hex or JSON, plus soft bits for the analyst's own experiments.
 3. **The known-system verdict**, e.g. "POCSAG 1200, VERIFIED".
-4. **A PDF report** for people and case files.
+4. **A PDF report** for people and case files. It opens with a plain-language summary ("Its modulation is QPSK, verified: every frame passed its CRC"), so a reader who isn't a signal analyst knows what was found and how sure we are.
 5. **SigMF annotations**, so other tools show our findings.
 6. **Profiles**, to reuse the analysis.
 7. **`results.json`**, for machines rather than people: scripts, batches and databases. It's byte-identical across runs, so results are reproducible and auditable.
@@ -595,7 +595,8 @@ Decisions made while working through these questions. [PLAN](PLAN.md) holds the 
 | Analyst profiles: save, apply, suggest, share; always re-checked | PLAN M7 |
 | Analog signals detected and labelled, kept out of the digital chain | PLAN M2, M4 |
 | Organiser training data used for evaluation and fine-tuning if supplied | PLAN M4 |
-| After 1.0: playable audio, time-domain views, illustrative sine/cosine mode, ASK/OOK and ADS-B, OFDM parameters, payload text, more known systems | PLAN §1 |
+| Plain-language summary at the top of the PDF report and in the UI, generated from the results by templates, stating each value's evidence level in words | PLAN M7 |
+| After 1.0: playable audio, Doppler and frequency-drift correction, time-domain views, illustrative sine/cosine mode, ASK/OOK and ADS-B, OFDM parameters, payload text, more known systems | PLAN §1 |
 | Real-world validation stays in M8; no rushing the milestones | PLAN M8 |
 | Ship as a desktop window (pywebview) over the local server, with the browser as fallback | PLAN §1, M8 |
 
