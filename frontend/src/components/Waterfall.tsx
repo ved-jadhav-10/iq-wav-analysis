@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { RotateCcw } from 'lucide-react'
-import type { Detection } from '@/data/demoAnalysis'
 import { buildLut, COLORMAPS, type ColormapName } from '@/lib/colormaps'
+import type { DetectionMarker } from '@/lib/detections'
 import { decimalsFor, niceTicks, signed } from '@/lib/format'
 import { clampView, zoomAxis, type View } from '@/lib/view'
 import { createWaterfallGl, type WaterfallGl } from '@/lib/waterfallGl'
@@ -13,7 +13,7 @@ interface Props {
   full: View
   view: View
   onViewChange: (v: View) => void
-  detections: Detection[]
+  detections: DetectionMarker[]
   selectedId: number
   onSelect: (id: number) => void
 }

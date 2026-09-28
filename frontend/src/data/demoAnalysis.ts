@@ -1,3 +1,4 @@
+import type { Box } from '@/lib/box'
 import type { EvidenceLevel, Parameter, StageResult } from '@/lib/evidence'
 import { DEMO_CONFIG, mulberry32 } from '@/lib/demoSignal'
 
@@ -6,12 +7,7 @@ import { DEMO_CONFIG, mulberry32 } from '@/lib/demoSignal'
  * lib/demoSignal.ts; they stand in for the backend's /api/v1 analysis response until it exists.
  */
 
-export interface Box {
-  t0: number
-  t1: number
-  f0: number
-  f1: number
-}
+export type { Box }
 
 export interface Hypothesis {
   layer: 'Interleaver' | 'FEC' | 'Framing'

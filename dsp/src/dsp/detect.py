@@ -45,6 +45,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from dsp import _scipy
+from dsp.evidence import EvidenceLevel, Parameter
 from dsp.spectrum import Grid, Spectrogram, plan_grid, read_span, spectrograms
 
 Float = NDArray[np.float64]
@@ -72,6 +73,12 @@ class Detection:
     score: float  # -log10 of the box's tail probability (significance)
     cells: int
     image_of: int | None = None  # index of the detection this one mirrors
+    # degrees of freedom behind snr_db's cell mean (`detection_parameters`'s uncertainty); 0
+    # only for a Detection built by hand (tests), never one from detect_resolution/merge_tone_combs.
+    dof: float = 0.0
+    # samples per row in the time grid that set start/stop (`detection_parameters`'s
+    # uncertainty); 0 only for a Detection built by hand (tests).
+    time_resolution: int = 0
 
     @property
     def centre(self) -> float:
@@ -172,6 +179,15 @@ def _thresholds(dof: Float, pfa: float) -> Float:
     return np.array([unique[float(d)] for d in dof])
 
 
+def _row_width(grid: Grid, row: int) -> int:
+    """The sample span one row covers in `grid`: the granularity time-edge snapping (start/stop)
+    is limited to, so a detection's time uncertainty (`detection_parameters`) is stated against
+    this, not against `nfft` - refine_time and detect_resolution can each set start/stop from a
+    different grid than the detection's own `nfft`."""
+    start, stop = grid.row_span(row, row)
+    return stop - start
+
+
 def detect_resolution(
     spec: Spectrogram, floor: Floor | None = None, *, searches: int = 1
 ) -> Resolution:
@@ -190,6 +206,10 @@ def detect_resolution(
     candidates = 0
     seeded = set(np.unique(labels[seeds]).tolist())
     cell_dof = np.broadcast_to(dof_odd[:, None], ratio.shape)
+    # dof behind snr_db's mean, which averages every frame in a cell (spec.power), not just the
+    # odd half cell_dof (above) tests significance on - kept separate from `dof` (the score's own
+    # dof) so `detection_parameters`'s uncertainty isn't understated by the split-sample halving.
+    full_cell_dof = np.broadcast_to(spec.dof[:, None], ratio.shape)
     for index, (rs, cs) in enumerate(_scipy.find_objects(labels), start=1):
         if index not in seeded:
             continue
@@ -211,6 +231,8 @@ def detect_resolution(
                 snr_db=10 * math.log10(max(float(ratio[rs, cs][mine].mean()) - 1, 1e-6)),
                 score=score,
                 cells=int(mine.sum()),
+                dof=float(full_cell_dof[rs, cs][mine].sum()),
+                time_resolution=_row_width(spec.grid, rs.start),
             )
         )
     return Resolution(spec, floor, candidates, tuple(found), threshold)
@@ -319,7 +341,15 @@ def refine_time(d: Detection, finest: Resolution) -> Detection:
     active = noise & inside & (band > upper * 10 ** (-REFINE_DB / 10))
     rows = np.flatnonzero(active)
     start, stop = g.row_span(int(rows[0]), int(rows[-1]))
-    return replace(d, start=max(d.start, start), stop=min(d.stop, stop))
+    # The edges are snapped to this grid now, not the one that set d.time_resolution (which may
+    # be a different nfft's grid, from detect_resolution) - kept in step so detection_parameters'
+    # uncertainty matches whichever grid actually determined start/stop.
+    return replace(
+        d,
+        start=max(d.start, start),
+        stop=min(d.stop, stop),
+        time_resolution=_row_width(g, int(rows[0])),
+    )
 
 
 def absorb_sidelobes(detections: Sequence[Detection]) -> list[Detection]:
@@ -406,7 +436,7 @@ def merge_tone_combs(detections: Sequence[Detection], reference: Resolution) -> 
             continue
         low, high = min(d.low for d in group), max(d.high for d in group)
         start, stop = min(d.start for d in group), max(d.stop for d in group)
-        mean, _ = band_ratio(reference, low, high, start, stop)
+        mean, dof = band_ratio(reference, low, high, start, stop)
         out.append(
             Detection(
                 start=start,
@@ -417,6 +447,8 @@ def merge_tone_combs(detections: Sequence[Detection], reference: Resolution) -> 
                 snr_db=10 * math.log10(max(mean - 1, 1e-6)),
                 score=max(d.score for d in group),
                 cells=sum(d.cells for d in group),
+                dof=dof,
+                time_resolution=_row_width(reference.spectrogram.grid, 0),
             )
         )
     return out
@@ -469,3 +501,92 @@ def detect_spectrograms(specs: Sequence[Spectrogram], samples: int, real: bool) 
 
 def grids_for(samples: int, fft_sizes: Sequence[int] = FFT_SIZES) -> list[Grid]:
     return [g for n in fft_sizes if (g := plan_grid(samples, n)) is not None]
+
+
+def detection_parameters(d: Detection) -> tuple[Parameter, ...]:
+    """This detection's own findings as Parameters (PLAN §3): time in samples and frequency in
+    cycles/sample, so nothing here needs a sample rate - a caller with one converts to seconds
+    and Hz for display once it's known, same as the tile pyramid's frequency axis does.
+
+    `snr_db` is the detector's own statistic, biased upward near the significance threshold
+    (this module's docstring); `dsp.estimate.snr_psd` on the channelised signal is the proper
+    estimate, not built here yet.
+    """
+    image_warning: tuple[str, ...] = ()
+    if d.image_of is not None:
+        image_warning = (
+            f"Mirrored across 0 Hz by a much stronger, simultaneous detection (signal_"
+            f"{d.image_of}); probably its I/Q-image, not an independent signal.",
+        )
+    # start/stop are snapped to whichever time grid last set them (refine_time's finest grid, or
+    # detect_resolution's own nfft if refine_time left them unchanged) - that grid's row width
+    # (d.time_resolution), not d.nfft, is the actual snapping granularity; half a row, matching
+    # the "half a bin" convention centre_frequency uses above.
+    time_uncertainty = max(d.time_resolution, 1) / 2.0
+    # ratio_mean = 1 + s (s = the linear excess-over-floor ratio snr_db reports) is, to good
+    # approximation, Gamma(shape=dof, scale=(1+s)/dof): a Gamma scale family, so its standard
+    # deviation scales with its own mean, (1+s)/sqrt(dof), not with the noise-only floor's
+    # deviation alone. Propagated through snr_db = 10 log10(s): d(10 log10(ratio_mean-1))
+    # /d(ratio_mean) = 10/(s ln 10), giving 4.343 (1+s)/(s sqrt(dof)). Checked against dsp.synth
+    # across SNR (0-30 dB, dof in the thousands): matches the true across-seed spread to within
+    # about 2x in the typical 6-20 dB range; looser near 0 dB (selection effects add extra
+    # spread the Gamma model doesn't capture) and at very high SNR.
+    s = 10 ** (d.snr_db / 10)
+    snr_uncertainty = 4.343 * (1 + s) / (max(s, 1e-6) * math.sqrt(max(d.dof, 1.0)))
+    return (
+        Parameter(
+            id="center_frequency",
+            name="Centre frequency",
+            value=d.centre,
+            unit="cycles/sample",
+            uncertainty=0.5 / d.nfft,
+            level=EvidenceLevel.ESTIMATED,
+            method="Detection band centre (dsp.detect)",
+            evidence=(
+                f"Found at FFT size {d.nfft}, significance {d.score:.1f} (-log10 p) over "
+                f"{d.cells} cells.",
+            ),
+        ),
+        Parameter(
+            id="bandwidth",
+            name="Bandwidth",
+            value=d.bandwidth,
+            unit="cycles/sample",
+            uncertainty=1.0 / d.nfft,
+            level=EvidenceLevel.ESTIMATED,
+            method="Detection band edges (dsp.detect)",
+        ),
+        Parameter(
+            id="start_sample",
+            name="Start",
+            value=d.start,
+            unit="samples",
+            uncertainty=time_uncertainty,
+            level=EvidenceLevel.ESTIMATED,
+            method="Time-edge refinement (dsp.detect.refine_time)",
+        ),
+        Parameter(
+            id="stop_sample",
+            name="Stop",
+            value=d.stop,
+            unit="samples",
+            uncertainty=time_uncertainty,
+            level=EvidenceLevel.ESTIMATED,
+            method="Time-edge refinement (dsp.detect.refine_time)",
+        ),
+        Parameter(
+            id="snr_db",
+            name="SNR (detector statistic)",
+            value=d.snr_db,
+            unit="dB",
+            uncertainty=snr_uncertainty,
+            level=EvidenceLevel.ESTIMATED,
+            method="Mean cell power over the noise floor (dsp.detect)",
+            warnings=(
+                "Biased upward near the significance threshold; not the same as an Es/N0 "
+                "estimate (dsp.estimate.snr_psd, once run on this signal's channelised "
+                "samples).",
+                *image_warning,
+            ),
+        ),
+    )

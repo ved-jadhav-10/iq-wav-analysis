@@ -13,8 +13,8 @@ from pydantic import Field, ModelWrapValidatorHandler, computed_field, model_val
 from dsp.evidence import CamelModel, Parameter, Value
 from dsp.ingest.formats import SampleFormat
 
-SchemaVersion = Literal["0.3.0"]
-SCHEMA_VERSION: SchemaVersion = "0.3.0"
+SchemaVersion = Literal["0.4.0"]
+SCHEMA_VERSION: SchemaVersion = "0.4.0"
 SCHEMA_PATH = Path(__file__).with_name("results.schema.json")
 
 
@@ -81,11 +81,32 @@ class StageResult(CamelModel):
 class ReviewItem(CamelModel):
     """A value taken on a convention rather than evidence, for the analyst to confirm."""
 
+    signal: str | None = Field(
+        description="The signal it belongs to; null for an assumption or a whole-recording stage."
+    )
     stage: str | None = Field(description="The stage that reported it; null for an assumption.")
     parameter: str = Field(description="The parameter's id.")
     name: str
     value: Value
     convention: str
+
+
+class Signal(CamelModel):
+    """One detected signal (PLAN §3): its own stage results, kept apart from the
+    whole-recording stages above (`Results.stages`) because a recording can hold several.
+    Detect is the first stage every signal has; later stages (estimate, sync, ... M3+) append
+    here once they exist.
+    """
+
+    id: str = Field(min_length=1)
+    stages: tuple[StageResult, ...]
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        ids = [s.id for s in self.stages]
+        if len(ids) != len(set(ids)):
+            raise ValueError(f"a signal's stage ids must be unique: {ids}")
+        return self
 
 
 class Results(CamelModel):
@@ -99,6 +120,7 @@ class Results(CamelModel):
     sanket_version: str = Field(min_length=1)
     assumptions: Assumptions
     stages: tuple[StageResult, ...]
+    signals: tuple[Signal, ...] = ()
 
     @computed_field(
         description="Every value taken on a convention rather than evidence, derived from the "
@@ -106,14 +128,26 @@ class Results(CamelModel):
     )
     @property
     def needs_review(self) -> tuple[ReviewItem, ...]:
-        located = [(None, p) for p in self.assumptions.parameters()] + [
-            (stage.id, p) for stage in self.stages for p in stage.parameters
-        ]
+        located = (
+            [(None, None, p) for p in self.assumptions.parameters()]
+            + [(None, stage.id, p) for stage in self.stages for p in stage.parameters]
+            + [
+                (signal.id, stage.id, p)
+                for signal in self.signals
+                for stage in signal.stages
+                for p in stage.parameters
+            ]
+        )
         return tuple(
             ReviewItem(
-                stage=stage, parameter=p.id, name=p.name, value=p.value, convention=p.convention
+                signal=signal,
+                stage=stage,
+                parameter=p.id,
+                name=p.name,
+                value=p.value,
+                convention=p.convention,
             )
-            for stage, p in located
+            for signal, stage, p in located
             if p.convention is not None and p.value is not None
         )
 
@@ -138,6 +172,9 @@ class Results(CamelModel):
         ids = [stage.id for stage in self.stages]
         if len(ids) != len(set(ids)):
             raise ValueError(f"stage ids must be unique: {ids}")
+        signal_ids = [s.id for s in self.signals]
+        if len(signal_ids) != len(set(signal_ids)):
+            raise ValueError(f"signal ids must be unique: {signal_ids}")
         return self
 
     def to_json(self) -> str:

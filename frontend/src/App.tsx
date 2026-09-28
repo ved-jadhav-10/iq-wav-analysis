@@ -4,11 +4,14 @@ import { DETECTIONS, RECORDING } from '@/data/demoAnalysis'
 import { useDemoProducts } from '@/hooks/useDemoProducts'
 import { ApiError, fetchLevelGrid, openRecording, type RecordingInfo } from '@/lib/api'
 import type { DemoProducts } from '@/lib/demoSignal'
+import type { DetectionMarker } from '@/lib/detections'
 import type { StageId } from '@/lib/evidence'
 import { integer } from '@/lib/format'
 import { fullView } from '@/lib/view'
 import { sourceFromRecording, type WaterfallSource } from '@/lib/waterfallSource'
 import { BottomPanel } from '@/components/BottomPanel'
+import { DetectionEvidencePanel } from '@/components/DetectionEvidencePanel'
+import { DetectionsPanel } from '@/components/DetectionsPanel'
 import { EvidencePanel } from '@/components/EvidencePanel'
 import { PipelineRail } from '@/components/PipelineRail'
 import { PsdPlot } from '@/components/PsdPlot'
@@ -30,8 +33,25 @@ function Workspace({ mode }: { mode: Mode }) {
   const [view, setView] = useState(full)
   const [selectedId, setSelectedId] = useState(DETECTIONS[0].id)
   const [activeStage, setActiveStage] = useState<StageId | null>(null)
-  const detections = demo ? DETECTIONS : []
-  const selected = demo ? (DETECTIONS.find((d) => d.id === selectedId) ?? DETECTIONS[0]) : null
+
+  const realDetections = mode.kind === 'recording' ? mode.info.detections : []
+  // detect's own findings are always ESTIMATED today (dsp.detect.detection_parameters); a real
+  // level is read off the data anyway, rather than assumed, in case that ever changes.
+  const markers: DetectionMarker[] = demo
+    ? DETECTIONS
+    : realDetections.map((d, i) => ({
+        id: i,
+        label: `Signal ${i + 1}`,
+        level: d.parameters[0]?.level ?? 'ESTIMATED',
+        boxes: [d.box],
+      }))
+  const selectedDemo = demo ? (DETECTIONS.find((d) => d.id === selectedId) ?? DETECTIONS[0]) : null
+  // selectedId can be stale (left over from demo mode, or from a recording with fewer signals
+  // than the last one) - clamped to the first real detection, same as selectedDemo's own fallback.
+  const selectedRealIndex =
+    !demo && realDetections.length > 0 ? (selectedId >= 0 && selectedId < realDetections.length ? selectedId : 0) : -1
+  const selectedReal = selectedRealIndex >= 0 ? realDetections[selectedRealIndex] : undefined
+  const selectedMarkerId = selectedDemo?.id ?? selectedRealIndex
 
   function selectDetection(id: number) {
     setSelectedId(id)
@@ -40,20 +60,16 @@ function Workspace({ mode }: { mode: Mode }) {
 
   return (
     <main className="grid flex-1 grid-cols-[216px_minmax(0,1fr)_minmax(320px,380px)] max-xl:grid-cols-[200px_minmax(0,1fr)] max-md:grid-cols-1 xl:min-h-0">
-      {selected ? (
+      {selectedDemo ? (
         <PipelineRail
-          detections={detections}
-          selected={selected}
+          detections={DETECTIONS}
+          selected={selectedDemo}
           onSelectDetection={selectDetection}
           activeStage={activeStage}
           onSelectStage={setActiveStage}
         />
       ) : (
-        <nav aria-label="Detections and pipeline" className="border-r bg-surface max-md:border-r-0 max-md:border-b xl:min-h-0 xl:overflow-y-auto">
-          <NotYetAvailable>
-            Detection isn't built yet (PLAN M2 onward is still landing) — nothing to list for this recording yet.
-          </NotYetAvailable>
-        </nav>
+        <DetectionsPanel detections={realDetections} selectedId={selectedRealIndex} onSelect={selectDetection} />
       )}
 
       <div className="flex min-w-0 flex-col max-xl:h-[780px] xl:min-h-0">
@@ -62,18 +78,18 @@ function Workspace({ mode }: { mode: Mode }) {
           full={full}
           view={view}
           onViewChange={setView}
-          detections={detections}
-          selectedId={selected?.id ?? -1}
+          detections={markers}
+          selectedId={selectedMarkerId}
           onSelect={selectDetection}
         />
         <div className="h-[118px] shrink-0 border-t">
-          <PsdPlot source={source} view={view} detections={detections} selectedId={selected?.id ?? -1} />
+          <PsdPlot source={source} view={view} detections={markers} selectedId={selectedMarkerId} />
         </div>
         <div className="flex h-[232px] shrink-0 flex-col">
           {mode.kind === 'recording' ? (
             <RecordingAssumptionsPanel assumptions={mode.info.assumptions} />
           ) : (
-            <BottomPanel detection={selected!} />
+            <BottomPanel detection={selectedDemo!} />
           )}
         </div>
       </div>
@@ -82,15 +98,18 @@ function Workspace({ mode }: { mode: Mode }) {
         aria-label="Symbols and evidence"
         className="border-l bg-surface max-xl:col-span-2 max-xl:border-t max-xl:border-l-0 max-md:col-span-1 xl:min-h-0 xl:overflow-y-auto"
       >
-        {selected && demo ? (
+        {selectedDemo && demo ? (
           <>
-            <SymbolView detection={selected} demo={demo} />
-            <EvidencePanel detection={selected} activeStage={activeStage} />
+            <SymbolView detection={selectedDemo} demo={demo} />
+            <EvidencePanel detection={selectedDemo} activeStage={activeStage} />
           </>
+        ) : selectedReal ? (
+          <DetectionEvidencePanel detection={selectedReal} index={selectedRealIndex} />
         ) : (
           <NotYetAvailable>
             Synchronisation, demodulation and per-stage evidence aren't built yet (PLAN M3 onward) — this
-            recording's waterfall and PSD are real; everything downstream of them still needs those stages.
+            recording's waterfall, PSD and detections are real; everything downstream of them still needs those
+            stages.
           </NotYetAvailable>
         )}
       </aside>
@@ -167,7 +186,10 @@ export default function App() {
         onOpen={openPath}
       />
       {mode ? (
-        <Workspace mode={mode} />
+        // Keyed by recording so opening a different one - or switching back to the demo - remounts
+        // Workspace with fresh view/selection state, instead of carrying over the previous
+        // recording's zoom and (numerically coincidental) selected id.
+        <Workspace key={mode.kind === 'recording' ? mode.info.id : 'demo'} mode={mode} />
       ) : (
         <div className="grid flex-1 place-items-center" role={error ? 'alert' : 'status'}>
           <p className="text-sm text-muted-foreground">{error ?? 'Generating the demo capture…'}</p>

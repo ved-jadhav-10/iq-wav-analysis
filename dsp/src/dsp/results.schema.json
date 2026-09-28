@@ -375,6 +375,18 @@
       "additionalProperties": false,
       "description": "A value taken on a convention rather than evidence, for the analyst to confirm.",
       "properties": {
+        "signal": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The signal it belongs to; null for an assumption or a whole-recording stage.",
+          "title": "Signal"
+        },
         "stage": {
           "anyOf": [
             {
@@ -416,6 +428,7 @@
         }
       },
       "required": [
+        "signal",
         "stage",
         "parameter",
         "name",
@@ -423,6 +436,30 @@
         "convention"
       ],
       "title": "ReviewItem",
+      "type": "object"
+    },
+    "Signal": {
+      "additionalProperties": false,
+      "description": "One detected signal (PLAN §3): its own stage results, kept apart from the\nwhole-recording stages above (`Results.stages`) because a recording can hold several.\nDetect is the first stage every signal has; later stages (estimate, sync, ... M3+) append\nhere once they exist.",
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "stages": {
+          "items": {
+            "$ref": "#/$defs/StageResult"
+          },
+          "title": "Stages",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "stages"
+      ],
+      "title": "Signal",
       "type": "object"
     },
     "StageResult": {
@@ -500,8 +537,8 @@
   "description": "The results of analysing one recording.\n\n`needsReview` is derived from the parameters, never set by hand: it lists every value taken\non a convention, so one field tells a reader or a script whether anything rests on a guess.",
   "properties": {
     "schemaVersion": {
-      "const": "0.3.0",
-      "default": "0.3.0",
+      "const": "0.4.0",
+      "default": "0.4.0",
       "title": "Schemaversion",
       "type": "string"
     },
@@ -520,6 +557,14 @@
       "title": "Stages",
       "type": "array"
     },
+    "signals": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Signal"
+      },
+      "title": "Signals",
+      "type": "array"
+    },
     "needsReview": {
       "description": "Every value taken on a convention rather than evidence, derived from the parameters. Empty when nothing rests on a convention.",
       "items": {
@@ -535,6 +580,7 @@
     "sanketVersion",
     "assumptions",
     "stages",
+    "signals",
     "needsReview"
   ],
   "type": "object"

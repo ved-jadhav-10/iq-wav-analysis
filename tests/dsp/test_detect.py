@@ -1,13 +1,15 @@
 """Detection, checked against dsp.synth ground truth: found bursts match the truth, and a
 null (noise-only) recording accepts nothing (PLAN §2 false-accept bar, §5 M2 exit gate)."""
 
+import math
 from typing import Any
 
 import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from dsp.detect import Detection, DetectionResult, detect
+from dsp.detect import Detection, DetectionResult, detect, detection_parameters
+from dsp.evidence import EvidenceLevel
 from dsp.synth.chain import Scene, SignalSpec, generate
 
 
@@ -173,3 +175,75 @@ def test_hypotheses_counts_every_candidate_tried() -> None:
     result = _detect(g.samples.astype(np.complex64))
     assert result.hypotheses == sum(r.candidates for r in result.resolutions)
     assert result.hypotheses > 0  # at least the true signal's own candidate, at every FFT size
+
+
+def test_detection_parameters_report_the_detections_own_values() -> None:
+    d = Detection(
+        start=1_000,
+        stop=5_000,
+        low=-0.1,
+        high=0.1,
+        nfft=1024,
+        snr_db=12.0,
+        score=50.0,
+        cells=64,
+        dof=500.0,
+        time_resolution=800,
+    )
+    params = {p.id: p for p in detection_parameters(d)}
+    assert set(params) == {"center_frequency", "bandwidth", "start_sample", "stop_sample", "snr_db"}
+    assert params["center_frequency"].value == d.centre
+    assert params["bandwidth"].value == d.bandwidth
+    assert params["start_sample"].value == d.start
+    assert params["stop_sample"].value == d.stop
+    assert params["snr_db"].value == d.snr_db
+    for p in params.values():
+        assert p.level is EvidenceLevel.ESTIMATED
+        assert p.uncertainty is not None
+    assert not params["snr_db"].warnings[1:]  # only the always-present detector-bias warning
+    # start/stop uncertainty is half the *time grid's* row width (d.time_resolution), not nfft.
+    assert params["start_sample"].uncertainty == pytest.approx(400.0)
+    assert params["stop_sample"].uncertainty == pytest.approx(400.0)
+    # snr uncertainty: 4.343 (1+s)/(s sqrt(dof)), s = 10**(snr_db/10) - not the old, wrong
+    # 4.343/sqrt(cells), which for these values would give 4.343/8 = 0.543.
+    s = 10 ** (d.snr_db / 10)
+    expected_snr_uncertainty = 4.343 * (1 + s) / (s * math.sqrt(d.dof))
+    assert params["snr_db"].uncertainty == pytest.approx(expected_snr_uncertainty)
+
+
+def test_detection_parameters_snr_uncertainty_brackets_the_true_spread() -> None:
+    """The stated snr_db uncertainty should be the right order of magnitude for the actual
+    spread across independent draws at the same SNR - not just present (PLAN's "never it didn't
+    crash" rule applies to a stated uncertainty too, not only to the value itself)."""
+    spec = SignalSpec("qpsk", sps=8.0, frame=None, offset=0.1, power_db=0.0)
+    scene = Scene(1 << 16, (spec,), noise_db=-12.0)
+    found = []
+    for seed in range(20):
+        g = generate(scene, seed=seed)
+        result = _detect(g.samples.astype(np.complex64))
+        d = min(result.detections, key=lambda d: abs(d.centre - spec.offset))
+        found.append(d)
+    snrs = np.array([d.snr_db for d in found])
+    actual_std = float(np.std(snrs))
+    stated = np.array([detection_parameters(d)[4].uncertainty for d in found])
+    assert np.all(stated > 0)
+    # within a factor of 4 either way: a loose bound (the formula is an approximation, checked
+    # more precisely in scratch validation against dsp.synth over 0-30 dB), just enough to catch
+    # a formula off by an order of magnitude (dsp-reviewer's finding on the previous version).
+    assert 0.25 * actual_std < float(np.median(stated)) < 4.0 * actual_std
+
+
+def test_detection_parameters_warn_when_marked_as_an_image() -> None:
+    d = Detection(
+        start=0,
+        stop=100,
+        low=-0.05,
+        high=0.05,
+        nfft=256,
+        snr_db=5.0,
+        score=10.0,
+        cells=8,
+        image_of=0,
+    )
+    params = {p.id: p for p in detection_parameters(d)}
+    assert any("image" in w for w in params["snr_db"].warnings)

@@ -18,6 +18,7 @@ from dsp.results import (
     Assumptions,
     Results,
     SchemaVersion,
+    Signal,
     StageResult,
     schema_json,
 )
@@ -261,6 +262,42 @@ def test_a_needs_review_list_that_disagrees_with_the_parameters_is_rejected(
     data["needsReview"] = data["needsReview"][:1]  # hides two conventions
     with pytest.raises(ValidationError, match="doesn't match"):
         Results.model_validate(data)
+
+
+def test_signal_stage_ids_must_be_unique() -> None:
+    detect = StageResult(id="detect", name="Detect", status="done", summary="Found", parameters=())
+    with pytest.raises(ValidationError, match="unique"):
+        Signal(id="signal_0", stages=(detect, detect))
+
+
+def test_results_signal_ids_must_be_unique(results: Results) -> None:
+    signal = Signal(id="signal_0", stages=())
+    with pytest.raises(ValidationError, match="signal ids must be unique"):
+        Results.model_validate(results.model_dump() | {"signals": (signal, signal)})
+
+
+def test_needs_review_includes_signal_parameters(results: Results) -> None:
+    guess = Parameter(
+        id="center_frequency",
+        name="Centre frequency",
+        value=0.1,
+        unit="cycles/sample",
+        level=EvidenceLevel.HYPOTHESIS,
+        method="Carried forward",
+        convention="Taken from the stronger of two tied candidates.",
+    )
+    detect = StageResult(
+        id="detect", name="Detect", status="done", summary="s", parameters=(guess,)
+    )
+    signal = Signal(id="signal_0", stages=(detect,))
+    edited = results.model_dump(exclude={"needs_review"}) | {"signals": (signal,)}
+    updated = Results.model_validate(edited)
+    assert [(i.signal, i.stage, i.parameter, i.value) for i in updated.needs_review] == [
+        ("signal_0", "detect", "center_frequency", 0.1)
+    ]
+    data = json.loads(updated.to_json())
+    VALIDATOR.validate(data)
+    assert Results.model_validate(data) == updated
 
 
 def test_promotion_clears_the_convention_and_records_it() -> None:

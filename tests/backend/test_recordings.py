@@ -64,6 +64,22 @@ def test_an_unknown_sample_rate_omits_hz_rather_than_guessing_one(
     assert body["sampleRate"] is None
     assert body["freqsHz"] is None
     assert len(body["psdDb"]) == body["levels"][0]["cols"]  # still reported, unitless
+    assert body["detections"] == []  # a box in seconds/Hz needs a known rate, same as freqsHz
+
+
+def test_a_detection_reports_a_box_in_seconds_and_hz_with_its_own_evidence(
+    client: TestClient, sigmf_path: Path
+) -> None:
+    body = client.post("/api/v1/recordings", json={"path": str(sigmf_path)}).json()
+    assert len(body["detections"]) == 1
+    d = body["detections"][0]
+    assert d["id"] == "signal_0"
+    assert 0 <= d["box"]["t0"] < d["box"]["t1"]
+    assert d["box"]["f0"] < d["box"]["f1"]
+    params = {p["id"]: p for p in d["parameters"]}
+    assert set(params) == {"center_frequency", "bandwidth", "start_sample", "stop_sample", "snr_db"}
+    for p in params.values():
+        assert p["level"] == "ESTIMATED"
 
 
 def test_a_missing_path_is_a_client_error_not_a_500(client: TestClient, tmp_path: Path) -> None:

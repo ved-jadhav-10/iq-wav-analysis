@@ -4,6 +4,7 @@
  * texture. See `dsp/tiles.py` for the tile contract this matches (row-major, fftshifted,
  * uint8-quantised dB) and `backend/src/backend/app.py` for the routes themselves.
  */
+import type { Box } from './box'
 import type { Parameter } from './evidence'
 
 export const TILE_ROWS = 256
@@ -24,6 +25,14 @@ export interface Assumptions {
   iqOrder: Parameter | null
 }
 
+/** One detected signal's box and its own evidence (PLAN §5 M2). Only `detect`'s findings exist
+ * yet - estimate, sync, classify and the rest are still M3+ (PLAN §5). */
+export interface DetectionInfo {
+  id: string
+  box: Box
+  parameters: Parameter[]
+}
+
 export interface RecordingInfo {
   id: string
   container: string
@@ -41,6 +50,8 @@ export interface RecordingInfo {
   psdDb: number[]
   levels: LevelInfo[]
   assumptions: Assumptions
+  /** Empty alongside sampleRate: a box in seconds/Hz needs a known rate, same as freqsHz. */
+  detections: DetectionInfo[]
 }
 
 export class ApiError extends Error {}

@@ -1,10 +1,13 @@
-"""Opening a local recording and building its tile pyramid, kept in memory for this server
-process's lifetime (PLAN §5 M2). This is deliberately narrower than the full job/workspace
-store PLAN §3 describes (SQLite, content-addressed artifacts, job history): that is M7's scope.
-Here, a recording is opened once, its pyramid built once, and both are held in a dict - nothing
-is persisted across a restart, and there is no job runner. It exists so the frontend's waterfall
-has real, server-computed tiles to switch to instead of the demo texture (PLAN's M2 exit gate),
-without building ahead of that milestone's own scope.
+"""Opening a local recording, building its tile pyramid and running detection over it, all
+kept in memory for this server process's lifetime (PLAN §5 M2). This is deliberately narrower
+than the full job/workspace store PLAN §3 describes (SQLite, content-addressed artifacts, job
+history): that is M7's scope. Here, a recording is opened once, and everything about it is held
+in a dict - nothing is persisted across a restart, and there is no job runner. It exists so the
+frontend's waterfall has real, server-computed tiles and detection boxes to switch to instead of
+the demo texture (PLAN's M2 exit gate), without building ahead of that milestone's own scope.
+`app.py` is what turns `dsp.detect.detection_parameters`'s output into API-shaped evidence; a
+`dsp.results.Signal` per detection isn't assembled here, since that belongs to the real job
+document M7 builds, not this bridge.
 """
 
 import uuid
@@ -12,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
 
+from dsp.detect import Detection, detect
 from dsp.ingest.dispatch import NeedsDecompression, open_path
 from dsp.results import Assumptions
 from dsp.tiles import Pyramid, build_pyramid
@@ -31,6 +35,7 @@ class Recording:
     num_samples: int
     real: bool
     pyramid: Pyramid
+    detections: tuple[Detection, ...]
 
 
 class RecordingStore:
@@ -65,6 +70,11 @@ class RecordingStore:
         real = not fmt.is_complex
         with opened.recording.reader() as reader:
             pyramid = build_pyramid(reader, real=real)
+        # A second streaming pass, at detect's own FFT sizes (independent of the pyramid's):
+        # PLAN §5 M2's own "first tile <= 2 s" item is still open partly because of this - see
+        # PLAN's M2 checklist.
+        with opened.recording.reader() as reader:
+            detections = detect(reader, real=real).detections
         recording = Recording(
             id=str(uuid.uuid4()),
             path=path,
@@ -74,6 +84,7 @@ class RecordingStore:
             num_samples=pyramid.samples,
             real=real,
             pyramid=pyramid,
+            detections=detections,
         )
         with self._lock:
             self._recordings[recording.id] = recording

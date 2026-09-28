@@ -4,7 +4,8 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
 
-from dsp.evidence import CamelModel
+from dsp.detect import Detection, detection_parameters
+from dsp.evidence import CamelModel, Parameter
 from dsp.results import Assumptions
 
 from .recordings import Recording, RecordingError, RecordingStore
@@ -23,6 +24,25 @@ class LevelInfo(CamelModel):
     row_span: int
 
 
+class Box(CamelModel):
+    """A time/frequency rectangle in seconds and hertz (delta-f from capture centre), matching
+    the frontend's `View`/waterfall coordinates."""
+
+    t0: float
+    t1: float
+    f0: float
+    f1: float
+
+
+class DetectionInfo(CamelModel):
+    """One detected signal's box and its own evidence (PLAN §5 M2). Only `detect`'s findings
+    exist yet - estimate, sync, classify and the rest are still M3+ (PLAN §5)."""
+
+    id: str
+    box: Box
+    parameters: tuple[Parameter, ...]
+
+
 class RecordingInfo(CamelModel):
     id: str
     container: str
@@ -38,6 +58,8 @@ class RecordingInfo(CamelModel):
     psd_db: tuple[float, ...]
     levels: tuple[LevelInfo, ...]
     assumptions: Assumptions
+    # Empty alongside sample_rate: a box in seconds/Hz needs a known rate, same as freqs_hz.
+    detections: tuple[DetectionInfo, ...]
 
 
 def create_app(frontend_dist: Path) -> FastAPI:
@@ -55,9 +77,23 @@ def create_app(frontend_dist: Path) -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok", "version": app.version}
 
+    def _detection_info(d: Detection, index: int, sample_rate: float) -> DetectionInfo:
+        box = Box(
+            t0=d.start / sample_rate,
+            t1=d.stop / sample_rate,
+            f0=d.low * sample_rate,
+            f1=d.high * sample_rate,
+        )
+        return DetectionInfo(id=f"signal_{index}", box=box, parameters=detection_parameters(d))
+
     def _to_info(rec: Recording) -> RecordingInfo:
         rate = rec.assumptions.sample_rate.value
         sample_rate = rate if isinstance(rate, int | float) else None
+        detections = (
+            tuple(_detection_info(d, i, sample_rate) for i, d in enumerate(rec.detections))
+            if sample_rate
+            else ()
+        )
         return RecordingInfo(
             id=rec.id,
             container=rec.container,
@@ -76,6 +112,7 @@ def create_app(frontend_dist: Path) -> FastAPI:
                 for i, lv in enumerate(rec.pyramid.levels)
             ),
             assumptions=rec.assumptions,
+            detections=detections,
         )
 
     @app.post(f"{API_PREFIX}/recordings", response_model=RecordingInfo)

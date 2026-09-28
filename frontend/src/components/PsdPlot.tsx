@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
-import type { Detection } from '@/data/demoAnalysis'
+import type { DetectionMarker } from '@/lib/detections'
 import { decimalsFor, signed } from '@/lib/format'
 import type { View } from '@/lib/view'
 import type { WaterfallSource } from '@/lib/waterfallSource'
@@ -11,7 +11,7 @@ import { LEVEL_CSS_VAR } from './levelStyles'
 interface Props {
   source: WaterfallSource
   view: View
-  detections: Detection[]
+  detections: DetectionMarker[]
   selectedId: number
 }
 
