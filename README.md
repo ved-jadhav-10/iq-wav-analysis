@@ -75,7 +75,6 @@ Sanket analyses recordings offline, never transmits or decrypts, and is meant fo
 - [docs/PLAN.md](docs/PLAN.md) — status, scope, production bar, architecture, identity, milestones
 - [docs/STANDARDS_TO_BEAT.md](docs/STANDARDS_TO_BEAT.md) — vendors, prior art, rival repos, targets, references
 - [docs/UI.md](docs/UI.md) — workspace layout, what each view shows, layout invariants
-- [docs/PROGRESS_LOG.md](docs/PROGRESS_LOG.md) — dated history of what landed
 
 ## Credits
 

@@ -4,13 +4,13 @@
 
 This is the only plan. It ships **Sanket 1.0 as production software**, organised by milestones with measured exit gates. The PS requirements it answers are numbered R1–R5 in [PROBLEM_STATEMENT.md](PROBLEM_STATEMENT.md#requirements-as-sanket-reads-them). Last revised **30 September 2026**.
 
-Related: [README](../README.md) · [Problem statement](PROBLEM_STATEMENT.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · [UI](UI.md) · [Progress log](PROGRESS_LOG.md) · [Claude Code tooling](../.claude/CLAUDE_SKILLS_MCP.md)
+Related: [README](../README.md) · [Problem statement](PROBLEM_STATEMENT.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · [UI](UI.md) · [Claude Code tooling](../.claude/CLAUDE_SKILLS_MCP.md)
 
 ---
 
 ## 0. Progress
 
-*Checked against the repository on **30 September 2026**. This is the only place current status is tracked; the dated history is in [PROGRESS_LOG.md](PROGRESS_LOG.md). Update it whenever an item lands.*
+*Checked against the repository on **30 September 2026**. This is the only place current status is tracked. Update it whenever an item lands.*
 
 One decode chain runs end to end today (`dsp/analyse.py`, per detection, shown in the UI): BPSK/QPSK/8PSK/16QAM or 2-FSK → optional conv K=7 r½ → optional block interleaver → optional RS(255,223) → CCSDS ASM frames with CRC-16, VERIFIED only by the CRC. After demodulation every layer is a small fixed catalogue, not yet a blind search; the milestones below turn each into one.
 
@@ -154,7 +154,7 @@ One local process tree, no external services.
   bench/      presets, sealed set, null set, results, perf, decoder-truth harness
   tests/      Python tests, one folder per package
   tools/      THIRD_PARTY.md and licence check, inspect_iq, make_demo (sample recordings), schema
-  docs/       this plan, problem statement, standards, UI, progress log
+  docs/       this plan, problem statement, standards, UI
   ```
 
 ## 4. Product identity (fixed)
@@ -184,7 +184,7 @@ Dependencies: **M0 → M1 → M2 → M3 → (M4 ∥ M5) → M6 → M8**, with **
 
 **Gate policy:** a missed exit-gate number becomes an Open gate in §0 rather than blocking the next milestone; every open gate closes by M8.
 
-**Work rules:** while iterating, run the ground-truth test file for the item; run the full check list (`.claude/CLAUDE.md`) before each commit; run `dsp-reviewer`/`evidence-auditor` and the benches at each milestone exit, and the null bench whenever a blind search widens. When an item lands, tick it here, update §0, and append to [PROGRESS_LOG.md](PROGRESS_LOG.md).
+**Work rules:** while iterating, run the ground-truth test file for the item; run the full check list (`.claude/CLAUDE.md`) before each commit; run `dsp-reviewer`/`evidence-auditor` and the benches at each milestone exit, and the null bench whenever a blind search widens. When an item lands, tick it here and update §0.
 
 ### M0 — Foundations and identity ✅
 
