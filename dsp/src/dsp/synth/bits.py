@@ -157,8 +157,32 @@ class Scrambler:
         return data ^ self.sequence(len(data))
 
 
-SCRAMBLERS = {
+@dataclass(frozen=True)
+class SelfSyncScrambler:
+    """Multiplicative (self-synchronising) scrambler over the whole stream: each output bit is the
+    input XORed with earlier *output* bits at the lags of the polynomial's other terms, s[k] =
+    d[k] ^ s[k - a] ^ s[k - b] for 1 + x^a + x^b (G3RUH: a = 12, b = 17), from an all-zero
+    register."""
+
+    name: str
+    lags: tuple[int, ...]
+
+    def apply(self, bits: NDArray[Any]) -> Bits:
+        data = np.asarray(bits, dtype=np.uint8)
+        out = np.zeros(len(data), dtype=np.uint8)
+        for k in range(len(data)):
+            v = int(data[k])
+            for lag in self.lags:
+                if k >= lag:
+                    v ^= int(out[k - lag])
+            out[k] = v
+        return out
+
+
+SCRAMBLERS: dict[str, Scrambler | SelfSyncScrambler] = {
     # CCSDS 131.0-B pseudo-randomiser: h(x) = x^8 + x^7 + x^5 + x^3 + 1, all ones at the start of
     # each frame; the sequence begins FF 48 0E C0.
     "CCSDS": Scrambler("CCSDS", (8, 7, 5, 3), 0xFF),
+    # 9600 bit/s amateur packet: 1 + x^12 + x^17, applied to the whole stream.
+    "G3RUH": SelfSyncScrambler("G3RUH", (12, 17)),
 }

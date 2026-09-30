@@ -52,6 +52,14 @@ class HypothesisSearch(CamelModel):
     smallest_threshold: FiniteFloat
     shuffled_runs: int = Field(ge=0, description="Runs of the accepted chain on shuffled bits.")
     shuffled_accepts: int = Field(ge=0, description="How many of those passed; should be 0.")
+    blind_searched: int = Field(
+        default=0, ge=0, description="Branches the blind rate-1/n convolutional search ran on."
+    )
+    blind_identified: int = Field(
+        default=0,
+        ge=0,
+        description="Of those, branches where it named a code (which then still had to frame).",
+    )
     rows: tuple[Hypothesis, ...]
 
 

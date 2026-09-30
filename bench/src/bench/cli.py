@@ -8,11 +8,11 @@ The sealed set's seeds live in bench/sealed/manifest.json and are never changed;
 are written as totals only, never per file, so no one tunes against it. Run it only for a
 release measurement, not during development.
 
-Bench v0 scores the stages that exist, which is ingest: whether SigMF ingest recovers the truth,
-whether the format sniffer, reading each data file as a headerless raw file, proposes the right
-format or honestly ties, and whether the true sample rate is among the rate candidates. For the
-null set it counts VERIFIED values and accepted decodes; no stage can accept a decode yet, and
-the results say so rather than reporting a meaningful zero.
+Bench v0 scores ingest: whether SigMF ingest recovers the truth, whether the format sniffer,
+reading each data file as a headerless raw file, proposes the right format or honestly ties, and
+whether the true sample rate is among the rate candidates. The null set also runs the decode
+chain (`dsp.analyse`) on every file, in parallel, and counts VERIFIED values and accepted
+decodes: no null file carries a frame, so any accepted decode is a false accept.
 
 The torchsig set comes from an independent generator (bench/torchsig/export.py, run under WSL2
 with TorchSig); `bench run torchsig` scores it the same way against the labels in its manifest,
@@ -21,9 +21,12 @@ so the sniffer is measured on signals it was never tuned on.
 
 import argparse
 import json
+import os
 import sys
+import time
 from collections import Counter
 from collections.abc import Callable, Sequence
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -31,6 +34,8 @@ from typing import Any
 import numpy as np
 
 from bench.presets import Draw, dev_draw, null_draw
+from dsp.analyse import analyse
+from dsp.detect import detect
 from dsp.evidence import EvidenceLevel
 from dsp.ingest.rate import rate_candidates
 from dsp.ingest.sigmf import read_sigmf
@@ -50,13 +55,14 @@ class BenchSet:
     draw: Callable[[int], Draw]
     seeds: tuple[int, ...]
     totals_only: bool = False
+    chain: bool = False  # also run the decode chain on every file
 
 
 def sets() -> dict[str, BenchSet]:
     sealed = json.loads(SEALED.read_text(encoding="utf-8"))
     return {
         "dev": BenchSet("dev", dev_draw, tuple(range(200))),
-        "null": BenchSet("null", null_draw, tuple(range(1000))),
+        "null": BenchSet("null", null_draw, tuple(range(1000)), chain=True),
         "sealed": BenchSet("sealed", dev_draw, tuple(sealed["seeds"]), totals_only=True),
     }
 
@@ -93,6 +99,42 @@ def score_file(meta_path: Path, bench: BenchSet, seed: int) -> dict[str, Any]:
         **score_raw(rec.data_path, draw.datatype, scene.sample_rate),
         "verified": sum(p.level is EvidenceLevel.VERIFIED for p in a.parameters()),
         "acceptedDecodes": 0,
+    }
+
+
+def score_chain(meta_path: Path) -> dict[str, Any]:
+    """Detect and analyse every signal in one file with the decode chain. `acceptedDecodes` counts
+    the detections whose hypothesis search accepted a chain (CRC passes significant after
+    correction); `verifiedParameters` counts VERIFIED Parameters over every stage of every report,
+    the same unit as the ingest half of `verified`; `blindSearched` and `blindIdentified` say how
+    often the blind convolutional-code search ran and how often it named a code."""
+    rec = read_sigmf(meta_path)
+    fmt = rec.sample_format
+    assert fmt is not None
+    rate = rec.assumptions.sample_rate.value
+    sample_rate = rate if isinstance(rate, int | float) else None
+    started = time.perf_counter()
+    with rec.reader() as reader:
+        detections = detect(reader, real=not fmt.is_complex).detections
+    accepted = verified = searched = identified = 0
+    for d in detections:
+        with rec.reader() as reader:
+            report = analyse(reader, d, sample_rate=sample_rate)
+        rows = report.search.rows if report.search else ()
+        accepted += any(r.outcome == "accepted" for r in rows)
+        verified += sum(
+            p.level is EvidenceLevel.VERIFIED for stage in report.stages for p in stage.parameters
+        )
+        if report.search:
+            searched += report.search.blind_searched
+            identified += report.search.blind_identified
+    return {
+        "detections": len(detections),
+        "acceptedDecodes": accepted,
+        "verifiedParameters": verified,
+        "blindSearched": searched,
+        "blindIdentified": identified,
+        "chainSeconds": round(time.perf_counter() - started, 2),
     }
 
 
@@ -149,6 +191,13 @@ def run_set(bench: BenchSet | None, data: Path) -> dict[str, Any]:
             score_file(data / f"{e['file']}.sigmf-meta", bench, e["seed"])
             for e in manifest["files"]
         ]
+        if bench.chain:
+            paths = [data / f"{e['file']}.sigmf-meta" for e in manifest["files"]]
+            with ProcessPoolExecutor(max_workers=max(1, (os.cpu_count() or 2) - 1)) as pool:
+                chained = list(pool.map(score_chain, paths, chunksize=4))
+            for row, result in zip(rows, chained, strict=True):
+                row.update(result)
+                row["verified"] += result["verifiedParameters"]
     ranks = [r["rateRank"] for r in rows if r["rateRank"] is not None]
     summary: dict[str, Any] = {
         "files": len(rows),
@@ -159,9 +208,16 @@ def run_set(bench: BenchSet | None, data: Path) -> dict[str, Any]:
         "trueRateMedianRank": float(np.median(ranks)) if ranks else None,
         "verifiedValues": sum(r["verified"] for r in rows),
         "acceptedDecodes": sum(r["acceptedDecodes"] for r in rows),
-        "decodingStages": [],
-        "note": "No stage can accept a decode yet (FEC and framing are M5/M6), so acceptedDecodes "
-        "is 0 by construction; the null-set gate becomes meaningful when they land.",
+        "decodingStages": ["analyse: sync, demod, FEC (catalogue and blind), framing"]
+        if bench and bench.chain
+        else [],
+        "detectionsAnalysed": sum(r.get("detections", 0) for r in rows),
+        "blindSearched": sum(r.get("blindSearched", 0) for r in rows),
+        "blindIdentified": sum(r.get("blindIdentified", 0) for r in rows),
+        "note": "The decode chain ran on every file: acceptedDecodes counts detections whose "
+        "search accepted a chain, and no null file carries a frame, so each one is a false accept."
+        if bench and bench.chain
+        else "The decode chain is not run on this set; acceptedDecodes is 0 by construction.",
     }
     return {
         "benchVersion": BENCH_VERSION,
@@ -198,7 +254,21 @@ def markdown(results: dict[str, Any]) -> str:
         f"| True sample rate among the rate candidates | {s['trueRateAmongCandidates']} of "
         f"{s['files']} (median rank {s['trueRateMedianRank']}) |",
         f"| VERIFIED values | {s['verifiedValues']} |",
-        f"| Accepted decodes | {s['acceptedDecodes']} (no decoding stage exists yet) |",
+        f"| Accepted decodes | {s['acceptedDecodes']} "
+        + (
+            f"(decode chain run on {s['detectionsAnalysed']} detections)"
+            if s["decodingStages"]
+            else "(decode chain not run on this set)"
+        )
+        + " |",
+        *(
+            [
+                "| Blind convolutional-code search | "
+                f"ran on {s['blindSearched']} branches, named a code on {s['blindIdentified']} |"
+            ]
+            if s["decodingStages"]
+            else []
+        ),
         "",
         "Sniffer outcomes, reading each data file as headerless raw samples:",
         "",

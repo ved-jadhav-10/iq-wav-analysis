@@ -30,7 +30,15 @@ from numpy.typing import NDArray
 from dsp.ingest.formats import SampleFormat
 from dsp.synth import fec as fec_
 from dsp.synth import interleave as il
-from dsp.synth.bits import SCRAMBLERS, Bits, FrameSpec, frames, to_bits, to_bytes
+from dsp.synth.bits import (
+    SCRAMBLERS,
+    Bits,
+    FrameSpec,
+    SelfSyncScrambler,
+    frames,
+    to_bits,
+    to_bytes,
+)
 from dsp.synth.impair import Impairments, apply, awgn
 from dsp.synth.modulate import BITS_PER_SYMBOL, LINEAR, am, audio, fm, fsk, map_bits, pulse_shape
 from dsp.synth.modulate import resample as resample_
@@ -228,6 +236,8 @@ def _scramble(bits: Bits, frame: FrameSpec, scrambler: str | None) -> Bits:
     if scrambler is None:
         return bits
     s, n = SCRAMBLERS[scrambler], len(frame.sync_bits)
+    if isinstance(s, SelfSyncScrambler):
+        return s.apply(bits)  # the whole stream, sync word included
     rows = bits.reshape(-1, frame.length).copy()
     for row in rows:
         row[n:] = s.apply(row[n:])

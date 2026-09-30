@@ -4,7 +4,7 @@ dsp.synth's own encoders - RS(255,223) via galois, and the block-interleaver cat
 import numpy as np
 import pytest
 
-from dsp.deinterleave import CATALOGUE, Block, deinterleave
+from dsp.deinterleave import CATALOGUE, Block, Helical, Interleaver, Wifi, deinterleave
 from dsp.fec.rs import (
     CCSDS_FIELD_POLY,
     CCSDS_FIRST_ROOT,
@@ -60,16 +60,33 @@ def test_decode_block_rejects_the_wrong_length() -> None:
         decode_block(b"\x00" * 10)
 
 
-@pytest.mark.parametrize("entry", CATALOGUE, ids=lambda b: f"{b.rows}x{b.cols}")
-def test_catalogue_entry_inverts_synths_interleaver_exactly(entry: Block) -> None:
-    rng = np.random.default_rng(entry.rows * 1000 + entry.cols)
+def _synth_twin(entry: Interleaver) -> il.BlockInterleaver:
+    """The generator's own interleaver for a catalogue entry."""
+    if isinstance(entry, Block):
+        return il.Block(entry.rows, entry.cols)
+    if isinstance(entry, Helical):
+        return il.Helical(entry.rows, entry.cols)
+    return il.Wifi(entry.n_cbps, entry.n_bpsc)
+
+
+def test_the_catalogue_holds_every_family_and_no_duplicates() -> None:
+    kinds = {type(e) for e in CATALOGUE}
+    assert kinds == {Block, Helical, Wifi}
+    assert len({e.label for e in CATALOGUE}) == len(CATALOGUE)
+    assert [e.n_cbps for e in CATALOGUE if isinstance(e, Wifi)] == [48, 96, 192, 288]
+
+
+@pytest.mark.parametrize("entry", CATALOGUE, ids=lambda e: e.label)
+def test_catalogue_entry_inverts_synths_interleaver_exactly(entry: Interleaver) -> None:
+    rng = np.random.default_rng(entry.size)
     blocks = 5
     x = rng.integers(0, 2, blocks * entry.size, dtype=np.uint8)
-    synth_entry = il.Block(entry.rows, entry.cols)
+    synth_entry = _synth_twin(entry)
+    # The same permutation, not merely one that round-trips with itself.
+    assert np.array_equal(entry.permutation(), synth_entry.permutation())
     interleaved = il.interleave(x, synth_entry)
     recovered = deinterleave(interleaved, entry)
     assert np.array_equal(recovered, x)
-    # And matches dsp.synth's own deinterleave bit for bit, not just round-tripping.
     assert np.array_equal(recovered, il.deinterleave(interleaved, synth_entry))
 
 

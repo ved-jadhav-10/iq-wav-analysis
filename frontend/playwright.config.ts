@@ -13,6 +13,8 @@ export default defineConfig({
   webServer: {
     command: `uv run sanket --port ${port}`,
     url: `http://127.0.0.1:${port}/api/v1/health`,
+    // Uploads made by the tests land here, not in the developer's home directory.
+    env: { SANKET_WORKSPACE: 'test-results/workspace' },
     reuseExistingServer: !ci,
   },
 })

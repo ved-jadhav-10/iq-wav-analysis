@@ -5,7 +5,7 @@ import type { DetectionMarker } from '@/lib/detections'
 import { decimalsFor, niceTicks, signed } from '@/lib/format'
 import { clampView, zoomAxis, type View } from '@/lib/view'
 import { createWaterfallGl, type WaterfallGl } from '@/lib/waterfallGl'
-import type { WaterfallSource } from '@/lib/waterfallSource'
+import { axisUnits, type WaterfallSource } from '@/lib/waterfallSource'
 import { LEVEL_BORDER, LEVEL_TEXT } from './levelStyles'
 
 interface Props {
@@ -213,9 +213,10 @@ export function Waterfall({ source, full, view, onViewChange, detections, select
     }
   }
 
+  const units = axisUnits(source)
   const tTicks = useMemo(
-    () => niceTicks(view.t0 * 1000, view.t1 * 1000, Math.max(3, Math.floor(size.h / 56))),
-    [view.t0, view.t1, size.h],
+    () => niceTicks(view.t0 * units.timeMul, view.t1 * units.timeMul, Math.max(3, Math.floor(size.h / 56))),
+    [view.t0, view.t1, size.h, units.timeMul],
   )
   const tDecimals = decimalsFor(tTicks.step)
   const isFull = view.t0 === full.t0 && view.t1 === full.t1 && view.f0 === full.f0 && view.f1 === full.f1
@@ -294,9 +295,9 @@ export function Waterfall({ source, full, view, onViewChange, detections, select
 
       <div className="grid min-h-0 flex-1 grid-cols-[44px_minmax(0,1fr)]">
         <div className="relative border-r" aria-hidden>
-          <span className="absolute top-1 right-1.5 text-2xs text-subtle-foreground">ms</span>
+          <span className="absolute top-1 right-1.5 text-2xs text-subtle-foreground">{units.timeUnit}</span>
           {tTicks.ticks.map((t) => {
-            const top = ((t - view.t0 * 1000) / ((view.t1 - view.t0) * 1000)) * 100
+            const top = ((t - view.t0 * units.timeMul) / ((view.t1 - view.t0) * units.timeMul)) * 100
             if (top < 7 || top > 98) return null
             return (
               <span
@@ -373,7 +374,8 @@ export function Waterfall({ source, full, view, onViewChange, detections, select
               <div className="pointer-events-none absolute inset-y-0 w-px bg-white/25" style={{ left: hover.x }} />
               <div className="pointer-events-none absolute inset-x-0 h-px bg-white/25" style={{ top: hover.y }} />
               <div className="num pointer-events-none absolute right-2 bottom-2 rounded-[3px] bg-[#05070a]/85 px-2 py-1 text-2xs text-white/90">
-                Δf {signed(hover.f / 1000, 2)} kHz · t {(hover.t * 1000).toFixed(1)} ms · {signed(hover.db, 1)} dB
+                Δf {signed(hover.f / units.freqDiv, units.freqDecimals)} {units.freqUnit} · t{' '}
+                {(hover.t * units.timeMul).toFixed(units.timeDecimals)} {units.timeUnit} · {signed(hover.db, 1)} dB
               </div>
             </>
           )}

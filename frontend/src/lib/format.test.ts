@@ -1,5 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { niceTicks, sci, signed } from './format'
+import { formatRate, niceTicks, parseRate, sci, signed } from './format'
+
+describe('parseRate', () => {
+  it('reads plain, exponent and SI-suffixed rates', () => {
+    expect(parseRate('2400000')).toBe(2_400_000)
+    expect(parseRate('2.4e6')).toBe(2_400_000)
+    expect(parseRate('2.4M')).toBe(2_400_000)
+    expect(parseRate(' 250 k ')).toBe(250_000)
+    expect(parseRate('48000 S/s')).toBe(48_000)
+    expect(parseRate('.5M')).toBe(500_000)
+  })
+
+  it('refuses anything that is not a positive number', () => {
+    for (const bad of ['', 'abc', '0', '-5', '1e999', '2.4 MHz', '1,000']) expect(parseRate(bad)).toBeNull()
+  })
+})
+
+describe('formatRate', () => {
+  it('uses an SI prefix and a non-breaking space', () => {
+    expect(formatRate(2_400_000)).toBe('2.4 MS/s')
+    expect(formatRate(48_000)).toBe('48 kS/s')
+    expect(formatRate(500)).toBe('500 S/s')
+  })
+})
 
 describe('sci', () => {
   it('formats small p-values with superscript exponents', () => {

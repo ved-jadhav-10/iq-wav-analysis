@@ -4,7 +4,17 @@ import { BRAND } from '@/brand'
 import { DETECTIONS, RECORDING, type Detection } from '@/data/demoAnalysis'
 import { useDemoProducts } from '@/hooks/useDemoProducts'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
-import { ApiError, fetchLevelGrid, openRecording, type RecordingInfo } from '@/lib/api'
+import {
+  ApiError,
+  fetchLevelGrid,
+  getRecording,
+  openRecording,
+  putAssumptions,
+  uploadFiles,
+  watchAnalysis,
+  type RecordingInfo,
+} from '@/lib/api'
+import type { DetectionReport } from '@/lib/analysis'
 import type { DemoProducts } from '@/lib/demoSignal'
 import type { StageId } from '@/lib/evidence'
 import { integer } from '@/lib/format'
@@ -16,6 +26,7 @@ import { EvidenceBadge } from '@/components/EvidenceBadge'
 import { EvidencePanel } from '@/components/EvidencePanel'
 import { PipelineRail } from '@/components/PipelineRail'
 import { PsdPlot } from '@/components/PsdPlot'
+import { SampleRatePrompt } from '@/components/SampleRatePrompt'
 import { RecordingAssumptionsPanel } from '@/components/RecordingAssumptionsPanel'
 import { SignalOverlay } from '@/components/SignalOverlay'
 import { SplitPane } from '@/components/SplitPane'
@@ -29,17 +40,46 @@ type Mode = { kind: 'demo'; demo: DemoProducts } | { kind: 'recording'; info: Re
  * waterfall and the pipeline rail need - the same shape the demo path's `Detection` already is
  * (see data/demoAnalysis.ts), so both feed the same panels unchanged. */
 function toDetection(info: RecordingInfo['detections'][number], index: number): Detection {
-  return { ...info.analysis, id: index + 1, boxes: [info.box] }
+  return { ...(info.analysis ?? pendingReport(info)), id: index + 1, boxes: [info.box] }
 }
 
-function EmptyDetections() {
+/** What a detection shows until the background analysis reaches it: only the detector's own
+ * evidence, and the honest reason nothing else is there yet. */
+function pendingReport(info: RecordingInfo['detections'][number]): DetectionReport {
+  const waiting = 'The analysis has not reached this signal yet.'
+  return {
+    label: 'Signal',
+    kind: 'unknown',
+    level: 'ESTIMATED',
+    headline: 'Analysing this signal…',
+    stages: [
+      {
+        id: 'detect',
+        name: 'Detect',
+        status: 'done',
+        summary: 'Band found by the detector',
+        level: 'ESTIMATED',
+        parameters: info.parameters,
+      },
+    ],
+    search: null,
+    noSearchReason: waiting,
+    frames: [],
+    noFramesReason: waiting,
+    constellation: [],
+  }
+}
+
+function EmptyDetections({ rateUnknown = false }: { rateUnknown?: boolean }) {
   return (
     <nav aria-label="Detections" className="flex flex-col border-r bg-surface max-md:border-r-0 max-md:border-b">
       <div className="px-3 pt-3 pb-2">
         <h2 className="eyebrow">Detections</h2>
       </div>
       <p className="px-3 pb-4 text-xs text-muted-foreground italic">
-        No signals cleared the significance threshold in this recording.
+        {rateUnknown
+          ? 'Signals are found once the sample rate is entered.'
+          : 'No signals cleared the significance threshold in this recording.'}
       </p>
     </nav>
   )
@@ -50,10 +90,12 @@ function DetectionStrip({
   detections,
   selectedId,
   onSelect,
+  rateUnknown,
 }: {
   detections: Detection[]
   selectedId: number
   onSelect: (id: number) => void
+  rateUnknown: boolean
 }) {
   return (
     <nav
@@ -62,7 +104,9 @@ function DetectionStrip({
     >
       <h2 className="eyebrow shrink-0 pr-1">Detections</h2>
       {detections.length === 0 ? (
-        <span className="text-xs text-muted-foreground italic">None in this recording.</span>
+        <span className="text-xs text-muted-foreground italic">
+          {rateUnknown ? 'Found once the sample rate is entered.' : 'None in this recording.'}
+        </span>
       ) : (
         detections.map((d) => (
           <button
@@ -109,6 +153,7 @@ function Workspace({
   // The split only applies where there's room for two panes; below xl the grid stacks.
   const splittable = useMediaQuery('(min-width: 1280px)')
 
+  const rateUnknown = mode.kind === 'recording' && Boolean(mode.source.normalised)
   const detections: Detection[] =
     mode.kind === 'demo' ? DETECTIONS : mode.info.detections.map(toDetection)
   // selectedId can be stale (left over from the demo, or a recording with fewer signals than the
@@ -201,7 +246,9 @@ function Workspace({
         </>
       ) : (
         <p className="px-3 py-4 text-xs text-muted-foreground italic">
-          No signals were detected in this recording.
+          {rateUnknown
+            ? 'Signals are found once the sample rate is entered.'
+            : 'No signals were detected in this recording.'}
         </p>
       )}
     </aside>
@@ -225,7 +272,7 @@ function Workspace({
                   onSelectStage={setActiveStage}
                 />
               ) : (
-                <EmptyDetections />
+                <EmptyDetections rateUnknown={rateUnknown} />
               )
             }
             main={plotColumn}
@@ -243,7 +290,7 @@ function Workspace({
                 onSelectStage={setActiveStage}
               />
             ) : (
-              <EmptyDetections />
+              <EmptyDetections rateUnknown={rateUnknown} />
             )}
             {plotColumn}
             {/* Two columns, three children: the rail wraps to a second row, so it has to span
@@ -256,7 +303,12 @@ function Workspace({
 
       {view === 'waterfall' && (
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <DetectionStrip detections={detections} selectedId={selected?.id ?? -1} onSelect={selectDetection} />
+          <DetectionStrip
+            detections={detections}
+            selectedId={selected?.id ?? -1}
+            onSelect={selectDetection}
+            rateUnknown={rateUnknown}
+          />
           {plotColumn}
         </main>
       )}
@@ -299,11 +351,20 @@ function StatusBar({ mode }: { mode: Mode | null }) {
           ? `Opened from ${mode.info.container}`
           : 'Demo data generated in the browser from a fixed seed'}
       </span>
+      {mode?.kind === 'recording' && mode.info.analysis.state === 'running' && (
+        <span role="status" className="text-foreground">
+          Analysing signal {Math.min(mode.info.analysis.done + 1, mode.info.analysis.total)} of{' '}
+          {mode.info.analysis.total}…
+        </span>
+      )}
       {mode && (
         <span className="ml-auto max-md:hidden">
           {integer.format(mode.kind === 'demo' ? mode.demo.rows : mode.source.rows)} ×{' '}
           {mode.kind === 'demo' ? mode.demo.bins : mode.source.bins} tile ·{' '}
-          {integer.format(mode.kind === 'demo' ? RECORDING.sampleRateHz : mode.source.fs)} S/s · FFT{' '}
+          {mode.kind === 'recording' && mode.source.normalised
+            ? 'rate unknown'
+            : `${integer.format(mode.kind === 'demo' ? RECORDING.sampleRateHz : mode.source.fs)} S/s`}{' '}
+          · FFT{' '}
           {mode.kind === 'demo' ? mode.demo.fftSize : mode.source.fftSize}, hop{' '}
           {integer.format(Math.round(mode.kind === 'demo' ? mode.demo.hop : mode.source.hop))}
         </span>
@@ -343,27 +404,77 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [changeView])
 
-  async function openPath(path: string) {
+  async function upload(files: File[]) {
+    if (opening) return
     setOpening(true)
     setOpenError(null)
+    try {
+      await openPath(await uploadFiles(files), true)
+    } catch (e) {
+      setOpenError(e instanceof Error ? e.message : String(e))
+      setOpening(false)
+    }
+  }
+
+  // Files dropped anywhere on the window are uploaded, as the picker's would be.
+  useEffect(() => {
+    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
+    const onDragOver = (e: DragEvent) => {
+      if (hasFiles(e)) e.preventDefault() // makes the window a drop target
+    }
+    const onDrop = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      const files = Array.from(e.dataTransfer?.files ?? [])
+      if (files.length > 0) void upload(files)
+    }
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('drop', onDrop)
+    }
+  })
+
+  async function openPath(path: string, alreadyOpening = false) {
+    if (!alreadyOpening) {
+      setOpening(true)
+      setOpenError(null)
+    }
     try {
       const info = await openRecording(path)
       const level = info.levels[0]
       if (!level) throw new ApiError(`${path} has no spectrogram levels to show`)
       const grid = await fetchLevelGrid(info.id, level)
-      const source = sourceFromRecording(info, level, grid)
-      if (!source) {
-        throw new ApiError(
-          "this recording's sample rate is UNKNOWN, so its waterfall has no frequency axis to show yet " +
-            '(entering it as an assumption lands with M7)',
-        )
-      }
-      setRecording({ info, source })
+      setRecording({ info, source: sourceFromRecording(info, level, grid) })
     } catch (e) {
       setOpenError(e instanceof Error ? e.message : String(e))
     } finally {
       setOpening(false)
     }
+  }
+
+  // While the server is still analysing, follow its progress and refetch the recording as
+  // reports land; the effect ends itself when the state turns 'done'.
+  const watchedId = recording?.info.id
+  const analysing = recording?.info.analysis.state === 'running'
+  useEffect(() => {
+    if (!watchedId || !analysing) return
+    const refetch = () =>
+      getRecording(watchedId)
+        .then((info) => setRecording((prev) => (prev && prev.info.id === info.id ? { ...prev, info } : prev)))
+        .catch((e: unknown) => setOpenError(e instanceof Error ? e.message : String(e)))
+    return watchAnalysis(watchedId, () => void refetch(), () => setOpenError('lost the connection to the analysis'))
+  }, [watchedId, analysing])
+
+  // The analyst gave the sample rate the file lacked: the server restarts the analysis with it.
+  // The waterfall grid is the same; only its units (and the boxes) change.
+  async function enterSampleRate(rate: number) {
+    if (!recording) return
+    const info = await putAssumptions(recording.info.id, { sampleRate: rate })
+    const level = info.levels[0]
+    if (!level) throw new ApiError('the server sent no spectrogram level')
+    setRecording({ info, source: sourceFromRecording(info, level, recording.source.tile) })
   }
 
   const mode: Mode | null = recording
@@ -382,16 +493,20 @@ export default function App() {
         openError={openError}
         view={view}
         onViewChange={changeView}
-        onOpen={openPath}
+        onOpen={(path) => void openPath(path)}
+        onUpload={(files) => void upload(files)}
         onOpenSettings={() => setAssumptionsModalOpen(true)}
       />
+      {recording && recording.info.sampleRate === null && (
+        <SampleRatePrompt sampleRate={recording.info.assumptions.sampleRate} onSubmit={enterSampleRate} />
+      )}
       {mode ? (
-        /* Keyed by recording so opening a different one - or switching back to the demo - remounts
+        /* Keyed by recording (and its units - entering a sample rate changes them) so opening a different one - or switching back to the demo - remounts
            Workspace with fresh zoom/selection state, instead of carrying over the previous
            recording's zoom and (numerically coincidental) selected id. Section and rail state live
            above this key, so they survive the switch. */
         <Workspace
-          key={mode.kind === 'recording' ? mode.info.id : 'demo'}
+          key={mode.kind === 'recording' ? `${mode.info.id}:${mode.source.normalised ? 'norm' : 'hz'}` : 'demo'}
           mode={mode}
           view={view}
           railOpen={railOpen}

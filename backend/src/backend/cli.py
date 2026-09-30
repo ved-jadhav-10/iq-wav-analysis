@@ -6,7 +6,7 @@ from pathlib import Path
 
 import uvicorn
 
-from backend.app import create_app
+from backend.app import create_app, default_workspace
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -19,6 +19,13 @@ def main(argv: list[str] | None = None) -> int:
         "--host", default="127.0.0.1", help="interface to bind (default: loopback only)"
     )
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument(
+        "--workspace",
+        type=Path,
+        default=None,
+        help="where uploaded recordings are kept (default: ~/.sanket/workspace, "
+        "or SANKET_WORKSPACE)",
+    )
     args = parser.parse_args(argv)
 
     dist = Path(os.environ.get("SANKET_FRONTEND_DIST", REPO_ROOT / "frontend" / "dist"))
@@ -35,8 +42,10 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
 
+    workspace = args.workspace or Path(os.environ.get("SANKET_WORKSPACE") or default_workspace())
+
     print(f"Sanket running at http://{args.host}:{args.port}", flush=True)
-    uvicorn.run(create_app(dist), host=args.host, port=args.port)
+    uvicorn.run(create_app(dist, workspace), host=args.host, port=args.port)
     return 0
 
 

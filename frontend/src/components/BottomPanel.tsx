@@ -35,7 +35,15 @@ function Hypotheses({ detection }: { detection: Detection }) {
   return (
     <div>
       <div className="grid grid-cols-2 gap-x-6 gap-y-2 border-b px-3 py-2 sm:grid-cols-5">
-        <Stat label="Tried" value={integer.format(s.tried)} note="every candidate counted" />
+        <Stat
+          label="Tried"
+          value={integer.format(s.tried)}
+          note={
+            s.blindSearched
+              ? `blind code search named a code on ${s.blindIdentified ?? 0} of ${s.blindSearched} branches`
+              : 'every candidate counted'
+          }
+        />
         <Stat label="Family-wise error" value={`α = ${s.alpha}`} note={`${s.correction} step-down`} />
         <Stat label="Strictest threshold" value={sci(s.smallestThreshold)} />
         <Stat

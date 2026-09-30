@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { FileAudio, FolderOpen, Moon, Sun, WifiOff } from 'lucide-react'
+import { FileAudio, FolderOpen, Moon, Sun, Upload, WifiOff } from 'lucide-react'
 import { BRAND } from '@/brand'
 import { useTheme } from '@/hooks/theme'
 import { VIEWS, type ViewId } from '@/lib/views'
@@ -15,6 +15,8 @@ interface Props {
   view: ViewId
   onViewChange: (view: ViewId) => void
   onOpen: (path: string) => void
+  /** Files chosen from the picker (a SigMF pair arrives as two); dropped files reach App directly. */
+  onUpload: (files: File[]) => void
   onOpenSettings: () => void
 }
 
@@ -27,6 +29,7 @@ export function TopBar({
   view,
   onViewChange,
   onOpen,
+  onUpload,
   onOpenSettings,
 }: Props) {
   const { theme, toggle } = useTheme()
@@ -109,6 +112,27 @@ export function TopBar({
           <FolderOpen className="size-3.5" aria-hidden />
           {opening ? 'Opening…' : 'Open'}
         </button>
+        <label
+          className={`flex shrink-0 items-center gap-1 rounded-md border border-border-strong px-2 py-1 text-xs font-medium text-muted-foreground focus-within:ring-2 focus-within:ring-ring ${
+            opening ? 'opacity-40' : 'cursor-pointer hover:bg-surface-2 hover:text-foreground'
+          }`}
+          title="Copy recording files into the workspace and open them. Drop files on the window works too."
+        >
+          <Upload className="size-3.5" aria-hidden />
+          Upload
+          <input
+            type="file"
+            multiple
+            disabled={opening}
+            className="sr-only"
+            aria-label="Upload recording files"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? [])
+              e.target.value = '' // so choosing the same file again fires change
+              if (files.length > 0) onUpload(files)
+            }}
+          />
+        </label>
       </form>
       {openError && (
         <span role="alert" className="max-w-[24ch] truncate text-xs text-destructive" title={openError}>

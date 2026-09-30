@@ -33,7 +33,15 @@ export interface DetectionInfo {
   id: string
   box: Box
   parameters: Parameter[]
-  analysis: DetectionReport
+  /** Null while the background analysis hasn't reached this signal yet (see `AnalysisProgress`). */
+  analysis: DetectionReport | null
+}
+
+/** How far the background analysis has got: `done` of `total` detections have a report. */
+export interface AnalysisProgress {
+  state: 'running' | 'done' | 'cancelled'
+  done: number
+  total: number
 }
 
 export interface RecordingInfo {
@@ -55,9 +63,12 @@ export interface RecordingInfo {
   dbMax: number
   /** Hz; null alongside sampleRate. */
   freqsHz: number[] | null
+  /** The same axis as fractions of the sample rate; always present. */
+  freqsNorm: number[]
   psdDb: number[]
   levels: LevelInfo[]
   assumptions: Assumptions
+  analysis: AnalysisProgress
   /** Empty alongside sampleRate: a box in seconds/Hz needs a known rate, same as freqsHz. */
   detections: DetectionInfo[]
 }
@@ -82,8 +93,75 @@ export async function openRecording(path: string): Promise<RecordingInfo> {
   return asJson<RecordingInfo>(response)
 }
 
+/** Values the analyst enters for what the file leaves UNKNOWN; the server restarts the analysis. */
+export async function putAssumptions(
+  id: string,
+  values: { sampleRate?: number; centerFrequency?: number },
+): Promise<RecordingInfo> {
+  const response = await fetch(`/api/v1/recordings/${id}/assumptions`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(values),
+  })
+  return asJson<RecordingInfo>(response)
+}
+
+/** The file to open from an upload: the SigMF metadata if there is one (its data file rides
+ * along), otherwise the first file that is not a SigMF data file. */
+export function mainUpload(files: readonly File[]): File | undefined {
+  return (
+    files.find((f) => f.name.toLowerCase().endsWith('.sigmf-meta')) ??
+    files.find((f) => !f.name.toLowerCase().endsWith('.sigmf-data')) ??
+    files[0]
+  )
+}
+
+/** Sends `files` to the server's workspace as one batch, each streamed as it is (never read
+ * whole into memory), and returns the server path of the main one, ready for `openRecording`. */
+export async function uploadFiles(files: readonly File[]): Promise<string> {
+  const main = mainUpload(files)
+  if (!main) throw new ApiError('no files to upload')
+  const batch = crypto.randomUUID().replaceAll('-', '')
+  let mainPath = ''
+  // The main file goes last so its path is the last reply, and a SigMF data file is already
+  // there when its metadata arrives.
+  for (const file of [...files.filter((f) => f !== main), main]) {
+    const response = await fetch(`/api/v1/uploads/${batch}/${encodeURIComponent(file.name)}`, {
+      method: 'PUT',
+      body: file,
+    })
+    const uploaded = await asJson<{ path: string }>(response)
+    if (file === main) mainPath = uploaded.path
+  }
+  return mainPath
+}
+
 export async function getRecording(id: string): Promise<RecordingInfo> {
   return asJson<RecordingInfo>(await fetch(`/api/v1/recordings/${id}`))
+}
+
+/**
+ * Listens to a recording's analysis progress until it is done. `onProgress` fires for each event
+ * (the caller refetches the recording for the new reports); `onError` fires once if the stream
+ * fails, after which nothing more is delivered. Returns a function that stops listening. Closing
+ * on `done` matters: the server ends the stream then, and an EventSource would reconnect to it.
+ */
+export function watchAnalysis(
+  id: string,
+  onProgress: (progress: AnalysisProgress) => void,
+  onError: () => void,
+): () => void {
+  const source = new EventSource(`/api/v1/recordings/${id}/events`)
+  source.addEventListener('progress', (event) => {
+    const progress = JSON.parse((event as MessageEvent<string>).data) as AnalysisProgress
+    if (progress.state !== 'running') source.close()
+    onProgress(progress)
+  })
+  source.onerror = () => {
+    source.close()
+    onError()
+  }
+  return () => source.close()
 }
 
 interface Tile {

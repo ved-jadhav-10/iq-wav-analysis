@@ -2,11 +2,13 @@
 and frame one detected signal, returning a `DetectionReport`.
 
 The digital chain is a blind search over a small, fixed grid of hypotheses: modulation (ranked
-by the fourth-order cumulant) x carrier rotation x inner code (none, or conv K=7 r1/2 at both
-bit alignments) x sync word x CRC. Every cell of the grid counts toward `tried`, and a cell is
-accepted only when its CRC passes are significant at ALPHA / tried (Bonferroni). An accepted
-cell promotes the modulation, rotation, code and framing to VERIFIED with a `crc` proof; the
-accepted chain is also re-run on shuffled soft bits, which should never pass.
+by the fourth-order cumulant) x carrier rotation x inner code (none, conv K=7 r1/2 at both
+bit alignments, its DVB-S punctured rates at every phase, or a rate-1/n convolutional code
+found blind by `dsp.fec.convident`) x sync word x CRC. Every cell of the grid counts toward
+`tried`, and a cell is accepted only when its CRC passes are significant at ALPHA / tried
+(Bonferroni). An accepted cell promotes the modulation, rotation, code and framing to VERIFIED
+with a `crc` proof; the accepted chain is also re-run on shuffled soft bits, which should never
+pass.
 
 The chain stops at the first stage that finds nothing, and says why; an analog (AM/FM) signal
 skips the digital chain.
@@ -21,8 +23,15 @@ import numpy as np
 
 from dsp import _scipy, fsk
 from dsp.analog import analog_detect
+from dsp.blind_framing import (
+    MAX_CANDIDATES,
+    Z_MIN,
+    BlindFrames,
+    analyse_stream,
+    structure_z,
+)
 from dsp.channel import Channel, channelise
-from dsp.deinterleave import CATALOGUE, Block, deinterleave
+from dsp.deinterleave import CATALOGUE, Interleaver, deinterleave
 from dsp.demod import BITS_PER_SYMBOL, ORDERS, demap, rotate, rotations
 from dsp.detect import Detection, detection_parameters
 from dsp.estimate.params import (
@@ -35,8 +44,25 @@ from dsp.estimate.params import (
 )
 from dsp.evidence import Alternative, EvidenceLevel, Parameter, Proof, promote
 from dsp.fec import rs
-from dsp.fec.viterbi import K7_R12, ConvCode, decode, syndrome_rates
-from dsp.framing import CRCS, SYNC_WORDS, FrameResult, binomial_tail, find_frames
+from dsp.fec.convident import (
+    DEFAULT_MAX_CONSTRAINT,
+    DEFAULT_MAX_N,
+    MAX_INPUT_BITS,
+    ConvIdentification,
+    identify_convolutional,
+)
+from dsp.fec.puncture import PUNCTURES, depuncture
+from dsp.fec.viterbi import K7_R12, ConvCode, decode, encode, syndrome_rates
+from dsp.framing import (
+    CRCS,
+    SYNC_WORDS,
+    Crc,
+    DecodedFrame,
+    FrameResult,
+    SyncWord,
+    binomial_tail,
+    find_frames,
+)
 from dsp.report import (
     MAX_CONSTELLATION_POINTS,
     DetectionReport,
@@ -45,6 +71,7 @@ from dsp.report import (
     HypothesisSearch,
     StageReport,
 )
+from dsp.scramble import DESCRAMBLERS, Descrambler
 from dsp.spectrum import welch, welch_freqs
 from dsp.sync import Carrier, Timing, correct_carrier, recover_timing
 
@@ -53,11 +80,21 @@ MAX_LEDGER_ROWS = 12
 SHUFFLED_RUNS = 3
 MIN_SYMBOLS = 512
 CODES: tuple[ConvCode | None, ...] = (K7_R12, None)
-# Block interleavers (dsp.deinterleave.CATALOGUE) are tried after the convolutional code;
-# alignment by the code's parity syndrome, which sits near 0.5 when misaligned.
+# Interleavers (dsp.deinterleave.CATALOGUE: block, helical, 802.11) are tried after the
+# convolutional code; alignment by the code's parity syndrome, which sits near 0.5 when misaligned.
 SYNDROME_SCREEN = 0.25
 SCREEN_BITS = 2048  # at least this many coded bits per alignment tried
 SCREEN_CHUNK = 256  # alignments screened per batch
+# A punctured cell goes on to frame search only when re-encoding its Viterbi output matches the
+# bits it actually received at least this well (a wrong pattern or phase matches barely more than
+# chance; a right one matches all but the raw bit errors).
+REENCODE_SCREEN = 0.25
+REENCODE_SCREEN_STEPS = 2000  # the screen looks at this many code blocks, not the whole stream
+# The blind convolutional-code search needs this many soft bits to have windows enough to test.
+MIN_BLIND_BITS = 3000
+# One data-chosen code per branch enters the grid; the search's own ledger corrects for how it
+# was chosen (`identify_convolutional`).
+BLIND_CELLS = 1
 
 E = EvidenceLevel
 
@@ -256,10 +293,25 @@ class _Chain:
     interleaver: str | None = None  # e.g. "block 16x36 from bit 123"
     syndrome: float | None = None  # the code-syndrome screen's rate, for interleaver cells
     outer: rs.StreamDecode | None = None  # the outer RS code, when the frames come through one
+    blind: ConvIdentification | None = None  # set when the code was found by the blind search
+    bits: Any = None  # the decoded bits the frames were searched in
+    descrambler: Descrambler | None = None
+    blind_frames: BlindFrames | None = None  # set when sync and CRC were found blind
+    threshold: float | None = None  # this chain's own acceptance threshold, when not the grid's
+
+    def significant(self, threshold: float) -> bool:
+        limit = self.threshold if self.threshold is not None else threshold
+        return self.p_value is not None and self.p_value < limit
 
     @property
     def candidate(self) -> str:
         code = f"{self.code.name}, alignment {self.alignment}" if self.code else "uncoded"
+        if self.blind:
+            code += " (blind search)"
+        if self.blind_frames:
+            code += " · blind framing"
+        if self.descrambler:
+            code += f" · {self.descrambler.name}"
         deinterleave = f" · {self.interleaver}" if self.interleaver else ""
         outer = f" · {RS_NAME}" if self.outer else ""
         # For FSK the branch index is which candidate symbol rate, not a carrier rotation.
@@ -271,6 +323,14 @@ class _Chain:
         return f"{self.modulation} {where}{deinterleave} · {code}{outer}"
 
 
+@dataclass
+class _BlindStats:
+    """How often the blind convolutional-code search ran and how often it named a code."""
+
+    searched: int = 0
+    identified: int = 0
+
+
 @dataclass(frozen=True)
 class _Search:
     chains: tuple[_Chain, ...]
@@ -279,6 +339,7 @@ class _Search:
     accepted: _Chain | None
     carriers: dict[str, Carrier]
     shuffled_accepts: int
+    blind: _BlindStats
 
 
 Branch = tuple[str, int, Any]  # modulation, carrier rotation in degrees, soft bits
@@ -298,6 +359,39 @@ def _psk_branches(
         ]
 
 
+def _descrambled_cells(
+    modulation: str,
+    rotation: int,
+    code: ConvCode | None,
+    alignment: int,
+    llr: Any,
+    bits: Any,
+    word: SyncWord,
+    extra: dict[str, Any],
+) -> list[_Chain]:
+    """The same decoded bits through each catalogued descrambler: the additive ones restart per
+    frame inside `find_frames`, the self-synchronising ones act on the whole stream first."""
+    out: list[_Chain] = []
+    for d in DESCRAMBLERS:
+        stream = d.stream(bits) if d.kind == "self-sync" else bits
+        frames = find_frames(stream, word, descrambler=d if d.kind == "additive" else None)
+        out.append(
+            _Chain(
+                modulation,
+                rotation,
+                code,
+                alignment,
+                frames,
+                llr,
+                _p_value(frames),
+                bits=stream,
+                descrambler=d,
+                **extra,
+            )
+        )
+    return out
+
+
 def _decode_cell(
     modulation: str,
     rotation: int,
@@ -309,11 +403,77 @@ def _decode_cell(
     bits = decode(llr, code) if code else (llr < 0).astype(np.uint8)
     chains: list[_Chain] = []
     for word in SYNC_WORDS:
+        chains += _descrambled_cells(modulation, rotation, code, alignment, llr, bits, word, extra)
         frames = find_frames(bits, word)
         chains.append(
-            _Chain(modulation, rotation, code, alignment, frames, llr, _p_value(frames), **extra)
+            _Chain(
+                modulation,
+                rotation,
+                code,
+                alignment,
+                frames,
+                llr,
+                _p_value(frames),
+                bits=bits,
+                **extra,
+            )
         )
     return chains
+
+
+def _punctured_cells(branch: Branch) -> list[_Chain]:
+    """The K=7 code at each DVB-S punctured rate and each phase the stream can start at. Only a
+    cell whose Viterbi output re-encodes close to the received bits goes on to the frame search;
+    the others are counted as tried."""
+    modulation, rotation, soft = branch
+    chains: list[_Chain] = []
+    if modulation in ("BPSK", "QPSK") and rotation >= 180:
+        return chains  # the K=7 code's odd-weight generators make an inverted stream equivalent
+    for puncture in PUNCTURES:
+        code = puncture.code()
+        for phase in range(puncture.kept):
+            llr = depuncture(soft, puncture, phase)
+            if _reencode_mismatch(llr, code) >= REENCODE_SCREEN:
+                chains.append(_Chain(modulation, rotation, code, phase, None, llr, None))
+                continue
+            chains += _decode_cell(modulation, rotation, code, phase, llr)
+    return chains
+
+
+def _reencode_mismatch(llr: Any, code: ConvCode) -> float:
+    """Fraction of the received (non-erased) bits that the re-encoded Viterbi output disagrees
+    with: about the raw bit error rate for the right code, well above it otherwise."""
+    steps = min(len(llr) // code.n, REENCODE_SCREEN_STEPS)
+    if steps <= code.constraint:
+        return 0.5
+    llr = np.asarray(llr, np.float64)[: steps * code.n]
+    seen = llr != 0
+    reencoded = encode(decode(llr, code), code)
+    return float(((reencoded != (llr < 0))[seen]).mean()) if seen.any() else 0.5
+
+
+def _blind_conv_cells(branch: Branch, stats: _BlindStats) -> list[_Chain]:
+    """The convolutional code found blind on this branch's soft bits, if the search finds one
+    that the catalogue doesn't already try; decoded from the block boundary it found, with the
+    polarity it found."""
+    modulation, rotation, soft = branch
+    if modulation in ("BPSK", "QPSK") and rotation >= 180:
+        return []  # only inverts every bit of the 0°/90° branch, which the search reads itself
+    llr = np.asarray(soft, np.float64)
+    if len(llr) < MIN_BLIND_BITS:
+        return []
+    stats.searched += 1
+    found = identify_convolutional(llr).found
+    if found is not None:
+        stats.identified += 1
+    if found is None or (found.code.constraint, found.code.generators) == (
+        K7_R12.constraint,
+        K7_R12.generators,
+    ):
+        return []
+    aligned = -llr[found.offset :] if found.inverted else llr[found.offset :]
+    aligned = aligned[: len(aligned) // found.n * found.n]
+    return _decode_cell(modulation, rotation, found.code, found.offset, aligned, blind=found)
 
 
 def _interleaver_cells(branch: Branch) -> list[_Chain]:
@@ -327,7 +487,7 @@ def _interleaver_cells(branch: Branch) -> list[_Chain]:
         return chains
     for entry in CATALOGUE:
         offset, rate = _interleaver_offset(soft, entry)
-        label = f"block {entry.rows}x{entry.cols} from bit {offset}"
+        label = f"{entry.label} from bit {offset}"
         if rate >= SYNDROME_SCREEN:
             chains.append(_Chain(modulation, rotation, K7_R12, 0, None, soft, None, label, rate))
             continue
@@ -346,38 +506,70 @@ def _search(
     (`branch_count` branches). The grid is walked cheapest first and stops at the first group
     with an accepted chain; the threshold covers the cells never reached, so it stays honest.
     Interleaver cells rejected by the syndrome screen count as tried."""
-    per_branch = sum(2 if c else 1 for c in CODES) + sum(e.size for e in CATALOGUE)
+    per_branch = (
+        sum(2 if c else 1 for c in CODES)
+        + sum(p.kept for p in PUNCTURES)
+        + BLIND_CELLS
+        + sum(e.size for e in CATALOGUE)
+    )
     # Each cell also with the outer RS code at every bit alignment and codeword phase.
-    tried = branch_count * per_branch * len(SYNC_WORDS) * len(CRCS) * (1 + rs.GRID_HYPOTHESES)
+    scrambles = 1 + len(DESCRAMBLERS)  # as decoded, and through each descrambler
+    tried = (
+        branch_count
+        * per_branch
+        * len(SYNC_WORDS)
+        * scrambles
+        * len(CRCS)
+        * (1 + rs.GRID_HYPOTHESES)
+    )
     threshold = ALPHA / tried
 
     def accepted() -> bool:
-        return any(c.p_value is not None and c.p_value < threshold for c in chains)
+        return any(c.significant(threshold) for c in chains)
 
     chains: list[_Chain] = []
     seen: list[list[Branch]] = []
+    blind = _BlindStats()
     for group in groups:
         seen.append(group)
         for modulation, rotation, soft in group:
             for code in CODES:
                 for alignment in range(2 if code else 1):
                     chains += _decode_cell(modulation, rotation, code, alignment, soft[alignment:])
+            chains += _punctured_cells((modulation, rotation, soft))
         if accepted():
             break
     else:
+        # No catalogued code fits: look for a rate-1/n convolutional code blind, then for a
+        # catalogued interleaver in front of the K=7 code.
         for group in seen:
             for branch in group:
-                chains += _interleaver_cells(branch)
+                chains += _blind_conv_cells(branch, blind)
             if accepted():
                 break
+        if not accepted():
+            for group in seen:
+                for branch in group:
+                    chains += _interleaver_cells(branch)
+                if accepted():
+                    break
     chains += _outer_cells(chains, threshold)
+    if not accepted():
+        chains += _blind_frame_cells(chains, threshold)
     best = min(
-        (c for c in chains if c.p_value is not None and c.p_value < threshold),
-        key=lambda c: (c.p_value or 1.0, c.outer is None),
+        (c for c in chains if c.significant(threshold)),
+        key=lambda c: (c.p_value or 1.0, c.outer is None, _unnamed_blind_crc(c)),
         default=None,
     )
     shuffled = _shuffled_accepts(best, threshold) if best else 0
-    return _Search(tuple(chains), tried, threshold, best, carriers, shuffled)
+    return _Search(tuple(chains), tried, threshold, best, carriers, shuffled, blind)
+
+
+def _unnamed_blind_crc(chain: _Chain) -> bool:
+    """A blind CRC fit that matches no catalogued CRC. Complementing the whole stream leaves a
+    fit valid (only its constant changes), so of two otherwise tied polarities the one whose CRC
+    is a catalogue entry is the transmitted one."""
+    return bool(chain.blind_frames and chain.blind_frames.crc and not chain.blind_frames.crc.name)
 
 
 def _p_value(frames: FrameResult | None) -> float | None:
@@ -394,18 +586,36 @@ def _shuffled_accepts(chain: _Chain, threshold: float) -> int:
     for _ in range(SHUFFLED_RUNS):
         llr = np.asarray(rng.permutation(chain.llr), np.float64)
         bits = decode(llr, chain.code) if chain.code else (llr < 0).astype(np.uint8)
+        if chain.blind_frames:  # the blind framing must not fire on shuffled bits either
+            again = analyse_stream(bits) if structure_z(bits) >= Z_MIN else None
+            accepts += int(
+                again is not None
+                and again.sync.verified
+                and again.crc is not None
+                and again.crc.p_value < (chain.threshold or threshold)
+            )
+            continue
         if chain.outer:
             outer = rs.decode_stream(bits)
             if outer is None:
                 continue
             bits = outer.bits
-        frames = find_frames(bits, chain.frames.word if chain.frames else SYNC_WORDS[0])
+        d = chain.descrambler
+        if d is not None and d.kind == "self-sync":
+            bits = d.stream(bits)
+        frames = find_frames(
+            bits,
+            chain.frames.word if chain.frames else SYNC_WORDS[0],
+            descrambler=d if d is not None and d.kind == "additive" else None,
+        )
         p = _p_value(frames)
         accepts += int(p is not None and p < threshold)
+        if chain.blind:  # the gate that chose the code must not fire on shuffled bits either
+            accepts += int(identify_convolutional(llr).found is not None)
     return accepts
 
 
-def _interleaver_offset(soft: Any, entry: Block) -> tuple[int, float]:
+def _interleaver_offset(soft: Any, entry: Interleaver) -> tuple[int, float]:
     """The block alignment with the lowest parity-syndrome rate, and that rate: every offset's
     first blocks (at least SCREEN_BITS bits) deinterleaved and screened in one batch."""
     n = entry.size
@@ -423,6 +633,103 @@ def _interleaver_offset(soft: Any, entry: Block) -> tuple[int, float]:
     return best, float(rates[best])
 
 
+# --- blind framing --------------------------------------------------------------------------
+
+# Crc fits tried per analysed stream: 2 stream variants x candidate periods x (width x reflection)
+BLIND_FRAME_TESTS = 2 * MAX_CANDIDATES * 16
+
+
+def _blind_frame_cells(chains: list[_Chain], threshold: float) -> list[_Chain]:
+    """Sync word, frame length and CRC found blind, on decoded streams that show frame structure.
+
+    Every cell's decoded bits get the cheap autocorrelation screen; those above `Z_MIN` go
+    through `dsp.blind_framing`. A cell is accepted on the CRC's held-out passes alone, at
+    ALPHA over every stream analysed and every fit tried (a second, separate error budget from
+    the catalogue grid's)."""
+    analysed: list[tuple[_Chain, BlindFrames]] = []
+    seen: set[int] = set()
+    tested = 0
+    for chain in chains:
+        if chain.bits is None or chain.descrambler is not None or id(chain.bits) in seen:
+            continue  # descrambled streams were framed already; the rest are searched once each
+        seen.add(id(chain.bits))
+        if structure_z(chain.bits) < Z_MIN:
+            continue
+        tested += 1  # every stream that passes the screen is tried, not only those that frame
+        found = analyse_stream(chain.bits)
+        if found is not None and found.sync.verified and found.crc is not None:
+            analysed.append((chain, found))
+    if not analysed:
+        return []
+    limit = ALPHA / max(1, tested * BLIND_FRAME_TESTS)
+    out: list[_Chain] = []
+    for chain, found in analysed:
+        fit = found.crc
+        assert fit is not None
+        out.append(
+            replace(
+                chain,
+                frames=_frames_from_blind(found),
+                p_value=fit.p_value,
+                blind_frames=found,
+                threshold=limit,
+            )
+        )
+    return out
+
+
+def _frames_from_blind(found: BlindFrames) -> FrameResult:
+    """The blind result in the shape the report already draws: the constant prefix as the sync
+    word, the fitted CRC as a catalogue-style CRC."""
+    sync, fit = found.sync, found.crc
+    assert fit is not None
+    width = len(sync.word)
+    value = int("".join(map(str, sync.word.tolist())), 2)
+    word = SyncWord("constant prefix (found blind)", value, width)
+    xorout = int(f"{fit.constant:0{fit.width}b}"[::-1], 2) if fit.refout else fit.constant
+    crc = Crc(
+        fit.name or f"CRC-{fit.width} poly 0x{fit.poly:X}",
+        fit.width,
+        fit.poly,
+        0,
+        fit.refin,
+        fit.refout,
+        xorout,
+    )
+    decoded: list[DecodedFrame] = []
+    for i, row in enumerate(found.frames):
+        body = row[width:]
+        # Whole bytes counted back from the CRC field: a prefix that stops a few bits short of
+        # the true data leaves its constant tail at the front, which is not payload.
+        data = body[: -fit.width]
+        data = data[len(data) % 8 :]
+        ok = fit.check(body)
+        usable = len(data)
+        decoded.append(
+            DecodedFrame(
+                i + 1,
+                sync.start + i * sync.period,
+                sync.period,
+                "pass" if ok else "fail",
+                " ".join(f"{b:02X}" for b in np.packbits(data[:32]).tolist()),
+                np.packbits(data[:usable]).tobytes().hex().upper(),
+                np.packbits(data[:usable]).tobytes(),
+            )
+        )
+    passes = sum(f.crc == "pass" for f in decoded)
+    return FrameResult(
+        word,
+        False,
+        sync.hits,
+        sync.period,
+        sync.hits,
+        crc,
+        passes,
+        len(decoded),
+        tuple(decoded),
+    )
+
+
 # --- outer Reed-Solomon ---------------------------------------------------------------------
 
 RS_NAME = "RS(255,223) CCSDS"
@@ -434,7 +741,7 @@ def _outer_cells(chains: list[_Chain], threshold: float) -> list[_Chain]:
     framed = [c for c in chains if c.frames is not None]
     if not framed:
         return []
-    ok = [c for c in framed if c.p_value is not None and c.p_value < threshold]
+    ok = [c for c in framed if c.significant(threshold)]
     if ok:
         base = min(ok, key=lambda c: c.p_value or 1.0)
     else:
@@ -640,7 +947,7 @@ def _report(
     ledger = _ledger(search)
     label = modulation if acc else f"{modulation}?"
     if acc and acc.frames:
-        code_name = acc.code.name if acc.code else "uncoded"
+        code_name = _code_label(acc)
         f = acc.frames
         headline = (
             f"{modulation} {_fmt_rate(rate_value, rate_unit)} → {code_name} → {f.word.name} "
@@ -786,7 +1093,7 @@ def _fsk_report(
     decode_stages, frames = _decode_stages(search, proof, "2FSK x both polarities")
     stages += decode_stages
     if acc and acc.frames:
-        code_name = acc.code.name if acc.code else "uncoded"
+        code_name = _code_label(acc)
         headline = (
             f"2FSK {_fmt_rate(rate_value, rate_unit)} → {code_name} → {acc.frames.word.name} "
             f"frames, {acc.frames.passes}/{acc.frames.complete} CRC pass"
@@ -818,14 +1125,15 @@ def _decode_stages(
     if acc and acc.frames and proof:
         f = acc.frames
         code_value = acc.code.name if acc.code else "Uncoded"
+        summary = _code_label(acc) if acc.code else "Uncoded"
         if acc.interleaver:
             param = Parameter(
                 id="interleaver",
                 name="Interleaver",
                 value=acc.interleaver,
                 level=E.HYPOTHESIS,
-                method="Block-interleaver catalogue; alignment by the inner code's parity "
-                "syndrome, decided by the CRC",
+                method="Interleaver catalogue (block, helical, 802.11); alignment by the inner "
+                "code's parity syndrome, decided by the CRC",
                 evidence=(f"Syndrome rate {acc.syndrome or 0:.3f} here (0.5 if wrong)",),
             )
             stages.append(
@@ -844,11 +1152,20 @@ def _decode_stages(
                     name="Code",
                     value=code_value,
                     level=E.HYPOTHESIS,
-                    method="Catalogue search (soft Viterbi), decided by the CRC",
+                    method=(
+                        "Blind convolutional-code search (GF(2) rank scan and parity checks), "
+                        "soft Viterbi, decided by the CRC"
+                        if acc.blind
+                        else "Catalogue search (soft Viterbi), decided by the CRC"
+                    ),
+                    evidence=_blind_evidence(acc.blind) if acc.blind else (),
+                    warnings=_BLIND_WARNING if acc.blind else (),
                 ),
                 proof,
             )
         ]
+        if acc.blind:
+            code_params += _blind_parameters(acc.blind, proof)
         if acc.outer:
             o = acc.outer
             code_params.append(
@@ -869,8 +1186,8 @@ def _decode_stages(
                     proof,
                 )
             )
-            code_value = f"{code_value} + {RS_NAME}"
-        stages.append(_stage("fec", "FEC", code_value, E.VERIFIED, tuple(code_params)))
+            summary = f"{summary} + {RS_NAME}"
+        stages.append(_stage("fec", "FEC", summary, E.VERIFIED, tuple(code_params)))
         frame_params = (
             promote(
                 Parameter(
@@ -879,12 +1196,14 @@ def _decode_stages(
                     value=f.word.hex,
                     unit=f.word.name,
                     level=E.HYPOTHESIS,
-                    method="Known-sync catalogue correlation, ≤ 3 bit errors",
-                    evidence=(
-                        f"{f.hits} hits; recurs every {f.period:,} bits "
-                        f"({f.recurrences} consecutive pairs)"
-                        + (", inverted polarity" if f.inverted else ""),
+                    method=(
+                        "Blind discovery: the constant prefix of the frame (column constancy), "
+                        "verified by its recurrence on held-out frames"
+                        if acc.blind_frames
+                        else "Known-sync catalogue correlation, ≤ 3 bit errors"
                     ),
+                    evidence=_sync_evidence(acc, f),
+                    warnings=_sync_warnings(acc),
                 ),
                 proof,
             ),
@@ -906,10 +1225,18 @@ def _decode_stages(
                     value=f.crc.name if f.crc else "?",
                     unit=f"{f.passes} / {f.complete} pass",
                     level=E.HYPOTHESIS,
-                    method="CRC catalogue over the bits between sync word and CRC field",
+                    method=(
+                        "Blind CRC recovery: GCD of frame-pair XORs (Ewing), fitted on half "
+                        "the frames and tested on the rest"
+                        if acc.blind_frames
+                        else "CRC catalogue over the bits between sync word and CRC field"
+                    ),
+                    evidence=_crc_evidence(acc),
                 ),
                 proof,
             ),
+            *_header_parameters(acc),
+            *_descrambler_parameters(acc, proof),
         )
         stages.append(
             _stage(
@@ -934,9 +1261,17 @@ def _decode_stages(
         )
     else:
         reason = (
-            f"None of the {search.tried} hypotheses ({grid} x uncoded or conv K=7 r½ "
-            f"x {len(SYNC_WORDS)} sync word x {len(CRCS)} CRCs) gave CRC passes significant "
-            f"at {search.threshold:.1e}."
+            f"None of the {search.tried} hypotheses ({grid} x uncoded, conv K=7 r½ or a blindly "
+            f"identified rate-1/n code x {len(SYNC_WORDS)} sync word x {len(CRCS)} CRCs) gave "
+            f"CRC passes significant at {search.threshold:.1e}."
+            + (
+                f" The blind convolutional search covers non-recursive, unpunctured rate-1/n "
+                f"codes (n <= {DEFAULT_MAX_N}, K <= {DEFAULT_MAX_CONSTRAINT}) in the first "
+                f"{MAX_INPUT_BITS:,} bits; it ran on {search.blind.searched} branches and named "
+                f"a code on {search.blind.identified}."
+                if search.blind.searched
+                else ""
+            )
         )
         stages.append(
             _stage(
@@ -950,7 +1285,8 @@ def _decode_stages(
                         name="Code",
                         value=None,
                         level=E.UNKNOWN,
-                        method="Catalogue search: uncoded, conv K=7 r½; decided by sync word + CRC",
+                        method="Catalogue and blind search: uncoded, conv K=7 r½, rate-1/n; "
+                        "decided by sync word + CRC",
                         evidence=(reason,),
                         resolve_hint="Naming the transmitting standard, or adding its code and "
                         "framing to the catalogue, would settle it.",
@@ -961,9 +1297,183 @@ def _decode_stages(
     return stages, frames
 
 
+_PREFIX_WARNING = (
+    "Column constancy finds the constant prefix of the frame: the sync word plus any constant "
+    "header bytes after it, less a trailing run of one value.",
+)
+
+
+_POLARITY_WARNING = (
+    "The frame check does not fix the stream's polarity (a complemented stream fits equally well, "
+    "with a different constant), so the payload may be complemented relative to what was sent; "
+    "a match with a catalogued CRC would settle it.",
+)
+
+
+def _sync_warnings(acc: _Chain) -> tuple[str, ...]:
+    if not acc.blind_frames:
+        return ()
+    return _PREFIX_WARNING + (_POLARITY_WARNING if _unnamed_blind_crc(acc) else ())
+
+
+def _sync_evidence(acc: _Chain, f: FrameResult) -> tuple[str, ...]:
+    if acc.blind_frames:
+        d = acc.blind_frames.sync
+        return (
+            f"{d.hits} of {d.heldout} held-out frames repeat it at a period of {d.period:,} bits "
+            f"(p = {d.p_value:.1e} against a structureless stream, {d.candidates} candidate "
+            f"period(s) tried)",
+            "Stream variant: " + ("NRZ-I, differenced" if d.variant == "nrzi" else "as decoded"),
+        )
+    return (
+        f"{f.hits} hits; recurs every {f.period:,} bits ({f.recurrences} consecutive pairs)"
+        + (", inverted polarity" if f.inverted else ""),
+    )
+
+
+def _crc_evidence(acc: _Chain) -> tuple[str, ...]:
+    if not (acc.blind_frames and acc.blind_frames.crc):
+        return ()
+    fit = acc.blind_frames.crc
+    conventions = (
+        f"input {'reflected' if fit.refin else 'as sent'}, "
+        f"output {'reflected' if fit.refout else 'as is'}"
+    )
+    return (
+        f"CRC-{fit.width}, generator 0x{fit.poly:X} ({conventions}); affine constant "
+        f"0x{fit.constant:X} (initial value and final XOR combined at this frame length)",
+        f"Fitted on {fit.fitted} frames; {fit.passes} of {fit.heldout} held-out frames pass "
+        f"(p = {fit.p_value:.1e}, threshold {fit.threshold:.1e} over {fit.tried} fits)",
+        f"Matches the catalogued {fit.name}"
+        if fit.name
+        else "No catalogued CRC has this exact initial value and final XOR",
+    )
+
+
+def _descrambler_parameters(acc: _Chain, proof: Proof) -> tuple[Parameter, ...]:
+    """The descrambler the chain went through, promoted by the same CRC proof: with the wrong
+    one the frame check would not pass."""
+    d = acc.descrambler
+    if d is None:
+        return ()
+    scheme = (
+        "restarts at every frame, after the sync word"
+        if d.kind == "additive"
+        else "self-synchronising, applied to the whole stream"
+    )
+    return (
+        promote(
+            Parameter(
+                id="descrambler",
+                name="Descrambler",
+                value=d.name,
+                level=E.HYPOTHESIS,
+                method="Descrambler catalogue (CCSDS additive, G3RUH self-synchronising), "
+                "decided by the frame check",
+                evidence=("1 + " + " + ".join(f"x^{t}" for t in d.taps) + f", {scheme}",),
+            ),
+            proof,
+        ),
+    )
+
+
+def _header_parameters(acc: _Chain) -> tuple[Parameter, ...]:
+    """The header fields the blind analysis read, as one HYPOTHESIS: each was tested on its own
+    (the p-values are in the evidence), none is proven by the CRC."""
+    if not acc.blind_frames:
+        return ()
+    parts: list[str] = []
+    evidence: list[str] = []
+    for fld in acc.blind_frames.fields:
+        span = f"bits {fld.start}-{fld.start + fld.width - 1}"
+        if fld.kind == "sync":
+            parts.append(f"prefix {fld.width}")
+        elif fld.kind == "constant":
+            parts.append(f"constant {fld.width}")
+            evidence.append(f"{span}: constant 0x{fld.value or 0:X} (p = {fld.p_value or 1:.1e})")
+        elif fld.kind == "counter":
+            parts.append(f"counter {fld.width} (+{fld.step})")
+            evidence.append(f"{span}: counter, step {fld.step} (p = {fld.p_value or 1:.1e})")
+        else:
+            parts.append("payload")
+    return (
+        Parameter(
+            id="header",
+            name="Header fields",
+            value=" · ".join(parts),
+            level=E.HYPOTHESIS,
+            method="Byte-aligned constant and counter tests after the constant prefix",
+            evidence=tuple(evidence) or ("No constant or counter field after the prefix",),
+        ),
+    )
+
+
+_BLIND_WARNING = (
+    "These generators are one equivalent description of a code that decodes this stream: the "
+    "branch order, a common delay and any factor shared by every branch cannot be told apart "
+    "from the samples.",
+)
+
+
+def _code_label(chain: _Chain) -> str:
+    """The code's name for headlines and summaries, saying when it was found blind."""
+    if chain.code is None:
+        return "uncoded"
+    return f"{chain.code.name} (found blind)" if chain.blind else chain.code.name
+
+
+def _blind_evidence(found: ConvIdentification) -> tuple[str, ...]:
+    return (
+        f"Rate 1/{found.n}, constraint length {found.code.constraint}, generators "
+        f"{', '.join(f'{g:o}' for g in found.code.generators)} (octal), named with no catalogue "
+        f"entry to start from, within the searched space: non-recursive, unpunctured rate-1/n, "
+        f"n <= {DEFAULT_MAX_N}, K <= {DEFAULT_MAX_CONSTRAINT}, the first {MAX_INPUT_BITS:,} bits",
+        f"The worst of the {found.n - 1} branch-pair parity checks holds on all but "
+        f"{found.syndrome_weight} of {found.windows} windows (p = {found.p_value:.1e}, "
+        f"threshold {found.threshold:.1e} = {found.alpha:g} / {found.tried} hypotheses)",
+    )
+
+
+def _blind_parameters(found: ConvIdentification, proof: Proof) -> list[Parameter]:
+    """Where the blind search put the first code block, and which polarity it read, promoted by
+    the same CRC proof as the code (a wrong alignment or polarity would not have decoded)."""
+    alignment = Parameter(
+        id="code_alignment",
+        name="Code alignment",
+        value=found.offset,
+        unit="bits",
+        level=E.HYPOTHESIS,
+        method="Blind convolutional-code search: the block boundary its parity checks hold at",
+        evidence=(f"Blocks of {found.n} bits start at bit {found.offset} of the soft stream",),
+    )
+    polarity = Parameter(
+        id="stream_polarity",
+        name="Stream polarity",
+        value="inverted" if found.inverted else "upright",
+        level=E.HYPOTHESIS,
+        method="Blind convolutional-code search: the parity of its odd-weight checks",
+        evidence=(
+            ("Read from the parity of an odd-weight check on every window",)
+            if found.polarity_determined
+            else (
+                "Every check has even weight, so a complemented stream fits equally well: "
+                "upright is the default here, and only the CRC vouches for the decode",
+            )
+        ),
+    )
+    return [promote(alignment, proof), promote(polarity, proof)]
+
+
 def _proof(chain: _Chain) -> Proof:
     f = chain.frames
     assert f is not None and f.crc is not None
+    if chain.blind_frames and chain.blind_frames.crc:
+        fit = chain.blind_frames.crc
+        return Proof(
+            kind="crc",
+            detail=f"{f.crc.name}, fitted blind on {fit.fitted} frames, passes on {fit.passes} of "
+            f"{fit.heldout} held-out frames ({chain.candidate})",
+        )
     return Proof(
         kind="crc",
         detail=f"{f.crc.name} passes on {f.passes} of {f.complete} complete frames "
@@ -988,12 +1498,23 @@ def _ledger(search: _Search) -> HypothesisSearch:
                 if ok
                 else ("CRC passes not significant" if f.passes else "No frame passes any CRC")
             )
+            if c.blind_frames and c.blind_frames.crc:
+                fit = c.blind_frames.crc
+                statistic = (
+                    f"Constant prefix {len(c.blind_frames.sync.word)} bits, period {f.period}; "
+                    f"blind {crc} {fit.passes}/{fit.heldout} held-out"
+                )
+                reason = (
+                    "Held-out CRC passes significant after correction"
+                    if ok
+                    else "Held-out CRC passes not significant after correction"
+                )
         return Hypothesis(
             layer="Interleaver" if c.interleaver else ("FEC" if c.code else "Framing"),
             candidate=c.candidate,
             statistic=statistic,
             p_value=c.p_value,
-            threshold=search.threshold,
+            threshold=c.threshold if c.threshold is not None else search.threshold,
             outcome="accepted" if ok else "rejected",
             reason=reason,
         )
@@ -1009,5 +1530,7 @@ def _ledger(search: _Search) -> HypothesisSearch:
         smallest_threshold=search.threshold,
         shuffled_runs=SHUFFLED_RUNS if search.accepted else 0,
         shuffled_accepts=search.shuffled_accepts,
+        blind_searched=search.blind.searched,
+        blind_identified=search.blind.identified,
         rows=tuple(row(c) for c in ordered[:MAX_LEDGER_ROWS]),
     )

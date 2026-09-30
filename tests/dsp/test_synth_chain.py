@@ -12,7 +12,16 @@ from dsp.evidence import EvidenceLevel
 from dsp.ingest.sigmf import read_sigmf
 from dsp.synth import fec
 from dsp.synth import interleave as il
-from dsp.synth.bits import CRCS, SCRAMBLERS, FrameSpec, frames, int_bits, to_bits, to_bytes
+from dsp.synth.bits import (
+    CRCS,
+    SCRAMBLERS,
+    FrameSpec,
+    Scrambler,
+    frames,
+    int_bits,
+    to_bits,
+    to_bytes,
+)
 from dsp.synth.chain import Scene, SignalSpec, generate, write_sigmf
 from dsp.synth.impair import Impairments
 from dsp.synth.modulate import fsk, gray, gray_position, map_bits, pulse_shape, resample
@@ -45,6 +54,7 @@ def test_frames_have_the_sync_word_counter_payload_and_a_passing_crc() -> None:
 
 def test_ccsds_randomiser_sequence_and_period() -> None:
     s = SCRAMBLERS["CCSDS"]
+    assert isinstance(s, Scrambler)
     seq = s.sequence(255 * 3)
     assert to_bytes(seq[:64]).hex() == "ff480ec09a0d70bc"
     assert np.array_equal(seq[:255], seq[255:510])

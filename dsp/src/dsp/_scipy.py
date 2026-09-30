@@ -78,6 +78,11 @@ def gamma_sf(x: float, shape: float) -> float:
     return float(special.gammaincc(shape, x * shape))
 
 
+def binom_sf(k: NDArray[Any], n: int, p: float) -> Float:
+    """P(X >= k) for X ~ Binomial(n, p), for each k (an array of counts)."""
+    return np.asarray(stats.binom.sf(np.asarray(k) - 1, n, p), np.float64)
+
+
 def norm_isf(p: float) -> float:
     return float(stats.norm.isf(p))
 

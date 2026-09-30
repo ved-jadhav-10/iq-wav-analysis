@@ -20,6 +20,8 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from dsp.scramble import Descrambler
+
 Bits = NDArray[np.uint8]
 
 MAX_SYNC_ERRORS = 3
@@ -42,7 +44,14 @@ class SyncWord:
         )
 
 
-SYNC_WORDS = (SyncWord("CCSDS ASM", 0x1ACFFC1D, 32),)
+# Sources: CCSDS 131.0-B (attached sync marker); ITU-R M.584-2 (POCSAG synchronisation codeword).
+# Only words long enough to have a low chance hit rate belong here: a 13-bit Barker word or an
+# 8-bit HDLC flag matches random positions too often to be searched for with bit errors, and is
+# found by `dsp.blind_framing` instead.
+SYNC_WORDS = (
+    SyncWord("CCSDS ASM", 0x1ACFFC1D, 32),
+    SyncWord("POCSAG", 0x7CD215D8, 32),
+)
 
 
 @dataclass(frozen=True)
@@ -138,6 +147,7 @@ class FrameResult:
     passes: int
     complete: int  # frames fully inside the stream
     frames: tuple[DecodedFrame, ...]
+    descrambler: str | None = None  # the additive descrambler applied to each frame, if any
 
 
 def binomial_tail(k: int, n: int, p: float) -> float:
@@ -157,7 +167,12 @@ def binomial_tail(k: int, n: int, p: float) -> float:
     return max(math.exp(total), 1e-300)
 
 
-def find_frames(bits: Bits, word: SyncWord, crcs: tuple[Crc, ...] = CRCS) -> FrameResult | None:
+def find_frames(
+    bits: Bits,
+    word: SyncWord,
+    crcs: tuple[Crc, ...] = CRCS,
+    descrambler: Descrambler | None = None,
+) -> FrameResult | None:
     """Frames delimited by a recurring sync word, each checked against every catalogued CRC."""
     upright, inverted = sync_hits(bits, word)
     use_inverted = len(inverted) > len(upright)
@@ -172,7 +187,10 @@ def find_frames(bits: Bits, word: SyncWord, crcs: tuple[Crc, ...] = CRCS) -> Fra
     bodies: list[tuple[int, Bits | None]] = []
     for s in starts:
         end = s + period
-        bodies.append((s, stream[s + word.width : end] if end <= len(stream) else None))
+        body = stream[s + word.width : end] if end <= len(stream) else None
+        if body is not None and descrambler is not None:
+            body = descrambler.frame(body)  # each frame restarts the register after its sync word
+        bodies.append((s, body))
     complete = [b for _, b in bodies if b is not None]
     best: Crc | None = None
     best_passes = 0
@@ -218,4 +236,5 @@ def find_frames(bits: Bits, word: SyncWord, crcs: tuple[Crc, ...] = CRCS) -> Fra
         best_passes,
         len(complete),
         tuple(frames),
+        descrambler.name if descrambler else None,
     )

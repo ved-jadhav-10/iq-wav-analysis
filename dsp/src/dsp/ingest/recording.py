@@ -47,6 +47,41 @@ def stated(
     )
 
 
+def entered(id_: str, value: float, prior: Parameter | None = None) -> Parameter:
+    """A value the analyst typed in: MEASURED as far as "entered by the analyst" goes, and
+    stated as exactly that. It replaces whatever the file said or left UNKNOWN; nothing has
+    checked it against the samples yet.
+
+    Pass the `prior` entry so nothing it said is lost: a different value the file stated is
+    named in a warning (the entry wins, visibly), and a value taken from the candidates the
+    prior offered says so."""
+    unit = UNITS.get(id_)
+    tail = f" {unit}" if unit else ""
+    evidence = ["Typed in by the analyst; nothing in the file confirms it."]
+    warnings: tuple[str, ...] = ()
+    if prior is not None:
+        if any(a.value == value for a in prior.alternatives):
+            evidence.append(
+                f"It is one of the {len(prior.alternatives)} candidates offered ({prior.method}); "
+                "the analyst chose it, no test did."
+            )
+        if prior.value is not None and prior.value != value:
+            warnings = (
+                f"The file gives {prior.value}{tail} ({prior.level.value}); the analyst entered "
+                f"{value}{tail}, and the entered value is used.",
+            )
+    return Parameter(
+        id=id_,
+        name=NAMES[id_],
+        value=value,
+        unit=unit,
+        level=EvidenceLevel.MEASURED,
+        method="Entered by the analyst",
+        evidence=tuple(evidence),
+        warnings=warnings,
+    )
+
+
 def unknown(id_: str, method: str, why: str, hint: str) -> Parameter:
     return Parameter(
         id=id_,

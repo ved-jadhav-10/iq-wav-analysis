@@ -1,8 +1,14 @@
+import json
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from importlib.metadata import version
 from pathlib import Path
+from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import Field
 
 from dsp.detect import Detection, detection_parameters
 from dsp.evidence import CamelModel, Parameter
@@ -10,12 +16,29 @@ from dsp.report import DetectionReport
 from dsp.results import Assumptions
 
 from .recordings import Recording, RecordingError, RecordingStore
+from .uploads import DEFAULT_MAX_UPLOAD_BYTES, UploadError, UploadStore
 
 API_PREFIX = "/api/v1"
 
 
 class OpenRecordingRequest(CamelModel):
     path: str
+
+
+class UploadedFile(CamelModel):
+    """Where an uploaded file landed; open a recording with this `path`."""
+
+    path: str
+    size: int
+
+
+class AssumptionsRequest(CamelModel):
+    """Values the analyst enters for what the file leaves UNKNOWN (or gets wrong). Each is
+    recorded as MEASURED "entered by the analyst", replaces the file's own value, and restarts
+    the analysis."""
+
+    sample_rate: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    center_frequency: float | None = Field(default=None, allow_inf_nan=False)
 
 
 class LevelInfo(CamelModel):
@@ -43,7 +66,18 @@ class DetectionInfo(CamelModel):
     id: str
     box: Box
     parameters: tuple[Parameter, ...]
-    analysis: DetectionReport
+    # None while the background job hasn't reached this signal yet (`AnalysisProgress`).
+    analysis: DetectionReport | None
+
+
+class AnalysisProgress(CamelModel):
+    """How far the background analysis has got: `done` of `total` detections have a report.
+    `cancelled` is a job that was replaced (a new assumption restarted it) or stopped; its
+    missing reports will not arrive."""
+
+    state: Literal["running", "done", "cancelled"]
+    done: int
+    total: int
 
 
 class RecordingInfo(CamelModel):
@@ -62,14 +96,60 @@ class RecordingInfo(CamelModel):
     db_min: float
     db_max: float
     freqs_hz: tuple[float, ...] | None  # None alongside sample_rate: Hz needs a known rate
+    # The same axis as fractions of the sample rate: always present, so a recording whose rate
+    # is UNKNOWN can still be drawn, in normalised units.
+    freqs_norm: tuple[float, ...]
     psd_db: tuple[float, ...]
     levels: tuple[LevelInfo, ...]
     assumptions: Assumptions
+    analysis: AnalysisProgress
     # Empty alongside sample_rate: a box in seconds/Hz needs a known rate, same as freqs_hz.
     detections: tuple[DetectionInfo, ...]
 
 
-def create_app(frontend_dist: Path) -> FastAPI:
+def _progress(rec: Recording) -> AnalysisProgress:
+    job = rec.job
+    return AnalysisProgress(state=job.state, done=job.done, total=job.total)
+
+
+# A comment line sent when nothing changed, so a dead connection surfaces as a failed write.
+SSE_KEEPALIVE_S = 10.0
+
+
+def _progress_events(rec: Recording) -> Iterator[str]:
+    """Server-sent events: one `progress` event now, one per finished detection, and the stream
+    ends after a `done` or `cancelled` one."""
+    version = -1
+    while True:
+        latest = rec.job.wait_for_change(version, SSE_KEEPALIVE_S)
+        if latest == version:
+            yield ": keepalive\n\n"
+            continue
+        version = latest
+        progress = _progress(rec)
+        yield f"event: progress\ndata: {json.dumps(progress.model_dump(by_alias=True))}\n\n"
+        if progress.state != "running":
+            return
+
+
+def default_workspace() -> Path:
+    """Where uploads live unless told otherwise (`sanket --workspace`, SANKET_WORKSPACE)."""
+    return Path.home() / ".sanket" / "workspace"
+
+
+def create_app(
+    frontend_dist: Path,
+    workspace: Path | None = None,
+    max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES,
+) -> FastAPI:
+    store = RecordingStore()
+    uploads = UploadStore(workspace or default_workspace(), max_upload_bytes)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        yield
+        store.close()
+
     # Swagger UI and ReDoc load their assets from a CDN, which the offline rule forbids.
     app = FastAPI(
         title="Sanket",
@@ -77,15 +157,15 @@ def create_app(frontend_dist: Path) -> FastAPI:
         docs_url=None,
         redoc_url=None,
         openapi_url=f"{API_PREFIX}/openapi.json",
+        lifespan=lifespan,
     )
-    store = RecordingStore()
 
     @app.get(f"{API_PREFIX}/health")
     def health() -> dict[str, str]:
         return {"status": "ok", "version": app.version}
 
     def _detection_info(
-        d: Detection, analysis: DetectionReport, index: int, sample_rate: float
+        d: Detection, analysis: DetectionReport | None, index: int, sample_rate: float
     ) -> DetectionInfo:
         box = Box(
             t0=d.start / sample_rate,
@@ -125,14 +205,30 @@ def create_app(frontend_dist: Path) -> FastAPI:
             db_min=rec.pyramid.db_min,
             db_max=rec.pyramid.db_max,
             freqs_hz=tuple(f * sample_rate for f in rec.pyramid.freqs) if sample_rate else None,
+            freqs_norm=tuple(rec.pyramid.freqs),
             psd_db=tuple(rec.pyramid.psd_db),
             levels=tuple(
                 LevelInfo(level=i, rows=lv.rows, cols=lv.cols, row_span=lv.row_span)
                 for i, lv in enumerate(rec.pyramid.levels)
             ),
             assumptions=rec.assumptions,
+            analysis=_progress(rec),
             detections=detections,
         )
+
+    @app.put(f"{API_PREFIX}/uploads/{{batch}}/{{name}}", response_model=UploadedFile)
+    async def upload_file(batch: str, name: str, request: Request) -> UploadedFile:
+        declared = request.headers.get("content-length")
+        try:
+            path = await uploads.save(
+                batch,
+                name,
+                request.stream(),
+                int(declared) if declared and declared.isdigit() else None,
+            )
+        except UploadError as exc:
+            raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+        return UploadedFile(path=str(path), size=path.stat().st_size)
 
     @app.post(f"{API_PREFIX}/recordings", response_model=RecordingInfo)
     def open_recording(body: OpenRecordingRequest) -> RecordingInfo:
@@ -148,6 +244,26 @@ def create_app(frontend_dist: Path) -> FastAPI:
         if recording is None:
             raise HTTPException(status_code=404, detail="no such recording")
         return _to_info(recording)
+
+    @app.put(f"{API_PREFIX}/recordings/{{recording_id}}/assumptions", response_model=RecordingInfo)
+    def put_assumptions(recording_id: str, body: AssumptionsRequest) -> RecordingInfo:
+        recording = store.assume(
+            recording_id, sample_rate=body.sample_rate, center_frequency=body.center_frequency
+        )
+        if recording is None:
+            raise HTTPException(status_code=404, detail="no such recording")
+        return _to_info(recording)
+
+    @app.get(f"{API_PREFIX}/recordings/{{recording_id}}/events")
+    def recording_events(recording_id: str) -> StreamingResponse:
+        recording = store.get(recording_id)
+        if recording is None:
+            raise HTTPException(status_code=404, detail="no such recording")
+        return StreamingResponse(
+            _progress_events(recording),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache"},
+        )
 
     @app.get(f"{API_PREFIX}/tiles/{{recording_id}}/{{level}}/{{row}}/{{col}}")
     def get_tile(recording_id: str, level: int, row: int, col: int) -> Response:

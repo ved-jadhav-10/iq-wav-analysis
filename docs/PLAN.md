@@ -21,9 +21,9 @@ One decode chain runs end to end today (`dsp/analyse.py`, per detection, shown i
 | M2 Spectrum, detection, estimation, real tiles | DSP core, bench numbers, 4 GiB scale test, tile pyramid, detections in the UI | No — see Open gates |
 | M3 Synchronisation and demodulation | Feed-forward sync, PSK/16QAM demapping, 2-FSK | No |
 | M4 Modulation classification | Cumulant ranking, confirmed only by CRC | No |
-| M5 GF(2) kernel, interleavers, FEC | K=7 r½ Viterbi, 8-entry block catalogue, CCSDS RS; no GF(2) kernel | No |
-| M6 Framing and known-system verification | CCSDS ASM search, CRC-16 catalogue, ledger, shuffled-bit runs | No |
-| M7 Analyst workflow and reports | Open by path; Survey/Waterfall sections; deep dive | No |
+| M5 GF(2) kernel, interleavers, FEC | GF(2) kernel (`dsp/gf2`), blind rate-1/n convolutional identification (`dsp/fec/convident.py`, in the chain), Viterbi, 8-entry block catalogue, CCSDS RS | No |
+| M6 Framing and known-system verification | CCSDS ASM search, CRC-16 catalogue, blind sync / header / CRC recovery (`dsp/blind_framing.py`, in the chain), ledger, shuffled-bit runs | No |
+| M7 Analyst workflow and reports | Open by path with background analysis (SSE progress); Survey/Waterfall sections; deep dive | No |
 | M8 Hardening, validation and 1.0 release | Not started | No |
 
 **Open gates** (a missed number or known defect; each closes by M8)
@@ -32,8 +32,7 @@ One decode chain runs end to end today (`dsp/analyse.py`, per detection, shown i
 |---|---|---|---|
 | M2 SNR error | ±1 dB, 0–20 dB | −8.7 dB median error at 0 dB; inside ±1 dB only at ≥ 15 dB ([bench](../bench/results/bench-v0-detect.md)) | One estimator (`snr_psd`); M2M4 and eigenvalue/MDL not built |
 | M2 false detections | ≤ 0.05/scene | 0.20/scene on linear modulations at 3/6/20 dB ([bench](../bench/results/bench-v0-detect.md)) | Linear: untraced, start at `merge`/`absorb_sidelobes` in `dsp/detect.py`. M-FSK: unshaped tone splatter in `dsp.synth`; a Gaussian premod filter can't fix it alone (bt ≈ 0.02–0.15 merges the splatter but breaks the analog kurtosis gate and the FSK rate estimate). `merge_tone_combs` now needs tone SNRs within 6 dB; not re-benched |
-| M2 first tile ≤ 2 s | ≤ 2 s | Not benched; opening the 4-signal sample scene takes about 45 s | `RecordingStore.open` builds the whole pyramid and analyses every detection before returning |
-| Synchronous open | Analysis in the background | Open blocks until every detection is analysed | No job runner yet (M7) |
+| M2 first tile ≤ 2 s | ≤ 2 s | Not benched; opening the 4-signal sample scene now returns in about 0.6 s on the dev laptop (was about 45 s) | `RecordingStore.open` still builds the whole pyramid and runs detection before returning; coarse-first tiles not built |
 | Mono/lossy HYPOTHESIS cap | Digital labels from mono or lossy audio capped at HYPOTHESIS | Flagged by `dsp/ingest/dispatch.py`, ignored by `analyse` | Not wired |
 | Structural sample-rate match | A snapped standard symbol rate promotes a rate candidate | `rate.structural_test` exists and is tested, never called | Not wired |
 | Shuffled-bit control | A shuffled-bit accept blocks acceptance | Recorded only (`analyse.py`, `_search`) | Not wired |
@@ -41,15 +40,14 @@ One decode chain runs end to end today (`dsp/analyse.py`, per detection, shown i
 | 2-FSK on crowded channels | Rate estimated on any channel | `fsk_symbol_rates` fails on decimated/crowded channels | Edge-rate comb; replaced in M3 |
 
 **Next** — the build order. PS coverage comes first; real recordings last.
-1. **M7 inputs:** analysis as a background job; upload; a raw file with an unknown rate opens in normalised units with a sample-rate prompt instead of being refused.
-2. **M5:** GF(2) kernel, then blind convolutional-code identification and a general Viterbi.
-3. **M5:** every interleaver family.
-4. **M5:** LDPC catalogue.
-5. **M6:** blind sync discovery, header correlation and blind CRC recovery.
-6. **M3:** 64QAM, 4/8-FSK, OQPSK, drift tracking, eye diagram.
-7. **M7:** exports, `sanket analyse`, overrides.
-8. **M4:** the CNN and open-set rejection.
-9. **M8:** first real-recording pass.
+1. **M7 inputs:** folder batch, numbered sequence, `sanket analyse`; format candidates, IQ swap and a centre-frequency field on the prompt. (Background analysis, the sample-rate prompt and upload landed 30 Sep.)
+2. **M5:** every interleaver family (helical, convolutional/Forney, QPP, the standard permutations).
+3. **M5:** LDPC catalogue.
+4. **M6:** frame table export (bits, hex, JSON), then the known-system catalogue and Match stage.
+5. **M3:** 64QAM, 4/8-FSK, OQPSK, drift tracking, eye diagram.
+6. **M7:** exports, `sanket analyse`, overrides.
+7. **M4:** the CNN and open-set rejection.
+8. **M8:** first real-recording pass.
 
 ---
 
@@ -128,7 +126,7 @@ One local process tree, no external services.
   | `POST /jobs/{id}/overrides` | Analyst correction → downstream re-run |
   | `GET /jobs/{id}/export.{json,csv,pdf,sigmf}` | Exports, each with the Assumptions block; run record included unless opted out |
 
-  Built today: `GET /health`, `POST /recordings` (path only, synchronous), `GET /recordings/{id}`, `GET /tiles/...`.
+  Built today: `GET /health`, `POST /recordings` (path only; analysis continues in the background), `GET /recordings/{id}`, `PUT /recordings/{id}/assumptions` (analyst-entered sample rate / centre frequency), `GET /recordings/{id}/events` (SSE), `PUT /uploads/{batch}/{name}` (streamed, size-capped, into the workspace), `GET /tiles/...`.
 
 - **Tech stack:**
 
@@ -204,7 +202,7 @@ Dependencies: **M0 → M1 → M2 → M3 → (M4 ∥ M5) → M6 → M8**, with **
 - [x] 0 silent defaults tested for every reader
 - [x] `dsp.synth`: bits → frames/CRC → scrambler → RS → byte interleaver → conv/LDPC/repetition → bit interleaver (block, helical, Forney, QPP, 802.11, random) → PSK/QAM/FSK/AM/FM → impairments; SigMF with truth in annotations; regenerable from (scene, seed)
 - [x] TorchSig 2.2.0 (WSL2) as an independent generator, dev-time only
-- [x] Bench v0 (`uv run bench generate|run dev|null|sealed|torchsig`): [dev](../bench/results/bench-v0-dev.md) 200 files, [null](../bench/results/bench-v0-null.md) 1,000 files, [TorchSig](../bench/results/bench-v0-torchsig.md) 84 files — 0 ingest mismatches, 0 wrong formats; sealed set never run during development
+- [x] Bench v0 (`uv run bench generate|run dev|null|sealed|torchsig`): [dev](../bench/results/bench-v0-dev.md) 200 files, [null](../bench/results/bench-v0-null.md) 1,000 files (since 30 Sep also through the decode chain: 0 accepted decodes on 4,381 detections; the blind convolutional search names a code on 677 of 5,857 branch runs, all on repetition and idle files or on demodulated streams whose bits repeat because the symbol rate candidate was a sub-multiple, and the CRC gate rejects every one), [TorchSig](../bench/results/bench-v0-torchsig.md) 84 files — 0 ingest mismatches, 0 wrong formats; sealed set never run during development
 - **Exit gate (met 27 Sep):** round trip for every format; sniffer confusion matrix published; 0 silent defaults; bench v0 and null set generated.
 
 ### M2 — Spectrum, detection, estimation, real tiles
@@ -256,9 +254,9 @@ Dependencies: **M0 → M1 → M2 → M3 → (M4 ∥ M5) → M6 → M8**, with **
 
 The core differentiator (D9). Built so far: soft Viterbi (numba) for K=7 r½ (171,133) only; an 8-entry block-interleaver catalogue aligned by the code's parity syndrome; RS(255,223) CCSDS via `galois` with the grid found from an error-free codeword.
 
-- [ ] **GF(2) kernel** (`dsp/gf2`): bit-packed uint64 rows, Numba popcount, Gauss-Jordan elimination (GJETP), rank iteration, soft variant (rows ordered by LLR reliability). The only elimination routine; reused for code length, sync offset, puncturing and interleaver period. Rank matrices always have L ≥ w + 30 rows.
-- [ ] **Convolutional identification:** a rank scan gives n and K (first deficient width w₀ = nK); a dual-vector search over each output-stream pair gives the generators (Su 2014: syndrome weight vs Bin(L, ½), λ ≈ 6–8, Bonferroni over (n, phase, K, h)); both polarities; codes compared up to equivalence. Punctured codes: a catalogue of 2/3, 3/4, 5/6, 7/8 patterns on the standard mother codes at every phase (Marazin 2012 for the general case).
-- [ ] **Viterbi** for any K ≤ 9, rate 1/n, with depuncturing (erasures as zero LLRs)
+- [x] **GF(2) kernel** (`dsp/gf2`): bit-packed uint64 rows, Numba popcount, Gauss-Jordan elimination (RREF, rank, null space), rank profile over window matrices, soft variant (windows kept by weakest-bit LLR). The only elimination routine; reused for code length, sync offset, puncturing and interleaver period. Rank matrices always have L ≥ w + 30 rows, enforced in `check_rows`. Tested against `galois` (Hypothesis) and against `dsp.synth` convolutional codes: the rank scan finds the exact first deficient width, and random and shuffled-bit streams never show one. Not built: total-pivoting GJETP.
+- [ ] **Convolutional identification:** `identify_convolutional` is built, tested and wired into `analyse` (`_blind_conv_cells`: tried after the catalogue and before the interleavers, one data-chosen cell per branch in the Bonferroni count, shown as a FEC row marked "blind search"; a K=9 r½, a K=7 r⅓ and a K=3 r½ code each decode end to end to VERIFIED); still open: blind identification of a punctured code (the K=7 code at the four DVB-S rates is in the fixed grid instead, below); one inverted branch (CCSDS's second generator) is not searched, and a found code is reported as an equivalent description (branch order, delay and common factors are not identifiable), with its offset and polarity as their own parameters; the search's accounting is in the ledger. It needs no prior n, K, generators, offset or polarity: for each (n, offset) the branch pairs (0, b) are interleaved and the GF(2) rank scan finds the one parity check `g_b·c₀ + g₀·c_b = 0`, whose taps are the generators; pairs join by polynomial lcm, and the code must pass its minimal check on non-overlapping windows (syndrome weight against Binomial(L, ½), Bonferroni over 2 × Σn × (K_max − 1) hypotheses, α = 10⁻⁶). Polarity is read from odd-weight checks. Rows are the most reliable windows, so it works on soft input at about 3 % raw bit errors (5 test codes, K = 3–9, n = 2–4, exact generators and offset recovered). When more than one description fits (a rate-¼ stream also passes as a weaker rate-½ code) the largest n wins. 0 of 1,000 null streams identified (`-m slow`, `tests/dsp/test_convident.py`). Earlier text: a rank scan gives n and K (aligned windows of w bits depend on ⌈w/n⌉ + K − 1 input bits, so the first deficient width is the least w with w > ⌈w/n⌉ + K − 1: 14 for K=7 r½, 11 for K=7 r⅓, not nK in general); Su 2014's syndrome-weight test (λ ≈ 6–8) is the model for the acceptance statistic; punctured codes: a catalogue of 2/3, 3/4, 5/6, 7/8 patterns on the standard mother codes at every phase (Marazin 2012 for the general case).
+- [x] **Viterbi** for any K ≤ 9, rate 1/n, with depuncturing (erasures as zero LLRs): `dsp.fec.viterbi.decode` on K = 3, 7, 9 and n = 2, 3; `dsp.fec.puncture` for the DVB-S 2/3, 3/4, 5/6 and 7/8 patterns of the K=7 code at every phase, decoded end to end to VERIFIED (a re-encode screen on the first 2,000 blocks keeps wrong cells from costing a frame search). 802.11's and other patterns are not catalogued yet
 - [ ] **Interleavers:** block found blind (rank-drop period and sync, then R×C factorisations scored by the code syndrome; KS test on rank distributions); helical/diagonal (period from rank, then rows, columns and step); convolutional/Forney (catalogue DVB (12,17), J.83-B pairs, Meteor-M LRPT 80k (36 branches × 2,048 symbols), then a generic B ≤ 64, M ≤ 32 grid, scored by RS zero-syndrome fraction after the inner decoder); pseudo-random only against **standard permutations** (802.11 N_CBPS 48/96/192/288, LTE sub-block, LTE QPP, DVB-S2), else UNKNOWN with its measured period
 - [ ] **RS:** binary rank scan, then Galois-field Fourier transform over 16 primitive polynomials × symbol offsets plus the CCSDS dual basis; interleave-depth scan (I = 1–5, 8; `rs.scan_interleave_depths` exists, not wired); shortened codes (RS(204,188))
 - [ ] **LDPC catalogue:** CCSDS TC (128,64) and (512,256), 802.11n 648-bit at four rates first; then CCSDS C2, DVB-S2 short, 5G NR BG2 (Sionna's Apache-2.0 base-graph files); each matrix with its source and licence recorded. Identified by the soft syndrome statistic (mean ∏ tanh(L/2) over checks; Moosavi–Larsson 2014) over code × offset × polarity, z > 6 with correction; decoded by layered normalised min-sum (α ≈ 0.75). Decoders are cross-checked in tests against independent implementations (`galois` for RS, the MIT `ldpc` package for min-sum), used as dev-time oracles only
@@ -273,11 +271,11 @@ The core differentiator (D9). Built so far: soft Viterbi (numba) for K=7 r½ (17
 
 Built so far: correlation search for the CCSDS ASM (≤ 3 bit errors, both polarities), frame length from hit spacing, three CRC-16s at the frame end, a Bonferroni-corrected ledger of every cell tried, and shuffled-bit re-runs (`dsp/framing.py`, `dsp/analyse.py`).
 
-- [ ] Known-sync library (CCSDS ASM, Barker, POCSAG, …)
-- [ ] **Blind sync discovery:** column-constancy over candidate frame lengths (Qin 2015: u ≥ 150 rows, 6σ), plus k-gram recurrence against a Poisson null with Bonferroni; inverted and NRZ-I variants; a discovered sync word is VERIFIED only by `sync_recurrence`
-- [ ] **Header fields:** constant columns, counters (toggle rate of the LSB), field boundaries; frames ≥ 64 bits with varying payload (idle patterns rejected)
-- [ ] **CRCs:** the catalogue (CRC-8/16/32 variants) with a position search; then **blind CRC recovery** for frames no catalogue entry fits — XOR two equal-length frames to cancel init and xor-out, take the GCD of the resulting polynomials to get the generator (Ewing's differential method), then solve init, xor-out and reflection. The polynomial is fitted on half the frames and counts as a `crc` proof only on the held-out half; every width and fit is counted in the ledger
-- [ ] Descrambler catalogue (CCSDS, G3RUH, 802.11), chosen by entropy drop
+- [ ] Known-sync library: CCSDS ASM and POCSAG are in (`framing.SYNC_WORDS`); short words (Barker-13, HDLC flag) match random positions too often for a bit-error search and are left to the blind discovery
+- [x] **Blind sync discovery** (`dsp.blind_framing.discover_sync`): an autocorrelation screen proposes frame lengths, column constancy over each (a run of ≥ 8 columns each lopsided at p ≤ 0.01, `0.01^R` per start, Bonferroni over the periods tested) finds the frame's *constant prefix*, and the second half of the rows, which discovery never read, counts recurrences against the chance a random row matches (the only thing that verifies it). Inverted streams give the complemented word; NRZ-I is searched as a differenced variant. Needs ≥ 64 frames of one length; sync plus constant header bytes cannot be told apart (reported as a constant prefix, with a warning). 0 of 300 structureless streams discovered (`-m slow`). Not built: k-gram recurrence for short or few frames (Qin's u ≥ 150 is relaxed to 32 rows per half)
+- [x] **Header fields** (`header_fields`): byte-aligned constant and counter fields after the prefix (step read from consecutive frames, judged against the chance rate), ending at the first variable byte; alignment from the CRC when there is one. Shown as one HYPOTHESIS parameter with each field's p-value; idle (near-constant) streams are rejected by the discovery guard
+- [ ] **CRCs:** the catalogue (CRC-8/16/32 variants) with a position search; then **blind CRC recovery** (`recover_crc`, in the chain) for frames no catalogue entry fits — XOR two equal-length frames to cancel init and xor-out, take the GCD of the resulting polynomials to get the generator (Ewing's differential method; candidates from windows of three multiples, so a few corrupted frames do not spoil it), for widths 8/16/24/32 and all four reflections. Init and xor-out are not separable at one frame length, so they are fitted as one affine constant, and named when a catalogued CRC matches (nine entries). The polynomial is fitted on half the frames and counts as a `crc` proof only on the held-out half, judged at ALPHA over every stream tried; a complemented stream fits equally (only the constant changes), which the report says unless the CRC is named. Still open: CRC not at the frame end, CRC-24, mixed frame lengths
+- [ ] Descrambler catalogue: CCSDS additive and G3RUH self-synchronising are in (`dsp/scramble.py`, each one hypothesis in the grid, decided by the frame check, reported as a promoted `descrambler` parameter); 802.11 (per-frame seed) is not, and "entropy drop" is not used, the CRC decides
 - [ ] Frame table split into header and payload, exportable as bits, hex and JSON
 - [ ] **Known-system catalogue** (`dsp/systems`, versioned YAML). An entry records its public specification and licence note, signal parameters, interleaver, FEC, sync, frame layout, the system's own check, and link-layer steps from a fixed set (NRZI, HDLC de-stuffing, descrambling, time-diversity combining). 1.0 entries:
 
@@ -297,11 +295,12 @@ Built so far: correlation search for the CCSDS ASM (≤ 3 bit errors, both polar
 
 ### M7 — Analyst workflow and reports (G1–G3)
 
-Built so far: open by path (`POST /recordings`, synchronous); Survey and Waterfall sections, the Assumptions modal (read-only), the full-screen deep dive, a persisted split ([UI.md](UI.md)); real detections, rail, constellation, ledger and frames from the chain.
+Built so far: open by path (`POST /recordings`, returns after tiles and detection; analysis runs in the background over SSE); Survey and Waterfall sections, the Assumptions modal (read-only), upload by picker or window drop, a raw file with an unknown sample rate opening in normalised units with a rate prompt (entered rate is MEASURED "by the analyst" and restarts the analysis), the full-screen deep dive, a persisted split ([UI.md](UI.md)); real detections, rail, constellation, ledger and frames from the chain.
 
-- [ ] **Background analysis:** open returns after tiles and detection; per-detection analysis runs as a job with SSE progress; results kept in the SQLite workspace
-- [ ] **Every input route:** drag-and-drop upload; open a folder as a batch; a numbered sequence as one recording; `sanket analyse <paths…>` writing the same results JSON
-- [ ] **Raw files open:** an unknown sample rate shows normalised units plus a prompt instead of a refusal; format candidates shown before analysis; editable assumptions (sample rate, centre frequency, IQ swap) that re-run analysis; `needsReview` items shown as prompts
+- [x] **Background analysis:** open returns after tiles and detection; per-detection analysis runs as a job with SSE progress (`backend/jobs.py`, `GET /recordings/{id}/events`; the UI follows it and fills reports in as they land)
+- [ ] **Job store:** the job on a process pool, results kept in the SQLite workspace and surviving a restart (today: one in-memory worker thread)
+- [ ] **Every input route:** ~~drag-and-drop upload~~ (done: picker and window drop, `backend/uploads.py`, `--workspace`); open a folder as a batch; a numbered sequence as one recording; `sanket analyse <paths…>` writing the same results JSON
+- [ ] **Raw files open:** ~~an unknown sample rate shows normalised units plus a prompt instead of a refusal~~ (done: `SampleRatePrompt`, candidates from the file-name and device hints); still open: format candidates shown before analysis; editable centre frequency (API only) and IQ swap in the UI; entered values checked against the data; `needsReview` items shown as prompts
 - [ ] **Analyst context:** known parameters, a suspected standard, capture details; entered values are MEASURED "entered by the analyst", checked against the data, conflicts shown as warnings; a suspected standard only reorders searches
 - [ ] **Save as SigMF** for confirmed non-SigMF recordings (samples untouched, source referenced with its offset)
 - [ ] **Overrides** on any stage → downstream re-run → before/after diff; job history, batch and compare views

@@ -4,7 +4,7 @@ import 'uplot/dist/uPlot.min.css'
 import type { DetectionMarker } from '@/lib/detections'
 import { decimalsFor, signed } from '@/lib/format'
 import type { View } from '@/lib/view'
-import type { WaterfallSource } from '@/lib/waterfallSource'
+import { axisUnits, type WaterfallSource } from '@/lib/waterfallSource'
 import { cssVar, useTheme } from '@/hooks/theme'
 import { LEVEL_CSS_VAR } from './levelStyles'
 
@@ -28,11 +28,12 @@ export function PsdPlot({ source, view, detections, selectedId }: Props) {
   const plotRef = useRef<uPlot | null>(null)
   const viewRef = useRef(view)
   const { theme } = useTheme()
+  const freqDiv = axisUnits(source).freqDiv
 
   useEffect(() => {
     viewRef.current = view
-    plotRef.current?.setScale('x', { min: view.f0 / 1000, max: view.f1 / 1000 })
-  }, [view])
+    plotRef.current?.setScale('x', { min: view.f0 / freqDiv, max: view.f1 / freqDiv })
+  }, [view, freqDiv])
 
   useEffect(() => {
     const el = wrapRef.current
@@ -43,8 +44,8 @@ export function PsdPlot({ source, view, detections, selectedId }: Props) {
     const spans = detections.map((d) => ({
       id: d.id,
       color: cssVar(LEVEL_CSS_VAR[d.level]),
-      f0: Math.min(...d.boxes.map((b) => b.f0)) / 1000,
-      f1: Math.max(...d.boxes.map((b) => b.f1)) / 1000,
+      f0: Math.min(...d.boxes.map((b) => b.f0)) / freqDiv,
+      f1: Math.max(...d.boxes.map((b) => b.f1)) / freqDiv,
     }))
 
     const axisStyle = {
@@ -61,7 +62,7 @@ export function PsdPlot({ source, view, detections, selectedId }: Props) {
       legend: { show: false },
       cursor: { y: false, points: { show: false }, drag: { x: false, y: false } },
       scales: {
-        x: { time: false, min: viewRef.current.f0 / 1000, max: viewRef.current.f1 / 1000 },
+        x: { time: false, min: viewRef.current.f0 / freqDiv, max: viewRef.current.f1 / freqDiv },
         y: { range: (_u, min, max) => [Math.floor(min - 2), Math.ceil(max + 3)] },
       },
       axes: [
@@ -90,7 +91,7 @@ export function PsdPlot({ source, view, detections, selectedId }: Props) {
       },
     }
 
-    const data: uPlot.AlignedData = [Array.from(source.freqsHz, (f) => f / 1000), Array.from(source.psdDb)]
+    const data: uPlot.AlignedData = [Array.from(source.freqsHz, (f) => f / freqDiv), Array.from(source.psdDb)]
     const plot = new uPlot(opts, data, el)
     plotRef.current = plot
     const ro = new ResizeObserver(() => plot.setSize({ width: el.clientWidth, height: el.clientHeight }))
@@ -100,12 +101,12 @@ export function PsdPlot({ source, view, detections, selectedId }: Props) {
       plot.destroy()
       plotRef.current = null
     }
-  }, [source, detections, selectedId, theme])
+  }, [source, detections, selectedId, theme, freqDiv])
 
   return (
     <div className="relative h-full">
       <span className="absolute top-0.5 left-1.5 z-10 text-2xs text-subtle-foreground">dB</span>
-      <span className="absolute bottom-1 left-1.5 z-10 text-2xs text-subtle-foreground">kHz</span>
+      <span className="absolute bottom-1 left-1.5 z-10 text-2xs text-subtle-foreground">{axisUnits(source).freqUnit}</span>
       <div ref={wrapRef} className="h-full" role="img" aria-label="Power spectral density (Welch average) across the capture" />
     </div>
   )

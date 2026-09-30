@@ -2,9 +2,9 @@
 kept in memory for this server process's lifetime (PLAN §5 M2). This is deliberately narrower
 than the full job/workspace store PLAN §3 describes (SQLite, content-addressed artifacts, job
 history): that is M7's scope. Here, a recording is opened once, and everything about it is held
-in a dict - nothing is persisted across a restart, and there is no job runner. It exists so the
-frontend's waterfall has real, server-computed tiles and detection boxes to switch to instead of
-the demo texture (PLAN's M2 exit gate), without building ahead of that milestone's own scope.
+in a dict - nothing is persisted across a restart. Opening returns once the tiles and the
+detections exist; the decode chain over each detection then runs in the background
+(`backend.jobs`), so the analyst sees the waterfall and the boxes long before the last report.
 `app.py` is what turns `dsp.detect.detection_parameters`'s output into API-shaped evidence; a
 `dsp.results.Signal` per detection isn't assembled here, since that belongs to the real job
 document M7 builds, not this bridge.
@@ -12,17 +12,21 @@ document M7 builds, not this bridge.
 
 import json
 import uuid
-from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, replace
 from pathlib import Path
-from threading import Lock
+from threading import RLock
 
 from dsp.analyse import analyse
 from dsp.detect import Detection, detect, detection_parameters
 from dsp.evidence import EvidenceLevel
-from dsp.ingest.dispatch import NeedsDecompression, open_path
+from dsp.ingest.dispatch import AnyRecording, NeedsDecompression, open_path
+from dsp.ingest.recording import entered
 from dsp.report import DetectionReport, StageReport
 from dsp.results import Assumptions
 from dsp.tiles import Pyramid, build_pyramid
+
+from .jobs import AnalysisJob, run_analysis
 
 
 class RecordingError(ValueError):
@@ -81,13 +85,28 @@ class Recording:
     path: Path
     container: str
     name: str
-    assumptions: Assumptions
+    source: AnyRecording
     num_samples: int
     real: bool
     pyramid: Pyramid
     detections: tuple[Detection, ...]
-    analyses: tuple[DetectionReport, ...]
+    job: AnalysisJob
     recorder: str | None = None  # what the file says wrote it (SigMF core:recorder), if it says
+    # Values the analyst entered, by assumption name; each replaces the file's own entry.
+    entered: tuple[tuple[str, float], ...] = ()
+
+    @property
+    def assumptions(self) -> Assumptions:
+        stated = self.source.assumptions
+        fields = {name: getattr(stated, name) for name in Assumptions.model_fields}
+        for name, value in self.entered:
+            fields[name] = entered(name, value, prior=fields[name])
+        return Assumptions.model_validate(fields)
+
+    @property
+    def analyses(self) -> tuple[DetectionReport | None, ...]:
+        """One entry per detection: its report, or None while it is still waiting or running."""
+        return self.job.snapshot()
 
     @property
     def synthetic(self) -> bool:
@@ -97,11 +116,23 @@ class Recording:
 
 class RecordingStore:
     """Recordings opened this server run, by id. Not thread-per-request safe beyond the lock
-    around registration; reads of an already-built `Recording` are safe (it's immutable)."""
+    around registration; reads of an already-built `Recording` are safe (only its job fills in,
+    behind its own lock)."""
 
     def __init__(self) -> None:
-        self._lock = Lock()
+        self._lock = RLock()
         self._recordings: dict[str, Recording] = {}
+        # One worker: the chain is CPU-bound, and running one recording's detections in order
+        # keeps the reports arriving top to bottom. Recordings opened meanwhile queue behind it.
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="analysis")
+
+    def close(self) -> None:
+        """Stop background analysis: drop queued work, finish only the detection in flight."""
+        with self._lock:
+            recordings = list(self._recordings.values())
+        for recording in recordings:
+            recording.job.cancel()
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
     def open(self, path: Path) -> Recording:
         if not path.is_file():
@@ -132,31 +163,67 @@ class RecordingStore:
         # PLAN's M2 checklist.
         with opened.recording.reader() as reader:
             detections = detect(reader, real=real).detections
-        assumptions = opened.recording.assumptions
-        rate = assumptions.sample_rate.value
-        sample_rate = rate if isinstance(rate, int | float) else None
-        analyses = []
-        for d in detections:
-            try:
-                with opened.recording.reader() as reader:
-                    analyses.append(analyse(reader, d, sample_rate=sample_rate))
-            except Exception as exc:  # one detection's failure mustn't sink the whole recording
-                analyses.append(_failed_analysis(d, str(exc)))
         recording = Recording(
             id=str(uuid.uuid4()),
             path=path,
             container=opened.container,
             name=opened.name,
-            assumptions=assumptions,
+            source=opened.recording,
             num_samples=pyramid.samples,
             real=real,
             pyramid=pyramid,
             detections=detections,
-            analyses=tuple(analyses),
+            job=AnalysisJob(0),
             recorder=sigmf_recorder(path),
         )
+        return self._start(recording)
+
+    def assume(
+        self,
+        recording_id: str,
+        *,
+        sample_rate: float | None = None,
+        center_frequency: float | None = None,
+    ) -> Recording | None:
+        """Take an analyst-entered sample rate and/or centre frequency and analyse again.
+
+        The tiles and detections are in fractions of the sample rate, so they stand; what the
+        rate changes is the boxes' units and whether the decode chain can run, so the analysis
+        restarts. Returns None for an unknown id."""
+        with self._lock:  # read, change and register as one step: overlapping calls both count
+            current = self.get(recording_id)
+            if current is None:
+                return None
+            current.job.cancel()
+            changes = dict(current.entered)
+            if sample_rate is not None:
+                changes["sample_rate"] = sample_rate
+            if center_frequency is not None:
+                changes["center_frequency"] = center_frequency
+            return self._start(replace(current, entered=tuple(changes.items())))
+
+    def _start(self, recording: Recording) -> Recording:
+        """Register `recording` and analyse its detections in the background."""
+        rate = recording.assumptions.sample_rate.value
+        sample_rate = rate if isinstance(rate, int | float) else None
+        # Boxes need a rate to be shown at all (`app.py`), so with none there is nothing to
+        # analyse yet; entering one as an assumption starts it.
+        detections = recording.detections
+        job = AnalysisJob(len(detections) if sample_rate is not None else 0)
+        recording = replace(recording, job=job)
+
+        def analyse_one(index: int) -> DetectionReport:
+            d = detections[index]
+            try:
+                with recording.source.reader() as reader:
+                    return analyse(reader, d, sample_rate=sample_rate)
+            except Exception as exc:  # one detection's failure mustn't sink the whole recording
+                return _failed_analysis(d, str(exc))
+
         with self._lock:
             self._recordings[recording.id] = recording
+        if job.total:
+            self._executor.submit(run_analysis, job, job.total, analyse_one)
         return recording
 
     def get(self, recording_id: str) -> Recording | None:

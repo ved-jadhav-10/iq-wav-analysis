@@ -120,11 +120,11 @@ def syndrome_rates(hard: NDArray[np.uint8], code: ConvCode = K7_R12) -> Float:
 
 def encode(bits: NDArray[np.uint8], code: ConvCode = K7_R12) -> Bits:
     """Re-encode from the all-zero state, for re-encode checks."""
-    table = _outputs(code)
-    mask = (1 << code.constraint) - 1
-    reg = 0
-    out = np.empty(len(bits) * code.n, np.uint8)
-    for i, bit in enumerate(np.asarray(bits, np.uint8)):
-        reg = ((reg >> 1) | (int(bit) << (code.constraint - 1))) & mask
-        out[i * code.n : (i + 1) * code.n] = table[reg]
-    return out
+    u = np.asarray(bits, np.uint8)
+    k = code.constraint
+    branches = np.empty((len(u), code.n), np.uint8)
+    for b, g in enumerate(code.generators):
+        # The most significant tap multiplies the newest bit: tap i is bit k - 1 - i of g.
+        taps = np.array([(g >> (k - 1 - i)) & 1 for i in range(k)], np.uint8)
+        branches[:, b] = np.convolve(u, taps)[: len(u)] % 2
+    return branches.ravel()
