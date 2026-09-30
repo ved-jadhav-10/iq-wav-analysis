@@ -5,11 +5,11 @@ It mirrors the frontend's `Detection` shape (`frontend/src/lib/analysis.ts`), so
 panels (pipeline rail, evidence, ledger, frames, constellation) draw a real detection unchanged.
 """
 
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import Field, model_validator
 
-from dsp.evidence import CamelModel, EvidenceLevel, FiniteFloat
+from dsp.evidence import CamelModel, EvidenceLevel, FiniteFloat, Parameter, revise
 from dsp.results import StageResult
 
 MAX_CONSTELLATION_POINTS = 2048
@@ -50,8 +50,18 @@ class HypothesisSearch(CamelModel):
     alpha: FiniteFloat
     correction: str = Field(min_length=1)
     smallest_threshold: FiniteFloat
-    shuffled_runs: int = Field(ge=0, description="Runs of the accepted chain on shuffled bits.")
-    shuffled_accepts: int = Field(ge=0, description="How many of those passed; should be 0.")
+    shuffled_runs: int = Field(
+        ge=0,
+        description="Runs on shuffled bits of the chains that passed the threshold, best first "
+        "(up to three of them, each run several times).",
+    )
+    shuffled_accepts: int = Field(ge=0, description="How many of those runs passed; should be 0.")
+    shuffled_blocked: int = Field(
+        default=0,
+        ge=0,
+        description="Chains that passed the threshold but also passed on shuffled bits, and so "
+        "were not accepted.",
+    )
     blind_searched: int = Field(
         default=0, ge=0, description="Branches the blind rate-1/n convolutional search ran on."
     )
@@ -128,3 +138,69 @@ class DetectionReport(CamelModel):
         if len(ids) != len(set(ids)):
             raise ValueError(f"stage ids must be unique: {ids}")
         return self
+
+
+_CAPPED_LEVELS = frozenset({EvidenceLevel.MEASURED, EvidenceLevel.ESTIMATED})
+
+
+def cap_digital_labels(report: DetectionReport, reason: str) -> DetectionReport:
+    """A digital signal's labels capped at HYPOTHESIS, for a recording whose samples can't carry
+    them reliably (a real-valued channel has no quadrature; lossy audio distorts the phase).
+
+    Only MEASURED and ESTIMATED values are lowered, each with `reason` as a warning. The detect
+    stage stays (it is where the band is, not what it carries), and so does a VERIFIED value: a
+    CRC pass is proof on the decoded bits whatever the audio did to the samples on the way.
+    Analog and unclassified signals are left as they are.
+    """
+    if report.kind not in ("psk", "fsk"):
+        return report
+    stages = tuple(s if s.id == "detect" else _capped_stage(s, reason) for s in report.stages)
+    if stages == report.stages:
+        return report
+    return _revised(
+        report,
+        stages=stages,
+        level=EvidenceLevel.HYPOTHESIS if report.level in _CAPPED_LEVELS else report.level,
+        headline=f"{report.headline} (labels capped at HYPOTHESIS)",
+    )
+
+
+def _capped_stage(stage: StageReport, reason: str) -> StageReport:
+    parameters = tuple(
+        revise(p, level=EvidenceLevel.HYPOTHESIS, warnings=(*p.warnings, reason))
+        if p.level in _CAPPED_LEVELS
+        else p
+        for p in stage.parameters
+    )
+    level = EvidenceLevel.HYPOTHESIS if stage.level in _CAPPED_LEVELS else stage.level
+    return _revised(stage, parameters=parameters, level=level)
+
+
+def _revised[M: CamelModel](model: M, **changes: Any) -> M:
+    """A validated copy (`model_copy(update=...)` would skip the validators)."""
+    return type(model).model_validate({**model.model_dump(by_alias=False), **changes})
+
+
+_RATE_UNITS = frozenset({"Hz", "Bd", "s"})
+
+
+def note_rate_basis(report: DetectionReport, note: str) -> DetectionReport:
+    """Every value in hertz, baud or seconds carries `note`, for a report computed from a sample
+    rate that is itself only a HYPOTHESIS (a structural match): those units are the normalised
+    values times that rate, so they are no firmer than it. The symbol rate also says it cannot
+    confirm the rate, which was chosen because it matches a recognised one."""
+    circular = (
+        "The sample rate was chosen because this symbol rate matches a recognised one, so this "
+        "value does not confirm that rate independently."
+    )
+
+    def noted(p: Parameter) -> Parameter:
+        if p.unit not in _RATE_UNITS:
+            return p
+        extra = (note, circular) if p.id == "symbol_rate" else (note,)
+        return revise(p, warnings=(*p.warnings, *extra))
+
+    stages = tuple(
+        _revised(s, parameters=tuple(noted(p) for p in s.parameters)) for s in report.stages
+    )
+    return report if stages == report.stages else _revised(report, stages=stages)

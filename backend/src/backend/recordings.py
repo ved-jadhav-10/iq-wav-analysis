@@ -18,12 +18,20 @@ from threading import RLock
 from typing import Literal
 
 from dsp.detect import Detection, detect
+from dsp.evidence import Parameter
 from dsp.ingest.dispatch import AnyRecording
 from dsp.report import DetectionReport
 from dsp.results import Assumptions
 from dsp.tiles import Pyramid, build_pyramid
 
-from .analysis import Entries, analyse_detection, assumptions_with, numeric_rate
+from .analysis import (
+    Entries,
+    analyse_detection,
+    assumptions_with,
+    infer_sample_rate,
+    numeric_rate,
+    rate_note,
+)
 from .inputs import RecordingError, expand, open_input
 from .jobs import AnalysisJob, run_analysis
 
@@ -69,6 +77,8 @@ class Recording:
     recorder: str | None = None  # what the file says wrote it (SigMF core:recorder), if it says
     # Values the analyst entered, by assumption name; each replaces the file's own entry.
     entered: Entries = ()
+    # A sample rate the structural test supports for a file that states none (`infer_sample_rate`).
+    inferred_rate: Parameter | None = None
 
     @property
     def swap_iq(self) -> bool:
@@ -77,7 +87,7 @@ class Recording:
 
     @property
     def assumptions(self) -> Assumptions:
-        return assumptions_with(self.source.assumptions, self.entered)
+        return assumptions_with(self.source.assumptions, self.entered, self.inferred_rate)
 
     @property
     def analyses(self) -> tuple[DetectionReport | None, ...]:
@@ -138,6 +148,7 @@ class RecordingStore:
             detections=detections,
             job=AnalysisJob(0),
             recorder=sigmf_recorder(path),
+            inferred_rate=infer_sample_rate(opened.recording, detections),
         )
         return self._start(recording)
 
@@ -185,12 +196,15 @@ class RecordingStore:
         job = AnalysisJob(len(detections) if sample_rate is not None else 0)
         recording = replace(recording, job=job)
 
+        basis = rate_note(recording.assumptions)
+
         def analyse_one(index: int) -> DetectionReport:
             return analyse_detection(
                 recording.source,
                 detections[index],
                 sample_rate=sample_rate,
                 swap_iq=recording.swap_iq,
+                rate_basis=basis,
             )
 
         with self._lock:

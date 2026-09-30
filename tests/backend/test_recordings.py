@@ -78,7 +78,9 @@ def test_an_unknown_sample_rate_omits_hz_rather_than_guessing_one(
     """A raw file with no metadata states no sample rate; the API must say so (None), never
     default one just so freqsHz has units (PLAN's "never assume a sample rate" rule)."""
     fmt = SampleFormat.parse("cf32_le")
-    x = np.exp(2j * np.pi * 0.1 * np.arange(20_000))
+    rng = np.random.default_rng(2)
+    noise = rng.normal(size=20_000) + 1j * rng.normal(size=20_000)
+    x = np.exp(2j * np.pi * 0.1 * np.arange(20_000)) + 0.05 * noise  # a tone has no symbol rate
     path = tmp_path / "capture.bin"
     path.write_bytes(fmt.encode(x))
     body = client.post("/api/v1/recordings", json={"path": str(path)}).json()
@@ -500,3 +502,63 @@ def test_the_frame_table_of_something_that_is_not_there_is_refused(
     assert client.get(f"{base}/0/frames", params={"format": "xml"}).status_code == 422
     # This scene carries no frames: an empty table, not an error.
     assert client.get(f"{base}/0/frames", params={"format": "hex"}).text == ""
+
+
+def test_a_symbol_rate_that_fits_one_file_name_rate_makes_it_a_hypothesis_and_analyses(
+    client: TestClient, tmp_path: Path, write_raw_bpsk: Callable[..., Path]
+) -> None:
+    """9,600 Bd over 2.4 MS/s: the name offers 2.4 MS/s and AIS's rate fits it, so the rate is a
+    HYPOTHESIS that says so, listed for review, and the analysis runs in hertz."""
+    path = write_raw_bpsk(tmp_path / "ais_fs=2.4M.cu8", baud=9600, rate=2.4e6)
+    body = client.post("/api/v1/recordings", json={"path": str(path)}).json()
+    rate = body["assumptions"]["sampleRate"]
+    assert body["sampleRate"] == 2.4e6 and rate["value"] == 2.4e6
+    assert rate["level"] == "HYPOTHESIS" and rate["method"].startswith("Structural match")
+    assert "9600 Bd" in " ".join(rate["evidence"])
+    assert rate["convention"]  # so it is listed under needsReview
+    assert body["analysis"]["total"] == len(body["detections"]) >= 1
+    events = progress_events(client, body["id"])
+    assert events[-1]["state"] == "done"
+    done = client.get(f"/api/v1/recordings/{body['id']}").json()
+    estimate = next(s for s in done["detections"][0]["analysis"]["stages"] if s["id"] == "estimate")
+    symbol_rate = next(p for p in estimate["parameters"] if p["id"] == "symbol_rate")
+    assert symbol_rate["unit"] == "Bd" and symbol_rate["level"] == "ESTIMATED"
+    assert any("sample rate, which is a HYPOTHESIS" in w for w in symbol_rate["warnings"])
+    assert any("does not confirm that rate independently" in w for w in symbol_rate["warnings"])
+
+
+def test_ambiguous_rates_stay_unknown_with_the_test_in_the_evidence(
+    client: TestClient, tmp_path: Path, write_raw_bpsk: Callable[..., Path]
+) -> None:
+    """9,600 Bd at 2.4 MS/s and 4,800 Bd at 1.2 MS/s look alike; with no name to choose, the
+    rate stays UNKNOWN and the prompt can say why."""
+    path = write_raw_bpsk(tmp_path / "capture.cu8", baud=9600, rate=2.4e6)
+    body = client.post("/api/v1/recordings", json={"path": str(path)}).json()
+    rate = body["assumptions"]["sampleRate"]
+    assert body["sampleRate"] is None and rate["level"] == "UNKNOWN"
+    assert "different sample rates" in rate["evidence"][-1]
+    assert body["detections"] == []
+
+
+def test_an_entered_rate_replaces_the_structural_one(
+    client: TestClient, tmp_path: Path, write_raw_bpsk: Callable[..., Path]
+) -> None:
+    path = write_raw_bpsk(tmp_path / "ais_fs=2.4M.cu8", baud=9600, rate=2.4e6)
+    opened = client.post("/api/v1/recordings", json={"path": str(path)}).json()
+    body = client.put(
+        f"/api/v1/recordings/{opened['id']}/assumptions", json={"sampleRate": 2.048e6}
+    ).json()
+    rate = body["assumptions"]["sampleRate"]
+    assert body["sampleRate"] == 2.048e6 and rate["level"] == "MEASURED"
+    assert any("Sanket inferred 2400000.0" in w and "HYPOTHESIS" in w for w in rate["warnings"])
+
+
+def test_noise_alone_never_yields_a_hypothesis_rate(client: TestClient, tmp_path: Path) -> None:
+    """The structural test's null case: a file named for a rate, holding only noise."""
+    rng = np.random.default_rng(3)
+    noise = 0.2 * (rng.normal(size=1 << 18) + 1j * rng.normal(size=1 << 18))
+    path = tmp_path / "noise_fs=2.4M.cu8"
+    path.write_bytes(SampleFormat.parse("cu8").encode(noise))
+    body = client.post("/api/v1/recordings", json={"path": str(path)}).json()
+    assert body["sampleRate"] is None
+    assert body["assumptions"]["sampleRate"]["level"] == "UNKNOWN"

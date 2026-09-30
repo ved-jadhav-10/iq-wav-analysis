@@ -118,6 +118,28 @@ def test_analyse_takes_entries_for_what_the_file_lacks(tmp_path: Path, sigmf_pat
     assert abs(signal_centre(data) - OFFSET_HZ) < TOLERANCE_HZ
 
 
+def test_analyse_infers_a_raw_files_rate_from_a_recognised_symbol_rate(
+    tmp_path: Path, write_raw_bpsk: Callable[..., Path]
+) -> None:
+    raw = write_raw_bpsk(tmp_path / "ais_fs=2.4M.cu8", baud=9600, rate=2.4e6)
+    assert cli.main(["analyse", str(raw), "--out", str(tmp_path / "out")]) == 0
+    data = load(tmp_path / "out" / "ais_fs=2.4M.results.json")
+    rate = data["assumptions"]["sampleRate"]
+    assert (rate["value"], rate["level"]) == (2.4e6, "HYPOTHESIS")
+    assert data["signals"]  # analysed, in hertz
+    assert "sample_rate" in [item["parameter"] for item in data["needsReview"]]
+
+
+def test_analyse_infers_the_rate_from_a_file_whose_iq_order_is_swapped(
+    tmp_path: Path, write_raw_bpsk: Callable[..., Path]
+) -> None:
+    raw = write_raw_bpsk(tmp_path / "ais_fs=2.4M.cu8", baud=9600, rate=2.4e6, swapped=True)
+    out = tmp_path / "out"
+    assert cli.main(["analyse", str(raw), "--out", str(out), "--iq-order", "QI"]) == 0
+    rate = load(out / "ais_fs=2.4M.results.json")["assumptions"]["sampleRate"]
+    assert (rate["value"], rate["level"]) == (2.4e6, "HYPOTHESIS")
+
+
 def test_analyse_iq_order_qi_mirrors_the_signal(tmp_path: Path, sigmf_path: Path) -> None:
     assert cli.main(["analyse", str(sigmf_path), "--out", str(tmp_path), "--iq-order", "QI"]) == 0
     data = load(tmp_path / "rec.results.json")

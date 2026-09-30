@@ -296,12 +296,15 @@ def structural_test(
     relative_uncertainty: float,
     candidates: Sequence[RateCandidate],
     symbol_rates: Sequence[SymbolRate] = RECOGNISED_SYMBOL_RATES,
+    searches: int = 1,
 ) -> StructuralTest:
     """Test (candidate sample rate, recognised symbol rate) pairs against a measured rate.
 
     `normalised_rate` is the estimated symbol rate in cycles per sample, `relative_uncertainty`
     its 1-sigma relative uncertainty. The tolerance is 3 sigma, at least the clock floor, and
-    never wider than 0.1 %: a measurement too imprecise for that matches nothing.
+    never wider than 0.1 %: a measurement too imprecise for that matches nothing. `searches` is
+    how many measured rates (signals) the caller tests in all; each tier's share of ALPHA is
+    divided by it, so testing several signals does not raise the chance of a coincidence.
     """
     if not MIN_NORMALISED_RATE <= normalised_rate <= 1:
         raise ValueError(f"normalised symbol rate outside [1e-6, 1]: {normalised_rate}")
@@ -326,7 +329,9 @@ def structural_test(
             if abs(normalised_rate * fs / rs.value - 1) <= tolerance
         )
         chance = _chance(pairs, tolerance) if usable else 1.0
-        tiers.append(Tier(label, len(pairs), chance, ALPHA / len(groups), matches, tolerance))
+        tiers.append(
+            Tier(label, len(pairs), chance, ALPHA / (len(groups) * searches), matches, tolerance)
+        )
     return StructuralTest(normalised_rate, tolerance, tuple(tiers))
 
 
@@ -365,6 +370,8 @@ def structural_parameter(test: StructuralTest, unknown: Parameter) -> Parameter:
         level=EvidenceLevel.HYPOTHESIS,
         method="Structural match: a recognised symbol rate over the measured normalised rate",
         evidence=(head, *lines, f"Decided on the {tier.label}."),
+        convention="The rate rests on a recognised symbol rate fitting the measured one, not on "
+        "anything the file says; confirm it, or enter the rate the receiver used.",
         alternatives=tuple(a for a in unknown.alternatives if a.value != rate)[:MAX_ALTERNATIVES],
     )
 

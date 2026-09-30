@@ -24,6 +24,8 @@ export interface HypothesisSearch {
   smallestThreshold: number
   shuffledRuns: number
   shuffledAccepts: number
+  /** Chains that passed the threshold but also passed on shuffled bits, so were not accepted. */
+  shuffledBlocked?: number
   /** Branches the blind rate-1/n convolutional search ran on, and on how many it named a code. */
   blindSearched?: number
   blindIdentified?: number

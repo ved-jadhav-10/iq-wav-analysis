@@ -98,14 +98,15 @@ def syndrome_rate(hard: Bits, code: ConvCode = K7_R12) -> float:
     return float(syndrome_rates(np.asarray(hard)[None, :], code)[0])
 
 
-def syndrome_rates(hard: NDArray[np.uint8], code: ConvCode = K7_R12) -> Float:
-    """`syndrome_rate` for each row of `hard` (rows x bits) at once."""
+def syndrome_bits(hard: NDArray[np.uint8], code: ConvCode = K7_R12) -> NDArray[np.uint8]:
+    """The parity check of every window of each row of `hard` (rows x bits): rows x windows, 0
+    where the window satisfies the code, one window per code step after the first K - 1."""
     if code.n != 2:
         raise ValueError("the parity syndrome is only defined here for rate 1/2")
     k = code.constraint
     steps = hard.shape[1] // 2
     if steps <= k:
-        return np.full(len(hard), 0.5)
+        return np.zeros((len(hard), 0), np.uint8)
     c0, c1 = hard[:, 0 : 2 * steps : 2], hard[:, 1 : 2 * steps : 2]
     s = np.zeros((len(hard), steps - k + 1), np.uint8)
     # s[m] = sum_i g1[i] c0[m - i] + g0[i] c1[m - i], taps i = 0 .. k-1 (MSB = newest bit)
@@ -115,7 +116,13 @@ def syndrome_rates(hard: NDArray[np.uint8], code: ConvCode = K7_R12) -> Float:
             s ^= c0[:, k - 1 - i : steps - i]
         if (code.generators[0] >> bit) & 1:
             s ^= c1[:, k - 1 - i : steps - i]
-    return s.mean(axis=1)
+    return s
+
+
+def syndrome_rates(hard: NDArray[np.uint8], code: ConvCode = K7_R12) -> Float:
+    """`syndrome_rate` for each row of `hard` (rows x bits) at once."""
+    s = syndrome_bits(hard, code)
+    return s.mean(axis=1) if s.shape[1] else np.full(len(hard), 0.5)
 
 
 def encode(bits: NDArray[np.uint8], code: ConvCode = K7_R12) -> Bits:

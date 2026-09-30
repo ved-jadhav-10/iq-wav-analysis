@@ -19,7 +19,7 @@ Every value carries one level, plus a confidence, the method and its evidence:
 | **HYPOTHESIS** | A ranked candidate that isn't confirmed | "QPSK (0.71) or 8PSK (0.24)" |
 | **UNKNOWN** | Can't be determined; says why and what would settle it | "Pseudo-random interleaver: period 2,048 bits; permutation not in the catalogue" |
 
-When the evidence can't decide and a convention must (a raw file doesn't say whether I or Q comes first), the value is a HYPOTHESIS that names its convention and is listed under `needsReview` at the top of every result. Blind searches count every hypothesis they try and raise the acceptance bar to match; each accepted chain is re-run on shuffled bits, where nothing should pass.
+When the evidence can't decide and a convention must (a raw file doesn't say whether I or Q comes first), the value is a HYPOTHESIS that names its convention and is listed under `needsReview` at the top of every result. Blind searches count every hypothesis they try and raise the acceptance bar to match; a chain is accepted only if it also fails to pass when its bits are shuffled.
 
 ## Limits, by design
 

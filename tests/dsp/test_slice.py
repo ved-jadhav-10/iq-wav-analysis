@@ -101,6 +101,44 @@ def test_coded_psk_decodes_to_the_transmitted_frames(
     assert sum(r.outcome == "accepted" for r in report.search.rows) == 1
 
 
+def test_a_chain_that_also_passes_on_shuffled_bits_is_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The shuffled-bit control gates acceptance: a decode that would be VERIFIED is not, when
+    shuffling its bits still gets past the threshold, and the ledger says that is why."""
+    monkeypatch.setattr("dsp.analyse._shuffled_accepts", lambda chain, threshold: 1)
+    spec = replace(_spec("qpsk", 8, 15.0, inner=CONV, stream_offset=5, offset=0.1), start=10_000)
+    _, report = _run(replace(spec, duration=100_000))
+    assert report.level is not EvidenceLevel.VERIFIED
+    assert report.search is not None
+    assert report.search.shuffled_accepts >= 1 and report.search.shuffled_runs > 0
+    assert report.search.shuffled_blocked >= 1
+    assert not any(r.outcome == "accepted" for r in report.search.rows)
+    blocked = [r for r in report.search.rows if r.reason.startswith("Blocked")]
+    assert blocked and all("shuffled" in r.reason for r in blocked)
+
+
+def test_a_blocked_chain_hands_acceptance_to_the_next_one_that_passes_the_control(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[int] = []
+
+    def first_fails(chain: Any, threshold: float) -> int:
+        calls.append(1)
+        return 1 if len(calls) == 1 else 0
+
+    monkeypatch.setattr("dsp.analyse._shuffled_accepts", first_fails)
+    spec = replace(_spec("qpsk", 8, 15.0, inner=CONV, stream_offset=5, offset=0.1), start=10_000)
+    _, report = _run(replace(spec, duration=100_000))
+    assert report.search is not None
+    assert len(calls) >= 2, "the decode should be significant under more than one description"
+    assert report.search.shuffled_blocked == 1
+    assert report.search.shuffled_accepts == 1  # the blocked chain's run, none for the accepted one
+    assert report.search.shuffled_runs == 3 * len(calls)
+    assert sum(r.outcome == "accepted" for r in report.search.rows) == 1
+    assert report.level is EvidenceLevel.VERIFIED
+
+
 @pytest.mark.parametrize(
     ("modulation", "sps", "esn0", "mirror"),
     [
@@ -394,13 +432,17 @@ def test_frames_with_an_unknown_sync_word_and_crc_are_found_blind(
     truth = _truth_for(g, frame)
     passing = [f for f in report.frames if f.crc == "pass"]
     assert len(passing) >= 60
+    # The table splits at the real header: the 16-bit counter the generator wrote, then the payload.
+    assert all(len(f.header_hex.split()) == frame.counter_bits // 8 for f in passing)
+    assert all(len(f.payload_hex) == 2 * frame.payload_bytes for f in passing)
+    whole = [f.header_hex.replace(" ", "") + f.payload_hex for f in passing]
     if named:
-        assert all(f.payload_hex in truth for f in passing)
+        assert all(h in truth for h in whole)
     else:
         # An unnamed CRC can't fix the stream's polarity: the payload is what was sent or its
         # complement, and the report says so (below).
         complemented = {bytes(b ^ 0xFF for b in bytes.fromhex(h)).hex().upper() for h in truth}
-        assert all(f.payload_hex in truth or f.payload_hex in complemented for f in passing)
+        assert all(h in truth or h in complemented for h in whole)
 
     assert report.search is not None and report.search.shuffled_accepts == 0
     accepted = next(r for r in report.search.rows if r.outcome == "accepted")
@@ -439,3 +481,33 @@ def test_scrambled_frames_are_found_through_the_descrambler_catalogue(scrambler:
     assert report.search is not None and report.search.shuffled_accepts == 0
     accepted = next(r for r in report.search.rows if r.outcome == "accepted")
     assert str(d.value) in accepted.candidate
+
+
+@pytest.mark.parametrize(
+    ("rows", "cols", "offset"), [(10, 30, 7), (20, 40, 301), (37, 19, 0)], ids=str
+)
+def test_a_block_interleaver_outside_the_catalogue_is_found_blind_and_decoded(
+    rows: int, cols: int, offset: int
+) -> None:
+    spec = _spec(
+        "qpsk",
+        8,
+        15.0,
+        inner=CONV,
+        interleaver=il.Block(rows, cols),
+        stream_offset=offset,
+        offset=0.1,
+    )
+    g, report = _run(spec)
+    assert report.level is EvidenceLevel.VERIFIED
+    truth = _truth_bodies(g)
+    passing = [f for f in report.frames if f.crc == "pass"]
+    assert len(passing) >= 40 and all(f.payload_hex in truth for f in passing)
+    assert report.search is not None and report.search.shuffled_accepts == 0
+    accepted = next(r for r in report.search.rows if r.outcome == "accepted")
+    assert accepted.layer == "Interleaver"
+    assert f"block {rows}x{cols} (found blind)" in accepted.candidate
+    stage = next(s for s in report.stages if s.id == "deinterleave")
+    assert stage.parameters[0].level is EvidenceLevel.VERIFIED
+    assert "stride scan" in stage.parameters[0].method
+    assert f"Every {rows}th received bit" in " ".join(stage.parameters[0].evidence)

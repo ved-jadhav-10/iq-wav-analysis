@@ -15,7 +15,7 @@ skips the digital chain.
 """
 
 import math
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -30,10 +30,12 @@ from dsp.blind_framing import (
     analyse_stream,
     structure_z,
 )
+from dsp.blind_interleaver import MAX_CANDIDATE_CELLS, BlindBlock, find_blocks
 from dsp.channel import Channel, channelise
 from dsp.deinterleave import (
     CATALOGUE,
     FORNEY_CATALOGUE,
+    Block,
     Forney,
     Interleaver,
     deinterleave,
@@ -89,7 +91,10 @@ MAX_LEDGER_ROWS = 12
 # spectrum as received and mirrored.
 FSK_BRANCHES = 1 + 2 + 2
 SHUFFLED_RUNS = 3
+# Significant chains checked against shuffled bits, best first, before acceptance gives up.
+MAX_SHUFFLE_CANDIDATES = 3
 MIN_SYMBOLS = 512
+MIN_ENVELOPE_VARIATION = 0.01  # std / mean of |x|² below which a symbol-rate line isn't real
 CODES: tuple[ConvCode | None, ...] = (K7_R12, None)
 # Interleavers (dsp.deinterleave.CATALOGUE: block, helical, 802.11, QPP; FORNEY_CATALOGUE:
 # convolutional) are tried after the convolutional code; alignment by the code's parity
@@ -97,6 +102,13 @@ CODES: tuple[ConvCode | None, ...] = (K7_R12, None)
 SYNDROME_SCREEN = 0.25
 SCREEN_BITS = 2048  # at least this many coded bits per alignment tried
 SCREEN_CHUNK = 256  # alignments screened per batch
+# Every alignment is first screened on this many coded bits (both ends of the first block), and
+# only the lowest COARSE_KEEP go on to the full SCREEN_BITS: a code's parity syndrome is far below
+# chance even on a short stretch, so the right alignment survives (30 of the 30 catalogue cases a
+# full screen finds at 3 % hard-decision errors, 27 with 8 kept and 512 bits) while most of the
+# work is saved.
+COARSE_BITS = 768
+COARSE_KEEP = 32
 # A punctured cell goes on to frame search only when re-encoding its Viterbi output matches the
 # bits it actually received at least this well (a wrong pattern or phase matches barely more than
 # chance; a right one matches all but the raw bit errors).
@@ -220,6 +232,21 @@ def analyse(
     )
 
 
+def measure_symbol_rate(source: Any, detection: Detection) -> tuple[float, float] | None:
+    """A linear signal's symbol rate in symbols per *input* sample, with its relative 1-sigma
+    uncertainty: the |x|² line alone, with no decode chain and no sample rate. It is what a
+    structural sample-rate test needs (`dsp.ingest.rate.structural_test`). None when there is no
+    line, or too few symbols for one to be trusted; FSK's rate is not measured here."""
+    channel = channelise(source, detection)
+    rate = symbol_rate(channel.samples)
+    if rate is None or rate.normalised_rate * len(channel.samples) < MIN_SYMBOLS:
+        return None
+    power = np.abs(channel.samples) ** 2
+    if power.std() < MIN_ENVELOPE_VARIATION * power.mean():
+        return None  # a constant envelope has no symbol-rate line; one found is rounding noise
+    return rate.normalised_rate / channel.decimation, rate.uncertainty / rate.normalised_rate
+
+
 # --- analog ---------------------------------------------------------------------------------
 
 
@@ -323,6 +350,7 @@ class _Chain:
     descrambler: Descrambler | None = None
     blind_frames: BlindFrames | None = None  # set when sync and CRC were found blind
     threshold: float | None = None  # this chain's own acceptance threshold, when not the grid's
+    blind_block: BlindBlock | None = None  # set when the block interleaver was found blind
 
     def significant(self, threshold: float) -> bool:
         limit = self.threshold if self.threshold is not None else threshold
@@ -364,8 +392,10 @@ class _Search:
     threshold: float
     accepted: _Chain | None
     carriers: dict[str, Carrier]
-    shuffled_accepts: int
+    shuffled_accepts: int  # over every chain checked, blocked ones included
     blind: _BlindStats
+    blocked: tuple[_Chain, ...] = ()  # significant, but the same chain also passed on shuffled bits
+    shuffled_checked: int = 0  # chains run on shuffled bits (up to MAX_SHUFFLE_CANDIDATES)
 
 
 Branch = tuple[str, int, Any]  # modulation, carrier rotation in degrees, soft bits
@@ -505,21 +535,62 @@ def _blind_conv_cells(branch: Branch, stats: _BlindStats) -> list[_Chain]:
 def _interleaver_cells(branch: Branch) -> list[_Chain]:
     """Each catalogued block interleaver, at the alignment where the code's parity syndrome is
     lowest; only an alignment that passes the syndrome screen goes on to Viterbi and framing."""
+    return _block_cells(branch, [(entry, None) for entry in CATALOGUE])
+
+
+def _blind_block_cells(branch: Branch) -> list[_Chain]:
+    """Block interleavers the stream's own structure names (`dsp.blind_interleaver`), less those
+    the catalogue already tried, each then aligned and decided like a catalogued one."""
+    modulation, rotation, soft = branch
+    if modulation in ("BPSK", "QPSK") and rotation >= 180:
+        return []  # as for the catalogue: only inverts every bit of the 0°/90° branch
+    known = {(e.rows, e.cols) for e in CATALOGUE if isinstance(e, Block)}
+    found = find_blocks((np.asarray(soft) < 0).astype(np.uint8))
+    return _block_cells(
+        branch, [(b.block, b) for b in found if (b.block.rows, b.block.cols) not in known]
+    )
+
+
+def _block_cells(
+    branch: Branch, entries: Sequence[tuple[Interleaver, BlindBlock | None]]
+) -> list[_Chain]:
     modulation, rotation, soft = branch
     chains: list[_Chain] = []
     if modulation in ("BPSK", "QPSK") and rotation >= 180:
         # Only inverts every bit of the 0°/90° branch, which the code (odd-weight generators)
         # and the inverted-sync check already cover: counted as tried, not run again.
         return chains
-    for entry in CATALOGUE:
-        offset, rate = _interleaver_offset(soft, entry)
-        label = f"{entry.label} from bit {offset}"
+    for entry, blind in entries:
+        offset, phase, rate = _interleaver_offset(soft, entry)
+        label = f"{entry.label}{' (found blind)' if blind else ''} from bit {offset}" + (
+            f", code phase {phase}" if phase else ""
+        )
         if rate >= SYNDROME_SCREEN:
-            chains.append(_Chain(modulation, rotation, K7_R12, 0, None, soft, None, label, rate))
+            chains.append(
+                _Chain(
+                    modulation,
+                    rotation,
+                    K7_R12,
+                    0,
+                    None,
+                    soft,
+                    None,
+                    label,
+                    rate,
+                    blind_block=blind,
+                )
+            )
             continue
-        llr = deinterleave(soft, entry, offset)
+        llr = deinterleave(soft, entry, offset)[phase:]
         chains += _decode_cell(
-            modulation, rotation, K7_R12, 0, llr, interleaver=label, syndrome=rate
+            modulation,
+            rotation,
+            K7_R12,
+            0,
+            llr,
+            interleaver=label,
+            syndrome=rate,
+            blind_block=blind,
         )
     return chains
 
@@ -574,13 +645,16 @@ def _search(
     convolutional code) x sync word x CRC, Bonferroni-corrected over the whole grid
     (`branch_count` branches). The grid is walked cheapest first and stops at the first group
     with an accepted chain; the threshold covers the cells never reached, so it stays honest.
-    Interleaver cells rejected by the syndrome screen count as tried."""
+    Interleaver cells rejected by the syndrome screen count as tried. The shuffled-bit control
+    runs after the walk, on the best significant chains: one it blocks is rejected, but the walk
+    had already stopped at it, so cells beyond are not tried (lost recall, not a false accept)."""
     per_branch = (
         sum(2 if c else 1 for c in CODES)
         + sum(p.kept for p in PUNCTURES)
         + BLIND_CELLS
         + sum(e.size for e in CATALOGUE)
         + sum(e.branches * K7_R12.n for e in FORNEY_CATALOGUE)
+        + MAX_CANDIDATE_CELLS  # block interleavers found blind: every alignment of every candidate
     )
     # Each cell also with the outer RS code at every bit alignment and codeword phase.
     scrambles = 1 + len(DESCRAMBLERS)  # as decoded, and through each descrambler
@@ -623,18 +697,33 @@ def _search(
                     chains += _interleaver_cells(branch)
                     if not accepted():
                         chains += _forney_cells(branch)
+                    if not accepted():
+                        chains += _blind_block_cells(branch)
                 if accepted():
                     break
     chains += _outer_cells(chains, threshold)
     if not accepted():
         chains += _blind_frame_cells(chains, threshold)
-    best = min(
+    significant = sorted(
         (c for c in chains if c.significant(threshold)),
         key=lambda c: (c.p_value or 1.0, c.outer is None, _unnamed_blind_crc(c)),
-        default=None,
     )
-    shuffled = _shuffled_accepts(best, threshold) if best else 0
-    return _Search(tuple(chains), tried, threshold, best, carriers, shuffled, blind)
+    # The shuffled-bit control gates acceptance: a chain that also passes on shuffled bits is a
+    # false alarm of the search itself, so it is blocked and the next candidate is tried.
+    best: _Chain | None = None
+    blocked: list[_Chain] = []
+    shuffled = checked = 0
+    for candidate in significant[:MAX_SHUFFLE_CANDIDATES]:
+        accepts = _shuffled_accepts(candidate, threshold)
+        checked += 1
+        shuffled += accepts
+        if accepts == 0:
+            best = candidate
+            break
+        blocked.append(candidate)
+    return _Search(
+        tuple(chains), tried, threshold, best, carriers, shuffled, blind, tuple(blocked), checked
+    )
 
 
 def _unnamed_blind_crc(chain: _Chain) -> bool:
@@ -684,28 +773,57 @@ def _shuffled_accepts(chain: _Chain, threshold: float) -> int:
         accepts += int(p is not None and p < threshold)
         if chain.blind:  # the gate that chose the code must not fire on shuffled bits either
             accepts += int(identify_convolutional(llr).found is not None)
+        if chain.blind_block:  # nor the stride scan that named the interleaver
+            accepts += int(bool(find_blocks((llr < 0).astype(np.uint8))))
     return accepts
 
 
-def _interleaver_offset(soft: Any, entry: Interleaver) -> tuple[int, float]:
-    """The block alignment with the lowest parity-syndrome rate, and that rate: every offset's
-    first blocks (at least SCREEN_BITS bits) deinterleaved and screened in one batch. A block
-    longer than SCREEN_BITS is screened on its first SCREEN_BITS deinterleaved bits alone, which
-    are a stretch of the code's own stream."""
+def _interleaver_offset(soft: Any, entry: Interleaver) -> tuple[int, int, float]:
+    """The block alignment with the lowest parity-syndrome rate, the code phase (0, or 1 to drop
+    the first deinterleaved bit: only a block of odd size can start in the middle of a code
+    pair), and that rate: every offset's first blocks (at least SCREEN_BITS bits) deinterleaved
+    and screened, the COARSE_KEEP best of a first pass over both ends of the first block on the full
+    length. A
+    block longer than SCREEN_BITS is screened on its first SCREEN_BITS deinterleaved bits alone,
+    which are a stretch of the code's own stream."""
     n = entry.size
     hard = (np.asarray(soft) < 0).astype(np.uint8)
     take = min(n, SCREEN_BITS)
     blocks = min(max(2, -(-SCREEN_BITS // n)) if n <= SCREEN_BITS else 1, len(hard) // n - 1)
     if blocks < 1:
-        return 0, 0.5
+        return 0, 0, 0.5
     inverse = np.argsort(entry.permutation())[:take]  # deinterleaved[i] = interleaved[inverse[i]]
     within = (np.arange(blocks)[:, None] * n + inverse[None, :]).ravel()
-    rates = np.empty(n)
-    for start in range(0, n, SCREEN_CHUNK):
-        offsets = np.arange(start, min(n, start + SCREEN_CHUNK))
-        rates[offsets] = syndrome_rates(hard[offsets[:, None] + within[None, :]])
+    phases = (0, 1) if n % 2 else (0,)
+    candidates = np.arange(n)
+
+    def screen(offsets: Any, read: Any) -> Any:
+        rates = [_screen(hard, offsets, read[phase:]) for phase in phases]
+        return np.min(rates, axis=0), np.argmin(rates, axis=0)
+
+    # The coarse pass reads both ends of the first block, COARSE_BITS / 2 each (a short block: its
+    # first COARSE_BITS, over several blocks). An alignment a few bits out only spoils the rows
+    # at one end of each block, so a read from the start alone would leave it tied with the right
+    # one; the join between the two halves costs every alignment the same few windows.
+    half = COARSE_BITS // 2
+    coarse = (
+        np.concatenate([within[:half], within[take - half : take]]) if n >= 2 * half else within
+    )
+    if len(within) > 2 * COARSE_BITS and n > COARSE_KEEP:
+        coarse_rates, _ = screen(candidates, coarse[:COARSE_BITS])
+        candidates = candidates[np.argsort(coarse_rates)[:COARSE_KEEP]]
+    rates, phase = screen(candidates, within)
     best = int(np.argmin(rates))
-    return best, float(rates[best])
+    return int(candidates[best]), int(phase[best]), float(rates[best])
+
+
+def _screen(hard: Any, offsets: Any, within: Any) -> Any:
+    """The parity-syndrome rate of `hard` read at `within` from each of `offsets`, in batches."""
+    rates = np.empty(len(offsets))
+    for start in range(0, len(offsets), SCREEN_CHUNK):
+        chunk = offsets[start : start + SCREEN_CHUNK]
+        rates[start : start + len(chunk)] = syndrome_rates(hard[chunk[:, None] + within[None, :]])
+    return rates
 
 
 # --- blind framing --------------------------------------------------------------------------
@@ -772,23 +890,31 @@ def _frames_from_blind(found: BlindFrames) -> FrameResult:
         xorout,
     )
     decoded: list[DecodedFrame] = []
+    # The header is the run of constant and counter fields the blind analysis found after the
+    # prefix (its bytes are counted from the data's own alignment, back from the CRC).
+    header_end = max(
+        (f.start + f.width for f in found.fields if f.kind in ("constant", "counter")),
+        default=width,
+    )
     for i, row in enumerate(found.frames):
         body = row[width:]
         # Whole bytes counted back from the CRC field: a prefix that stops a few bits short of
         # the true data leaves its constant tail at the front, which is not payload.
         data = body[: -fit.width]
-        data = data[len(data) % 8 :]
+        skip = len(data) % 8
+        data = data[skip:]
+        header = max(0, header_end - width - skip) // 8 * 8
         ok = fit.check(body)
-        usable = len(data)
+        payload = np.packbits(data[header:]).tobytes()
         decoded.append(
             DecodedFrame(
                 i + 1,
                 sync.start + i * sync.period,
                 sync.period,
                 "pass" if ok else "fail",
-                " ".join(f"{b:02X}" for b in np.packbits(data[:32]).tolist()),
-                np.packbits(data[:usable]).tobytes().hex().upper(),
-                np.packbits(data[:usable]).tobytes(),
+                " ".join(f"{b:02X}" for b in np.packbits(data[:header]).tolist()),
+                payload.hex().upper(),
+                payload,
             )
         )
     passes = sum(f.crc == "pass" for f in decoded)
@@ -1244,9 +1370,18 @@ def _decode_stages(
                 name="Interleaver",
                 value=acc.interleaver,
                 level=E.HYPOTHESIS,
-                method="Interleaver catalogue (block, helical, 802.11, QPP, convolutional); "
-                "alignment by the inner code's parity syndrome, decided by the CRC",
-                evidence=(f"Syndrome rate {acc.syndrome or 0:.3f} here (0.5 if wrong)",),
+                method=(
+                    "Block interleaver found blind (stride scan on the K=7 code's parity "
+                    "syndrome, row length from the folded failures); alignment by the same "
+                    "syndrome, decided by the CRC"
+                    if acc.blind_block
+                    else "Interleaver catalogue (block, helical, 802.11, QPP, convolutional); "
+                    "alignment by the inner code's parity syndrome, decided by the CRC"
+                ),
+                evidence=(
+                    *((acc.blind_block.evidence,) if acc.blind_block else ()),
+                    f"Syndrome rate {acc.syndrome or 0:.3f} here (0.5 if wrong)",
+                ),
             )
             stages.append(
                 _stage(
@@ -1597,7 +1732,10 @@ def _ledger(search: _Search) -> HypothesisSearch:
     def row(c: _Chain) -> Hypothesis:
         f = c.frames
         ok = c is search.accepted
-        if c.interleaver and c.syndrome is not None and c.syndrome >= SYNDROME_SCREEN:
+        if any(c is b for b in search.blocked):
+            statistic = "Passes the corrected threshold"
+            reason = "Blocked: the same chain also passes on shuffled bits, so it is a false alarm"
+        elif c.interleaver and c.syndrome is not None and c.syndrome >= SYNDROME_SCREEN:
             statistic = f"Code syndrome {c.syndrome:.2f} at the best alignment (0.5 if absent)"
             reason = f"Syndrome not below {SYNDROME_SCREEN} at any alignment; not decoded"
         elif f is None:
@@ -1640,7 +1778,8 @@ def _ledger(search: _Search) -> HypothesisSearch:
         alpha=ALPHA,
         correction="Bonferroni",
         smallest_threshold=search.threshold,
-        shuffled_runs=SHUFFLED_RUNS if search.accepted else 0,
+        shuffled_runs=SHUFFLED_RUNS * search.shuffled_checked,
+        shuffled_blocked=len(search.blocked),
         shuffled_accepts=search.shuffled_accepts,
         blind_searched=search.blind.searched,
         blind_identified=search.blind.identified,

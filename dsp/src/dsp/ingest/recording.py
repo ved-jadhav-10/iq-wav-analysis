@@ -67,7 +67,12 @@ def entered(id_: str, value: str | float, prior: Parameter | None = None) -> Par
                 "the analyst chose it, no test did."
             )
         if prior.value is not None and prior.value != value:
-            source = "Sanket assumed" if id_ == "iq_order" else "The file gives"
+            if id_ == "iq_order":
+                source = "Sanket assumed"
+            elif prior.level is EvidenceLevel.HYPOTHESIS:
+                source = "Sanket inferred"  # a structural match, not something the file says
+            else:
+                source = "The file gives"
             warnings = (
                 f"{source} {prior.value}{tail} ({prior.level.value}); the analyst entered "
                 f"{value}{tail}, and the entered value is used.",

@@ -135,3 +135,10 @@ def test_every_pair_tried_is_counted() -> None:
 def test_normalised_rate_out_of_range_is_refused(bad: float) -> None:
     with pytest.raises(ValueError):
         structural_test(bad, 0.0, rate_candidates("x.cu8", "cu8"))
+
+
+def test_testing_several_signals_divides_the_error_budget() -> None:
+    candidates = rate_candidates("x_fs=2.4M.cu8", "cu8")
+    one = structural_test(0.004, 0.0, candidates)
+    three = structural_test(0.004, 0.0, candidates, searches=3)
+    assert [t.alpha * 3 for t in three.tiers] == pytest.approx([t.alpha for t in one.tiers])

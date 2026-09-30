@@ -19,6 +19,7 @@ CI16 = SampleFormat.parse("ci16_le")
 
 Complex = NDArray[np.complex128]
 WriteWav = Callable[..., Path]
+WriteRawBpsk = Callable[..., Path]
 
 
 def scene() -> Scene:
@@ -79,3 +80,20 @@ def transmitted() -> set[str]:
     g = generate(framed_scene(), seed=7)
     rows = g.signals[0].framed.reshape(-1, FRAME.length)
     return {to_bytes(r[len(FRAME.sync_bits) : -16]).hex().upper() for r in rows}
+
+
+@pytest.fixture
+def write_raw_bpsk() -> WriteRawBpsk:
+    """A raw 8-bit capture of BPSK at `baud` sampled at `rate`: a file that states no rate."""
+
+    def write(path: Path, *, baud: float, rate: float, swapped: bool = False) -> Path:
+        sps = int(rate / baud)
+        spec = SignalSpec(
+            "bpsk", sps=sps, frame=None, offset=0.1, power_db=-5 - 10 * math.log10(sps)
+        )
+        x = generate(Scene(1 << 20, (spec,), noise_db=-20.0), seed=5).samples
+        x = np.conj(x) if swapped else x  # Q first: the spectrum is mirrored
+        path.write_bytes(SampleFormat.parse("cu8").encode(0.5 * x / np.max(np.abs(x))))
+        return path
+
+    return write
