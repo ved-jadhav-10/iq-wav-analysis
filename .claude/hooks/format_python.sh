@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PostToolUse hook (prototype sprint, PROTOTYPE_PLAN.md P0): format and lint-fix a Python file
+# PostToolUse hook: format and lint-fix a Python file
 # right after Claude edits it, so style nits never cost a round trip. Reads the tool call as JSON
 # on stdin (Claude Code's hook contract), acts only on tool_input.file_path when it's a .py file,
 # and never fails the edit: any error here is swallowed and the hook exits 0 regardless.

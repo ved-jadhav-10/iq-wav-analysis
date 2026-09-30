@@ -2,117 +2,97 @@
 
 **Sanket** (संकेत, "signal") is our SIH26147 product: an offline, CPU-only workstation that takes an unknown `.iq` or `.wav` recording and works out how it was transmitted — sample format, bandwidth, SNR, symbol rate, modulation, interleaver, error-correction code and framing — then undoes each layer to recover the bits, showing the evidence for every claim.
 
-This plan is written to ship **Sanket 1.0 as production software**, not a demo. It is organised by milestones with measurable exit gates rather than by calendar weeks or people. Last revised **28 September 2026**.
+This is the only plan. It ships **Sanket 1.0 as production software**, organised by milestones with measured exit gates. The PS requirements it answers are numbered R1–R5 in [PROBLEM_STATEMENT.md](PROBLEM_STATEMENT.md#requirements-as-sanket-reads-them). Last revised **30 September 2026**.
 
-Related: [Problem statement](PROBLEM_STATEMENT.md) · [README](../README.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · [Source dossier](SIHPS_ANALYSIS.md) · [Research report](../reports/SIH26147%20solution%20research.md) · [Claude Code tooling](../.claude/CLAUDE_SKILLS_MCP.md)
+Related: [README](../README.md) · [Problem statement](PROBLEM_STATEMENT.md) · [Standards to beat](STANDARDS_TO_BEAT.md) · [UI](UI.md) · [Progress log](PROGRESS_LOG.md) · [Claude Code tooling](../.claude/CLAUDE_SKILLS_MCP.md)
 
 ---
 
 ## 0. Progress
 
-*Checked against the repository on **28 September 2026**. This section tracks the current snapshot only; the full dated narrative for how each stage got here is in [PROGRESS_LOG.md](PROGRESS_LOG.md). Update this section whenever an item lands.*
+*Checked against the repository on **30 September 2026**. This is the only place current status is tracked; the dated history is in [PROGRESS_LOG.md](PROGRESS_LOG.md). Update it whenever an item lands.*
 
-**Prototype mode is active** ([PROTOTYPE_PLAN.md](PROTOTYPE_PLAN.md)). The demo target has landed (P0–P3, see [DEMO.md](DEMO.md)): one synthetic recording decodes QPSK and BPSK to VERIFIED frames, labels FM as analog and leaves one signal honestly undecoded. Two more synthetic files show a block interleaver, an outer RS code and 2-FSK. These are prototype paths, not the milestones' production versions. Next comes Phase P4: finish M2's exit gate before any M3 production work.
+One decode chain runs end to end today (`dsp/analyse.py`, per detection, shown in the UI): BPSK/QPSK/8PSK/16QAM or 2-FSK → optional conv K=7 r½ → optional block interleaver → optional RS(255,223) → CCSDS ASM frames with CRC-16, VERIFIED only by the CRC. After demodulation every layer is a small fixed catalogue, not yet a blind search; the milestones below turn each into one.
 
 | Stage | Built | Gate met |
 |---|---|---|
-| Idea submission (due 30 Sep, [§9](#9-external-dates-sih)) | Docs done, deck not started | — |
 | M0 Foundations and identity | Yes | Yes (27 Sep) |
 | M1 Ingest, evidence model, ground-truth lab, bench v0 | Yes | Yes (27 Sep) |
-| M2 Spectrum, detection, estimation, real tiles | DSP core, bench numbers, 4 GiB scale test, server tile pyramid, detection results/boxes in the UI | No — see Open gates |
-| M3 Synchronisation and demodulation | Prototype: RRC matched filter, square-law timing, M-th power carrier, BPSK/QPSK/8PSK/16QAM demapping, non-coherent 2-FSK (`dsp/sync.py`, `demod.py`, `fsk.py`) | No |
-| M4 Modulation classification | Prototype: fourth-order cumulant ranking, confirmed only by the CRC (`dsp/analyse.py`) | No |
-| M5 GF(2) kernel, interleavers, FEC | Prototype: soft Viterbi K=7 r½ (numba), block-interleaver catalogue aligned by the code syndrome, RS(255,223) via galois (`dsp/fec/`, `dsp/deinterleave.py`); no GF(2) kernel yet | No |
-| M6 Framing and known-system verification | Prototype: CCSDS ASM search, frame length from recurrence, CRC catalogue, Bonferroni-corrected ledger, shuffled-bit re-runs (`dsp/framing.py`, `dsp/analyse.py`) | No |
-| M7 Analyst workflow and reports | Not started | No |
+| M2 Spectrum, detection, estimation, real tiles | DSP core, bench numbers, 4 GiB scale test, tile pyramid, detections in the UI | No — see Open gates |
+| M3 Synchronisation and demodulation | Feed-forward sync, PSK/16QAM demapping, 2-FSK | No |
+| M4 Modulation classification | Cumulant ranking, confirmed only by CRC | No |
+| M5 GF(2) kernel, interleavers, FEC | K=7 r½ Viterbi, 8-entry block catalogue, CCSDS RS; no GF(2) kernel | No |
+| M6 Framing and known-system verification | CCSDS ASM search, CRC-16 catalogue, ledger, shuffled-bit runs | No |
+| M7 Analyst workflow and reports | Open by path; Survey/Waterfall sections; deep dive | No |
 | M8 Hardening, validation and 1.0 release | Not started | No |
 
-**Open gates**
+**Open gates** (a missed number or known defect; each closes by M8)
 
-| Gate | Target | Measured | Suspected cause |
+| Gate | Target | Measured / state | Suspected cause |
 |---|---|---|---|
-| M2 SNR-error | ±1 dB, 0–20 dB | −8.7 dB median error at 0 dB, only inside ±1 dB at ≥ 15 dB — [bench-v0-detect.md](../bench/results/bench-v0-detect.md) | Single estimator (`snr_psd`); M2M4 and eigenvalue/MDL cross-checks not built |
-| M2 false detections | ≤ 0.05/scene | 0.20/scene on linear modulations at 3/6/20 dB — [bench-v0-detect.md](../bench/results/bench-v0-detect.md) | Untraced for linear modulations; M-FSK's share is traced to unshaped tone splatter in `dsp.synth` (see PROGRESS_LOG.md); `merge`/`absorb_sidelobes` in `dsp/detect.py` are the likely place to look next. `merge_tone_combs` also merged 4 independent, roughly evenly spaced signals into one "4-FSK" band; it now also requires the tones' SNRs to agree within 6 dB (not re-benched) |
-| M2 first tile ≤ 2 s | ≤ 2 s | Not benched; opening the 1 s, 4-signal demo scene takes about 45 s by hand ([DEMO.md](DEMO.md)) | `RecordingStore.open` builds the whole pyramid and now also runs every detection's analysis before returning; needs a fast first pass and a background job |
+| M2 SNR error | ±1 dB, 0–20 dB | −8.7 dB median error at 0 dB; inside ±1 dB only at ≥ 15 dB ([bench](../bench/results/bench-v0-detect.md)) | One estimator (`snr_psd`); M2M4 and eigenvalue/MDL not built |
+| M2 false detections | ≤ 0.05/scene | 0.20/scene on linear modulations at 3/6/20 dB ([bench](../bench/results/bench-v0-detect.md)) | Linear: untraced, start at `merge`/`absorb_sidelobes` in `dsp/detect.py`. M-FSK: unshaped tone splatter in `dsp.synth`; a Gaussian premod filter can't fix it alone (bt ≈ 0.02–0.15 merges the splatter but breaks the analog kurtosis gate and the FSK rate estimate). `merge_tone_combs` now needs tone SNRs within 6 dB; not re-benched |
+| M2 first tile ≤ 2 s | ≤ 2 s | Not benched; opening the 4-signal sample scene takes about 45 s | `RecordingStore.open` builds the whole pyramid and analyses every detection before returning |
+| Synchronous open | Analysis in the background | Open blocks until every detection is analysed | No job runner yet (M7) |
+| Mono/lossy HYPOTHESIS cap | Digital labels from mono or lossy audio capped at HYPOTHESIS | Flagged by `dsp/ingest/dispatch.py`, ignored by `analyse` | Not wired |
+| Structural sample-rate match | A snapped standard symbol rate promotes a rate candidate | `rate.structural_test` exists and is tested, never called | Not wired |
+| Shuffled-bit control | A shuffled-bit accept blocks acceptance | Recorded only (`analyse.py`, `_search`) | Not wired |
+| Wide-channel leak | Neighbours filtered out | A decimation-1 channel is mixed, not filtered | Filtering breaks `snr_psd` and the analog test, which expect noise across the channel |
+| 2-FSK on crowded channels | Rate estimated on any channel | `fsk_symbol_rates` fails on decimated/crowded channels | Edge-rate comb; replaced in M3 |
 
-**Next**
-- P4 ([PROTOTYPE_PLAN.md](PROTOTYPE_PLAN.md)): close M2's SNR-error, false-detection and first-tile gates, and fix the channeliser's decimation-1 leak and 2-FSK's rate estimate on decimated channels. Then resume M3 production work.
-- Confirm the SIH submission template and re-run the rival scan ([§9](#9-external-dates-sih)).
-- Build the idea-submission deck.
+**Next** — the build order. PS coverage comes first; real recordings last.
+1. **M7 inputs:** analysis as a background job; upload; a raw file with an unknown rate opens in normalised units with a sample-rate prompt instead of being refused.
+2. **M5:** GF(2) kernel, then blind convolutional-code identification and a general Viterbi.
+3. **M5:** every interleaver family.
+4. **M5:** LDPC catalogue.
+5. **M6:** blind sync discovery, header correlation and blind CRC recovery.
+6. **M3:** 64QAM, 4/8-FSK, OQPSK, drift tracking, eye diagram.
+7. **M7:** exports, `sanket analyse`, overrides.
+8. **M4:** the CNN and open-set rejection.
+9. **M8:** first real-recording pass.
 
 ---
 
 ## 1. What 1.0 is
 
-**In scope**
+The PS requirements (R1–R5, G1–G3) and how we read each are in [PROBLEM_STATEMENT.md](PROBLEM_STATEMENT.md#requirements-as-sanket-reads-them). 1.0 delivers all of them plus:
 
-- **Every kind of input except real-time streams.** Every input ends up as a file on this machine, and every analysis runs on a file. Files of any size are streamed.
-  - **File formats** (M1):
-    - SigMF: the full `core:datatype` vocabulary, archives, multi-capture recordings, and metadata that points at another file.
-    - Raw headerless files in all 28 SigMF datatypes, both byte orders, IQ or QI.
-    - WAV: mono or stereo, integer or float, including RF64/Wave64 for files over 4 GiB and the SDR `auxi` chunk.
-    - Compressed audio (FLAC, MP3, Ogg).
-    - SDRangel `.sdriq`, MIDAS Blue, VITA 49 packet recordings, NumPy `.npy`, and `.gz`/`.zip`-compressed recordings.
-    - Anything else is read as raw bytes, with a header offset and the format sniffer.
-  - **Routes:**
-    - Open a path (nothing is copied).
-    - Upload by drag-and-drop to the local server.
-    - Open a folder as a batch, or a numbered sequence of files as one recording.
-    - The `sanket analyse` command line.
-    - Capture from a locally connected receiver (M7): a USB SDR, or a sound-card input carrying a receiver's audio or IQ output.
-- **Analyst context:** known parameters, a suspected standard or service, and capture details, entered before or during analysis.
-- **Save as SigMF:** once its format is confirmed, any non-SigMF recording gets a `.sigmf-meta`, so its format is never guessed again.
-- **Known-system verification** (M6): after the blind chain, the results are matched against a small catalogue of common public systems (CCSDS telemetry coding, AIS, NAVTEX, MF/HF DSC, POCSAG). A match is VERIFIED only when that system's own check passes on this recording.
-- **Analyst profiles** (M7): save the chain a finished analysis found, then apply it to later recordings, so the work isn't redone. It is still checked on every recording.
-- Multi-signal detection in time and frequency, parameter estimation, synchronisation and demodulation of PSK, QAM and FSK to soft bits.
-- Analog signals (AM, FM, SSB, Morse CW) detected, labelled and measured, and kept out of the digital chain.
-- Modulation classification with open-set rejection.
-- Blind identification and decoding of block, convolutional, helical and catalogued pseudo-random interleavers; convolutional (incl. punctured), Reed-Solomon, concatenated and catalogued LDPC codes.
-- Frame sync discovery, frame length, header fields, CRC checks.
-- A web GUI served locally: waterfall, PSD, constellation, eye diagram, evidence, hypothesis accounting, frames, assumptions. Analyst overrides that re-run downstream stages.
-- Exports: JSON, CSV, PDF, SigMF annotations; profiles as files. The PDF and the UI open with a plain-language summary of the findings, generated from the results.
-- One-folder installable build for Windows 10/11 x64 and Ubuntu 22.04+ that runs with networking switched off. The build opens Sanket in its **own desktop window** (pywebview) over the same local server. The same UI stays reachable from any browser at 127.0.0.1, which is also the fallback when no system webview is available.
+- **Every kind of input except real-time streams.** Every analysis runs on a file; files of any size are streamed.
+  - **Formats (M1):** SigMF (full `core:datatype` vocabulary, archives, multi-capture, metadata pointing at another file); raw headerless files in all 28 SigMF datatypes, both byte orders, IQ or QI; WAV mono/stereo, integer/float, RF64/Wave64, the SDR `auxi` chunk; FLAC/MP3/Ogg; SDRangel `.sdriq`, MIDAS Blue, VITA 49, NumPy `.npy`, `.gz`/`.zip`; anything else as raw bytes with a header offset and the format sniffer.
+  - **Routes:** open a path (nothing copied); drag-and-drop upload to the local server; a folder as a batch; a numbered file sequence as one recording; the `sanket analyse` CLI; capture from a locally connected receiver (M7): a USB SDR, or a sound-card input carrying a receiver's audio or IQ.
+- **Analyst context:** known parameters, a suspected standard, capture details — checked against the data, never trusted.
+- **Save as SigMF** for any confirmed non-SigMF recording.
+- **Known-system verification** (M6): CCSDS telemetry coding, Meteor-M LRPT, AIS, NAVTEX, MF/HF DSC, POCSAG; VERIFIED only when that system's own check passes. NAVTEX messages and POCSAG alphanumeric pages are shown as text once verified.
+- **Analyst profiles** (M7): save a found chain, apply it to later recordings, still checked every time.
+- Multi-signal detection; slow frequency drift (a satellite pass's Doppler, an oscillator warming up) measured, reported and tracked; analog AM/FM/SSB/CW detected, labelled, measured and kept out of the digital chain; classification with open-set rejection.
+- A local web GUI (waterfall, PSD, constellation, eye diagram, evidence, hypothesis ledger, frames, assumptions) with analyst overrides that re-run downstream stages.
+- Exports: JSON, CSV, PDF, SigMF annotations, profiles, each tied to the recording by its SHA-256; the PDF and UI open with a plain-language summary generated from the results.
+- One-folder builds for Windows 10/11 x64 and Ubuntu 22.04+ that run with networking off, in their **own desktop window** (pywebview) over the local server, with any browser at 127.0.0.1 as the fallback.
 
-**Out of scope for 1.0**:
-- real-time analysis of a live stream (capture always goes to a file first)
-- capture from network-attached receivers (KiwiSDR, LAN SDRs, VITA 49 over UDP). It would break the 0-outbound-connections rule (§2). Record with the receiver's own tool, then open the file.
-- transmitting
-- decrypting protected payloads
-- generic pseudo-random permutation recovery
-- a large protocol library: the known-system catalogue verifies a few public systems, not thousands of modems
-- multi-user server deployment
+**Out of scope for 1.0:** real-time analysis of a live stream; capture from network-attached receivers (KiwiSDR, LAN SDRs, VITA 49 over UDP — it breaks the 0-outbound-connections rule; record with the receiver's tool, then open the file); transmitting; decrypting; generic pseudo-random permutation recovery; a large protocol library; multi-user deployment.
 
-**After 1.0** (future scope; not scheduled in any milestone):
-
-- Playable audio: demodulate analog AM, FM and SSB voice to a WAV the analyst can listen to and export. Digital voice (DMR, P25 and similar) stays out, because its voice codecs are patented.
-- Doppler and frequency-drift correction: estimate how a signal's frequency moves over the recording (a low-orbit satellite pass, a moving transmitter, an oscillator warming up), report the drift rate as a Parameter, and remove it before sync. Until then, carrier recovery (the M-th power line plus per-block phase tracking) follows only slow drift, and detection assumes each signal stays at one frequency.
-- Time-domain views: I and Q, amplitude, phase and instantaneous frequency against time for the selected signal. The FSK instantaneous-frequency view is the first of these.
-- OFDM (Wi-Fi, LTE, DVB-T): detect it and estimate its subcarrier spacing and cyclic-prefix length. Until then, OFDM is labelled unknown by the open-set rejection (M4) rather than forced into a single-carrier label.
-- An explain mode that redraws the selected signal on a slow toy carrier, as sine and cosine, so phase flips (PSK), tone changes (FSK) and amplitude steps (QAM) are visible. It is always labelled *illustrative*, because the recording holds no carrier.
-- ASK/OOK and pulse-position demodulation (garage remotes, 433 MHz sensors, RFID, ADS-B), which would let ADS-B join the known-system catalogue.
-- Payload text for catalogued systems whose payload is plain characters (NAVTEX messages, POCSAG alphanumeric pages).
-- More known-system entries, wherever the specification is public, e.g. MIL-STD-188-110 and STANAG 4285 serial-tone modems, and ACARS.
+**After 1.0** (not scheduled): playable audio for analog AM/FM/SSB (digital voice stays out: patented codecs); Doppler pre-correction from orbital elements (TLEs); time-domain views (I/Q, amplitude, phase, instantaneous frequency); OFDM detection with subcarrier spacing and CP length (until then labelled unknown); an *illustrative* sine/cosine explain mode; ASK/OOK and pulse-position demodulation (enables ADS-B); payload text for further catalogued systems; more known systems (MIL-STD-188-110, STANAG 4285, ACARS).
 
 ## 2. The production bar
 
-1.0 ships only when every row holds, each enforced by a test or a script rather than a review comment. Numeric targets for the signal-processing itself are in [STANDARDS §8](STANDARDS_TO_BEAT.md#8-our-bar--measurable-targets); these are the product-level requirements around them.
+1.0 ships only when every row holds, each enforced by a test or a script. Signal-processing targets are in [STANDARDS §8](STANDARDS_TO_BEAT.md#8-our-bar--measurable-targets).
 
 | Area | Requirement | Enforced by |
 |---|---|---|
-| Correctness | Every stage is tested against exact ground truth from our generator, including a case where it must fail or abstain | pytest + `bench/` |
-| Honesty | Every reported value is a `Parameter` with an evidence level; **0 silent defaults**; VERIFIED only from a CRC pass, sync-word recurrence or a re-encode match consistent with EVM; every value taken on a convention is a HYPOTHESIS listed under `needsReview` | Schema validation on every result; an ingest test that enumerates every unknown-format path |
-| False accepts | **0 accepted decodes on ≥ 1,000 null files** (noise, uncoded, repetition, idle) | `bench run --null` in CI (nightly) |
-| Scale | Files ≥ 4 GiB processed end to end; peak memory stays bounded and independent of file size | Scale test on a generated 4 GiB file; RSS ceiling asserted |
-| Performance | Full chain on 10 M samples ≤ 10 s on a 4-core laptop (excluding blind LDPC catalogue search); first waterfall tile ≤ 2 s after ingest starts; pan/zoom holds 60 fps at 1080p on integrated graphics | `bench perf` with thresholds; a frame-time check in E2E |
-| Reliability | A stage that throws is marked FAILED with its error and the job continues where it can; the server never crashes on bad input; jobs survive a restart | Fault-injection tests; parser fuzzing; restart test |
-| Offline | **0 outbound connections** at runtime; no CDN; fonts and assets bundled | Socket-blocking E2E run in CI; build scan for external URLs |
-| Security | Binds to 127.0.0.1 by default; upload size limits; export filenames sanitised (a rival had path traversal here); no shell interpolation of filenames; capture recorders run from an argument list, never through a shell; archive extraction is guarded against path traversal and decompression bombs; imported profiles are schema-validated data, never code; dependency audit | Security tests; `pip-audit` and `npm audit` in CI |
-| Reproducibility | Same file + same Sanket version + same settings → byte-identical results JSON. Results record the Sanket version, the FEC and known-system catalogue versions, the model hash, seeds, and the profile (name and version) if one was applied | Hash test on the bench set |
-| Accessibility | Every control keyboard-reachable; WCAG 2.2 AA contrast in both themes; evidence never conveyed by colour alone; reduced-motion respected | axe checks in E2E; manual keyboard pass per release |
-| Observability | Structured local logs (JSON lines, per job); per-stage timings in the run record (§3), kept out of the results so they stay reproducible; a "diagnostics bundle" export with logs and versions but no recording data | Tests on the bundle and run-record contents |
-| Licensing | No GPL, AGPL or non-commercial code in the product; `THIRD_PARTY.md` generated from the lockfiles | Licence check in CI fails the build |
-| Data handling | Recordings never leave the machine; the workspace directory is configurable; deleting a job deletes everything derived from it. Profiles hold no samples, only parameters and the source recording's hash, so they outlive the job they came from. | Tests on deletion and on profile contents |
-| Packaging | One-folder build per platform, one start command, frozen Numba works (pinned numba/llvmlite, writable `NUMBA_CACHE_DIR`, kernels pre-warmed); the start command opens the desktop window, or the browser when no webview is available; the window passes the same 0-outbound-connections check as the browser | Frozen-build smoke test in CI on both platforms, including window launch and the browser fallback |
+| Correctness | Every stage tested against exact ground truth from our generator, including a case where it must fail or abstain; whole chains tested as a cross-product (every modulation × code × interleaver × framing combination the catalogues support), so no stage passes only in the combination it was built with | pytest + `bench/` (chain matrix) |
+| Honesty | Every value a `Parameter` with an evidence level; **0 silent defaults**; VERIFIED only from a CRC pass, sync-word recurrence or a re-encode match consistent with EVM; every value taken on a convention is a HYPOTHESIS listed under `needsReview` | Schema validation on every result; an ingest test over every unknown-format path |
+| False accepts | **0 accepted decodes on ≥ 1,000 null files** (noise, uncoded, repetition, idle) | `bench run null` in CI (nightly) |
+| Scale | Files ≥ 4 GiB end to end; peak memory bounded and independent of file size | Scale test on a generated 4 GiB file; RSS ceiling asserted |
+| Performance | Full chain on 10 M samples ≤ 10 s on a 4-core laptop (excluding blind LDPC search); first tile ≤ 2 s after ingest starts; pan/zoom 60 fps at 1080p on integrated graphics | `bench perf` thresholds; frame-time check in E2E |
+| Reliability | A throwing stage is marked FAILED with its error and the job continues; the server never crashes on bad input; jobs survive a restart | Fault injection; parser fuzzing; restart test |
+| Offline | **0 outbound connections**; no CDN; fonts and assets bundled | Socket-blocking E2E in CI; build scan for external URLs |
+| Security | Binds 127.0.0.1; upload size limits; sanitised export names; no shell interpolation; recorders run from an argument list; archive extraction guarded against traversal and bombs; profiles are schema-validated data, never code; dependency audit | Security tests; `pip-audit`, `npm audit` |
+| Reproducibility | Same file + version + settings → byte-identical results JSON; results record the recording's SHA-256, version, catalogue versions, model hash, seeds and any applied profile; exports carry the results' SHA-256, so any report traces to the exact file and run | Hash test on the bench set |
+| Accessibility | Keyboard-reachable controls; WCAG 2.2 AA contrast in both themes; evidence never colour-only; reduced motion respected | axe in E2E; manual keyboard pass per release |
+| Observability | JSON-lines logs per job; per-stage timings in the run record, not the results; a diagnostics bundle with logs and versions, no recording data | Tests on bundle and run-record contents |
+| Licensing | No GPL, AGPL or non-commercial code in the product; `THIRD_PARTY.md` generated from the lockfiles | Licence check fails the build |
+| Data handling | Recordings never leave the machine; configurable workspace; deleting a job deletes everything derived from it; profiles hold no samples | Deletion and profile-content tests |
+| Packaging | One-folder build per platform, one start command; frozen Numba works (pinned numba/llvmlite, writable `NUMBA_CACHE_DIR`, pre-warmed kernels); window or browser fallback, both passing the offline check | Frozen-build smoke test in CI on both platforms |
 
 ## 3. Architecture
 
@@ -125,375 +105,260 @@ flowchart LR
     API --> Store
 ```
 
-One local process tree, no external services. The pieces and the contracts between them:
+One local process tree, no external services.
 
-- **Stage graph.** Each stage is a pure function `run(inputs, params, overrides) → StageResult {parameters, artifacts, warnings}`; its duration goes to the run record. Its cache key is the hash of its input artifacts, parameters and stage code version. An analyst override invalidates that stage and its descendants only, which is what makes "correct a stage, re-run the rest, show the diff" (D5) cheap.
-- **Evidence model.** `Parameter {value, unit, uncertainty, level, confidence, method, evidence[], alternatives[], warnings[], resolve_hint, proof, convention}` in [`dsp/src/dsp/evidence.py`](../dsp/src/dsp/evidence.py) is the source of truth; its JSON uses the frontend's camelCase field names. It enforces the honesty rules when a value is built: UNKNOWN has no value and must state why and what would settle it, an ESTIMATED number carries its uncertainty, and VERIFIED requires a CRC, sync-recurrence or re-encode proof. A value the evidence can't decide, taken on a stated convention instead (a raw file's IQ order, say), is a HYPOTHESIS whose `convention` field names the convention. Downstream proof may **promote** an upstream value (a CRC pass makes the modulation VERIFIED); the promotion is recorded as evidence and clears any convention. The frontend type in [`frontend/src/lib/evidence.ts`](../frontend/src/lib/evidence.ts) predates it: the demo data puts uncertainty inside the unit text. That type is replaced by one generated from the API schema when real results reach the UI (M2).
-- **Results and run record.** A job writes two documents, each with its own schema version. `results.json` ([`dsp/results.py`](../dsp/src/dsp/results.py), schema generated to `results.schema.json`) holds only what the analysis concluded — the `Assumptions` block, stage results, parameters — and is byte-identical across runs. Its top-level `needsReview` lists every value taken on a convention, derived from the parameters so it can't disagree with them: one field tells a reader, a script or the PDF whether anything rests on a guess. `run.json` holds how the run went: the job id and the SHA-256 of the results it belongs to, per-stage duration and whether the stage was computed or served from cache, start and end times, peak memory, Sanket version, and hardware class and OS version. It never contains the hostname, username or file paths. `bench perf` reads run records.
-- **Hypothesis ledger.** Every blind search writes every candidate it tried — statistic, p-value, corrected threshold, outcome, reason — plus its shuffled-bit false-alarm runs. The D8 hypothesis table renders this ledger directly. Known-system and profile matches (M6, M7) are hypotheses too and are counted in the same ledger.
-- **Stages.** Ingest → Detect → Estimate → Sync → Classify → Demodulate → De-interleave → FEC → Frame → **Match**. Match runs after the blind chain. It compares the results with the known-system catalogue and the analyst's profiles, and runs each candidate system's own check. It never overwrites a blind result; a VERIFIED match may promote upstream values, as any proof does.
-- **Inputs.** Every route (path, upload, folder, file sequence, CLI, capture) produces a *recording*: one or more files plus a container description. Readers for each container expose the same chunked sample interface, so nothing downstream knows where a recording came from. Capture is a job that runs a recorder subprocess into the workspace and then writes SigMF metadata.
-- **Profiles.** A profile is a schema-versioned document that lists the confirmed stage settings (see M7). It is stored in the workspace database and can be exported and imported as a file. A job may run with a profile; its settings enter as analyst-entered values and are checked like any other.
-- **Streaming.** Readers are memory-mapped and chunked; detectors run on chunks; nothing loads a whole file.
-- **Tiles.** The server computes a multi-resolution STFT pyramid quantised to uint8 dB in fixed-size tiles, **max-pooled** between levels so short bursts survive zooming out. The frontend already renders a uint8 dB texture through a LUT shader; switching it from one demo texture to server tiles is an M2 task.
-- **API.** Versioned under `/api/v1`. The OpenAPI schema generates the TypeScript types the frontend compiles against, so a contract break fails the build. Progress over server-sent events. Literal routes are registered before parameterised ones.
+- **Stages:** Ingest → Detect → Estimate → Sync → Classify → Demodulate → De-interleave → FEC → Frame → **Match**. Each is a pure function `run(inputs, params, overrides) → StageResult {parameters, artifacts, warnings}`, cached on the hash of its inputs, parameters and code version, so an analyst override re-runs only that stage and its descendants (D5). Match runs last against the known-system catalogue and profiles, runs each candidate's own check, and never overwrites a blind result.
+- **Evidence model:** `Parameter {value, unit, uncertainty, level, confidence, method, evidence[], alternatives[], warnings[], resolve_hint, proof, convention}` in [`dsp/src/dsp/evidence.py`](../dsp/src/dsp/evidence.py) is the source of truth; it enforces the honesty rules at construction (levels are defined in the [README](../README.md#evidence-levels)). Downstream proof may **promote** an upstream value (a CRC pass makes the modulation VERIFIED), recorded as evidence. The frontend's hand-written `lib/evidence.ts` and `lib/api.ts` are replaced by types generated from the OpenAPI schema.
+- **Results and run record:** `results.json` ([`dsp/results.py`](../dsp/src/dsp/results.py), schema in `results.schema.json`) holds only conclusions — the Assumptions block, stage results, parameters, and `needsReview` (every value resting on a convention, derived from the parameters) — and is byte-identical across runs. `run.json` holds how the run went (job id, results SHA-256, per-stage timing and cache hits, peak memory, version, hardware class, OS); never hostname, username or paths.
+- **Hypothesis ledger:** every blind search writes every candidate tried (statistic, p-value, corrected threshold, outcome, reason) plus shuffled-bit false-alarm runs. Known-system and profile matches are counted in the same ledger. The UI renders it directly (D8).
+- **Inputs:** every route produces a *recording* (files + container description) behind one chunked, memory-mapped reader interface. Capture is a job that runs a recorder subprocess, then writes SigMF.
+- **Tiles:** server STFT pyramid, uint8 dB, fixed-size tiles, max-pooled between levels so short bursts survive zooming out; the frontend draws them through a LUT shader.
+- **API** (`/api/v1`; literal routes before parameterised ones; progress over SSE):
 
   | Endpoint | Purpose |
   |---|---|
-  | `POST /recordings` | Chunked upload; or register a local path, a folder (one recording per file) or an ordered file sequence (one recording), without copying |
+  | `POST /recordings` | Chunked upload, or register a path, folder or file sequence without copying |
   | `GET /recordings/{id}` | Metadata, container, format candidates, assumptions |
-  | `PUT /recordings/{id}/context` | Analyst context: known parameters, suspected standard, capture details |
-  | `POST /recordings/{id}/sigmf` | Write a `.sigmf-meta` for a confirmed non-SigMF recording |
-  | `GET /devices` · `POST /captures` | Locally connected receivers and sound-card inputs · record a set duration into a new SigMF recording |
-  | `GET /profiles` · `POST /profiles` | List · save a profile from a finished job |
-  | `GET /profiles/{id}/export` · `POST /profiles/import` | Profile as a file · import one |
-  | `POST /jobs` · `GET /jobs/{id}/events` | Start analysis, optionally with a profile · SSE progress |
-  | `GET /jobs/{id}/results` | Stage results, parameters, ledger, frames |
-  | `GET /tiles/{rec}/{level}/{t}/{f}` | uint8 dB waterfall tile |
+  | `PUT /recordings/{id}/context` | Analyst context |
+  | `POST /recordings/{id}/sigmf` | Write a `.sigmf-meta` for a confirmed recording |
+  | `GET /devices` · `POST /captures` | Local receivers · record a set duration to SigMF |
+  | `GET/POST /profiles` · `GET /profiles/{id}/export` · `POST /profiles/import` | Profiles |
+  | `POST /jobs` · `GET /jobs/{id}/events` · `GET /jobs/{id}/results` | Analyse (optionally with a profile) · SSE progress · results, ledger, frames |
+  | `GET /tiles/{rec}/{level}/{t}/{f}` | Waterfall tile |
   | `POST /jobs/{id}/overrides` | Analyst correction → downstream re-run |
-  | `GET /jobs/{id}/export.{json,csv,pdf,sigmf}` | Exports, each carrying the assumptions block; the run record is included unless the analyst opts out |
+  | `GET /jobs/{id}/export.{json,csv,pdf,sigmf}` | Exports, each with the Assumptions block; run record included unless opted out |
 
-- **Repository layout.**
+  Built today: `GET /health`, `POST /recordings` (path only, synchronous), `GET /recordings/{id}`, `GET /tiles/...`.
+
+- **Tech stack:**
+
+  | Layer | Choice |
+  |---|---|
+  | DSP | CPython 3.12 (pinned), NumPy, SciPy, Numba (pinned) for GF(2), Viterbi, LDPC |
+  | FEC | Our own code on `galois` (MIT) for finite fields and RS; scikit-commpy/pyldpc only as vendored references; komm (GPL) and PySDR code (CC BY-NC-SA) never in the product |
+  | ML | PyTorch for training; ONNX Runtime FP32 for inference; trained on `dsp.synth`; TorchSig (WSL2) as independent test generator; RadioML only as a corrected benchmark |
+  | Inputs | Own readers; `soundfile` (libsndfile, LGPL) for compressed audio; `sounddevice` (PortAudio, MIT) for sound-card capture; SDR recorders as subprocesses |
+  | API | FastAPI + Uvicorn, SQLite, SSE |
+  | GUI | React 19 + TS strict (Vite) + Tailwind 4; WebGL2 waterfall (R8 textures + LUT); uPlot; layout in [UI.md](UI.md) |
+  | Quality | pytest + Hypothesis, Vitest, Playwright, ruff, pyright, ESLint, GitHub Actions |
+  | Packaging | PyInstaller one-folder, offline wheelhouse, pywebview (WebView2 bundled on Windows, WebKit2GTK on Linux) |
+
+- **Repository layout:**
 
   ```
-  frontend/   React + TS + Vite (identity, workspace, demo data; e2e/ holds the Playwright tests)
-  dsp/        ingest, synth (ground-truth generator), detect, estimate, sync, demod, gf2, deinterleave, fec, framing, systems (known-system catalogue and match), evidence
-  ml/         AMC training, evaluation, ONNX export, model card
-  backend/    FastAPI app, job runner, storage, capture, profiles, exports, CLI, packaging
-  bench/      generator presets, sealed set, null set, results, perf, decoder-truth harness
+  frontend/   React + TS + Vite (e2e/ holds the Playwright tests)
+  dsp/        ingest, synth, spectrum, detect, channel, estimate, analog, sync, demod, fsk,
+              deinterleave, fec, framing, analyse, evidence, results; planned: gf2, systems
+  ml/         AMC training, evaluation, ONNX export, model card (empty)
+  backend/    FastAPI app, recordings, CLI; planned: jobs, storage, capture, profiles, exports
+  bench/      presets, sealed set, null set, results, perf, decoder-truth harness
   tests/      Python tests, one folder per package
-  tools/      repo scripts (THIRD_PARTY.md and licence check)
-  docs/       plan, standards, dossier
+  tools/      THIRD_PARTY.md and licence check, inspect_iq, make_demo (sample recordings), schema
+  docs/       this plan, problem statement, standards, UI, progress log
   ```
 
 ## 4. Product identity (fixed)
 
-The identity is implemented in [`frontend/`](../frontend/) and is the reference for every screen, export and slide.
-
 | Element | Decision | Source of truth |
 |---|---|---|
-| Name | **Sanket** (संकेत, "signal"); tagline "Blind signal analysis, with evidence" | `frontend/src/brand.ts` — change it there only |
-| Mark | A waveform resolving into a four-point constellation: signal in, symbols out | `frontend/src/components/Logo.tsx`, `frontend/public/favicon.svg` |
-| Colour | Dark-first instrument UI with a light theme; accent "signal cyan"; all colours are tokens with shadcn/ui-compatible names | `frontend/src/styles/index.css` |
+| Name | **Sanket** (संकेत, "signal"); tagline "Blind signal analysis, with evidence" | `frontend/src/brand.ts` only |
+| Mark | A waveform resolving into a four-point constellation | `frontend/src/components/Logo.tsx`, `frontend/public/favicon.svg` |
+| Colour | Dark-first instrument UI with a light theme; accent "signal cyan"; all colours are shadcn-compatible tokens | `frontend/src/styles/index.css` |
 | Evidence levels | VERIFIED green + shield · MEASURED blue + ruler · ESTIMATED violet + Σ · HYPOTHESIS amber + dashed circle · UNKNOWN grey + slashed circle | `frontend/src/components/levelStyles.ts` |
-| Type | IBM Plex Sans for UI, IBM Plex Mono with tabular numerals for every number, IBM Plex Sans Devanagari for the native name — all bundled | `frontend/src/main.tsx` |
-| Colormaps | "Sanket" house map plus Viridis, Inferno, Grayscale; all tested for monotonic luminance | `frontend/src/lib/colormaps.ts` |
+| Type | IBM Plex Sans (UI), IBM Plex Mono with tabular numerals (numbers), IBM Plex Sans Devanagari (native name) — bundled | `frontend/src/main.tsx` |
+| Colormaps | "Sanket" house map plus Viridis, Inferno, Grayscale; monotonic luminance tested | `frontend/src/lib/colormaps.ts` |
 
-**UI rules** that every new screen follows:
-
+**UI rules** for every screen:
 1. An evidence level is always glyph + label + colour, never colour alone.
-2. Every number shows its unit and, where it's estimated, its uncertainty. True minus signs; non-breaking space before units.
+2. Every number shows its unit and, where estimated, its uncertainty; true minus signs; non-breaking space before units.
 3. UNKNOWN always says why and what would settle it.
-4. Demo or synthetic data is always labelled as such, on screen and in any screenshot.
+4. Synthetic data is always labelled as such, on screen and in any screenshot.
 5. No dead controls: a button that can't work yet isn't shown.
-6. Plots are dark in both themes; their overlays use the dark palette.
-7. A value taken on a convention says so and offers the alternative; the `needsReview` items are visible without opening each parameter.
-8. Workspace layout: detections and pipeline on the left; waterfall, PSD and the hypotheses/frames/assumptions tabs in the centre; symbol view and evidence on the right. Below 1280 px the page scrolls and panels stack.
+6. Plots are dark in both themes.
+7. A value taken on a convention says so and offers the alternative; `needsReview` items are visible without opening each parameter.
+8. Layout follows [UI.md](UI.md); the page never scrolls as a whole.
 
 ## 5. Milestones
 
-Dependencies: **M0 → M1 → M2 → M3 → (M4 ∥ M5) → M6 → M8**, with **M7** running alongside from M2 onward. Every exit gate is measured in `bench/` or CI, never asserted. Status is tracked in [§0](#0-progress); the Claude Code skills, plugins and MCP servers for each milestone are mapped in the [tooling map](../.claude/CLAUDE_SKILLS_MCP.md#1-tooling-by-milestone).
+Dependencies: **M0 → M1 → M2 → M3 → (M4 ∥ M5) → M6 → M8**, with **M7** alongside from M2. **Build order** from here is §0 **Next**: PS coverage (M5, M6, M3) before depth, M4's CNN after it, real recordings last. Tooling per milestone: [CLAUDE_SKILLS_MCP](../.claude/CLAUDE_SKILLS_MCP.md#1-tooling-by-milestone).
 
-**Gate policy:** a missed exit-gate number becomes an *Open gate* in [§0](#0-progress) rather than blocking the next milestone — the work moves on, and every open gate closes by M8. **Build order:** land the thinnest slice through the whole chain first (ingest → detect → estimate → sync → demod → decode → frame, one modulation, one code, exact ground truth), prove it end to end, then widen breadth (more modulations, codes, interleavers) before depth (edge cases, performance, real captures).
+**Gate policy:** a missed exit-gate number becomes an Open gate in §0 rather than blocking the next milestone; every open gate closes by M8.
 
-| | Milestone |
-|---|---|
-| M0 | Foundations and identity |
-| M1 | Ingest, evidence model, ground-truth lab, bench v0 |
-| M2 | Spectrum, detection, estimation, real tiles in the UI |
-| M3 | Synchronisation and demodulation |
-| M4 | Modulation classification |
-| M5 | GF(2) kernel, interleavers, FEC |
-| M6 | Framing and known-system verification |
-| M7 | Analyst workflow and reports |
-| M8 | Hardening, validation and 1.0 release |
+**Work rules:** while iterating, run the ground-truth test file for the item; run the full check list (`.claude/CLAUDE.md`) before each commit; run `dsp-reviewer`/`evidence-auditor` and the benches at each milestone exit, and the null bench whenever a blind search widens. When an item lands, tick it here, update §0, and append to [PROGRESS_LOG.md](PROGRESS_LOG.md).
 
-### M0 — Foundations and identity
+### M0 — Foundations and identity ✅
 
-- **Frontend:** Vite + React 19 + TypeScript (strict) + Tailwind 4; the §4 identity and design tokens; the full analysis workspace driven by a deterministic synthetic capture generated in a Web Worker — WebGL2 waterfall (R8 dB texture + LUT shader, zoom/pan/keyboard, detection overlays, hover readout), uPlot PSD locked to the waterfall's frequency window, constellation and FSK tone views, evidence cards, hypothesis ledger, frames and assumptions tables; unit tests for FFT, colormaps, generator, view maths and formatting.
-- **Python:** 3.12 (pinned) + uv workspace for `dsp/`, `ml/`, `backend/`, `bench/`.
-- **Backend:** FastAPI skeleton that serves the built frontend; a `sanket` start command.
-- **CI** on Windows and Ubuntu: ruff, pyright (strict on `dsp/`), pytest, `tsc`, ESLint, Vitest, build, licence check.
-- pre-commit hooks; `THIRD_PARTY.md` generated from lockfiles.
-- Playwright smoke test (the identity-pass browser checks become the first E2E), run once with sockets blocked.
-- **Exit gate:** a clean clone goes green in CI on both platforms, and `sanket` starts one process that serves the UI with networking off.
+- [x] Vite + React 19 + TS strict + Tailwind 4; §4 identity and tokens
+- [x] Workspace on a synthetic in-browser capture: WebGL2 waterfall, uPlot PSD, constellation/FSK views, evidence cards, ledger, frames and assumptions tables; unit tests
+- [x] uv workspace (`dsp`/`ml`/`backend`/`bench`), Python 3.12; ruff + pyright (strict on `dsp/`) + pytest; pytest-socket (loopback only); pre-commit; generated `THIRD_PARTY.md` failing on GPL/AGPL/non-commercial
+- [x] FastAPI app + `sanket` bound to 127.0.0.1; Playwright smoke test with outside requests aborted; CI green on Windows and Ubuntu
+- **Exit gate (met 27 Sep):** clean clone green in CI on both platforms; `sanket` serves the UI with networking off.
 
-**Checklist** (detail: [PROGRESS_LOG.md](PROGRESS_LOG.md))
-- [x] Vite + React 19 + TS strict + Tailwind 4; §4 identity and design tokens
-- [x] Full analysis workspace on synthetic data: waterfall, PSD, constellation/FSK views, evidence, ledger, frames, assumptions tables
-- [x] 26 unit tests; lint/typecheck/build clean; browser check both themes, no console errors, no non-localhost requests
-- [x] uv workspace (`dsp`/`ml`/`backend`/`bench`); ruff + pyright (strict on `dsp/`) + pytest clean; `ml/` excluded from the product install
-- [x] FastAPI app + `sanket` start command bound to 127.0.0.1; `GET /api/v1/health`
-- [x] pytest-socket (loopback-only tests); pre-commit hooks; `THIRD_PARTY.md` generated, fails on GPL/AGPL/non-commercial
-- [x] Playwright smoke test with sockets blocked; CI green on Windows and Ubuntu
-- [x] Claude Code setup: project MCP servers, permissions, `plan-status`, `ponytail`/`frontend-design` plugins
+### M1 — Ingest, evidence model, ground-truth lab, bench v0 ✅
 
-### M1 — Ingest, evidence model, ground-truth lab, bench v0
-
-- **Evidence model** in `dsp/evidence` (§3); JSON schema generated from it; every result validated against the schema.
-- **Ingest:**
-  - SigMF full `core:datatype` vocabulary; raw formats in both byte orders and IQ/QI; WAV mono (analytic signal, flagged HYPOTHESIS for digital labels) and stereo (quadrature check plus an analyst prompt)
-  - **every container we can name**, each behind the same chunked reader interface:
-    - WAV: integer and float PCM, `WAVE_FORMAT_EXTENSIBLE`, RF64/Wave64 over 4 GiB. The `auxi` chunk written by SDR#, HDSDR and SDRuno is read as MEASURED metadata (centre frequency, start time).
-    - SigMF archives (`.sigmf`), multi-capture recordings, and metadata that points at another file with a header offset. "Save as SigMF" (M7) writes that last form.
-    - SDRangel `.sdriq`, MIDAS Blue and VITA 49 packet recordings: their headers or context packets give sample rate and centre frequency.
-    - NumPy `.npy`.
-    - Compressed audio (FLAC, MP3, Ogg) via `soundfile` (libsndfile, LGPL-2.1). Lossy formats distort phase, so digital labels from them are capped at HYPOTHESIS, with the reason stated.
-    - `.gz`/`.zip` recordings, decompressed into the workspace first, because analysis needs random access; the disk cost is shown before decompressing.
-    - A numbered sequence of files, read as one recording.
-    - Anything else: raw bytes with an analyst-set header offset, and the format sniffer.
-  - recorder file extensions (`.cfile`, `.cu8`, `.cs8`, `.cs16`, `.cf32`, `.raw`, `.bin`, `.dat`) are only **hints** that rank the sniffer's candidates, never taken as fact
-  - chunked, random-access reader with memory bounded by the chunk size; file-size-versus-datatype consistency check (ORACLE's metadata says 32-bit, its data is complex128)
-  - **format sniffer** that proposes ranked candidates and never picks silently: header detection, then every SigMF datatype scored by estimated code length (bits/byte) under a linear predictor on blocks sampled across the file — a wrong byte order, width or signedness looks like random bytes, and invalid floats cost their full width; report the margin over the runner-up, and UNKNOWN with the tied candidates when formats with different components tie. Real vs complex is decided on prediction gain; where the samples can't tell them apart (noise, real low-pass signals), complex is proposed as a HYPOTHESIS on a stated convention, listed under `needsReview`. IQ/QI stays an analyst toggle — a swap only mirrors the spectrum. Validated with a confusion matrix over all format permutations.
-  - **sample-rate candidates**, ranked: filename hints, the WAV `auxi` chunk, standard SDR device rates, and structural matches (a recognised symbol rate × candidate Fs within 0.1 % promotes it to HYPOTHESIS). With no candidate, output in normalised units.
-  - an `Assumptions` block in every output
-- **Ground-truth lab:**
-  - `dsp/synth`, a NumPy generator, as the main source: modulation × pulse shape × FEC × interleaver × framing with CRC, writing SigMF with the truth in annotations; Sig53-style impairments (AWGN, CFO, phase noise, IQ imbalance, multipath/fading, timing drift, clipping, AGC), ±10–20 % samples-per-symbol jitter, an explicit noise class
-  - TorchSig (WSL2) as an **independent** test generator; generate only the subsets needed (full corpus is about 1 TB)
-- **Bench v0:** fixed seeds; a **sealed** held-out set never inspected during development; the null set; `bench run` writes versioned results JSON.
-- **Exit gate:** round-trip tests pass for every format and container (read-only containers and lossy audio are tested against files of known content); sniffer confusion matrix published; 0 silent defaults (tested); bench v0 and null set generated.
-
-**Checklist** (detail: [PROGRESS_LOG.md](PROGRESS_LOG.md))
-- [x] Evidence model (`dsp/evidence.py`) with honesty rules enforced at construction; `promote()` for downstream proof
-- [x] All 28 SigMF datatypes round-tripped; IQ/QI swap; chunked random-access reader with header offset and trailing-byte count
-- [x] SigMF metadata → Parameters (datatype/rate/centre frequency MEASURED or UNKNOWN); JSON schema generated with `needsReview`
-- [x] Format sniffer with ranked candidates: 0 wrong formats on the 864-file bench ([sniffer.md](../bench/results/sniffer.md))
-- [x] Sample-rate candidates (filename hints, device rates, structural match), tested at α = 1%
-- [x] WAV (RIFF/RF64/Wave64, int/float PCM, `WAVE_FORMAT_EXTENSIBLE`, `auxi` chunk) with the stereo quadrature check
-- [x] SigMF archives/multi-capture/NCD, `.npy`, `.sdriq`, MIDAS Blue, VITA 49, FLAC/MP3/Ogg, `.gz`/`.zip`, numbered sequences — one chunked reader interface
-- [x] 0 silent defaults tested for every reader; recorder-extension sniffer hints
-- [x] `dsp/synth` ground-truth generator (bits → frames → FEC → interleave → modulate → impair → SigMF), regenerable from (scene, seed)
-- [x] TorchSig (WSL2) as an independent generator, dev-time only, nothing in the product imports it
-- [x] Bench v0 (`generate|run dev|null|sealed`); [dev](../bench/results/bench-v0-dev.md) and [null](../bench/results/bench-v0-null.md) results published
+- [x] Evidence model with honesty rules at construction and `promote()`; generated JSON schema; `needsReview`; results with the Assumptions block
+- [x] All 28 SigMF datatypes round-tripped; IQ/QI; chunked random-access reader with header offset and trailing bytes; file-size vs datatype check
+- [x] Format sniffer (code length under a linear predictor; ranked candidates with margins; UNKNOWN on ties; real/complex tie → complex as a `needsReview` HYPOTHESIS): **0 wrong formats on 864 files** ([sniffer.md](../bench/results/sniffer.md))
+- [x] Sample-rate candidates: file-name hints, device rates, `auxi`; structural-match test at α = 1 % (not yet called by the chain — Open gate)
+- [x] Readers: WAV (RIFF/RIFX/RF64/Wave64, int/float, EXTENSIBLE, `auxi`, stereo quadrature check), SigMF archives/multi-capture/NCD, `.npy`, `.sdriq`, Blue, VITA 49, FLAC/MP3/Ogg (lossy flagged), `.gz`/`.zip` (traversal and bomb guards), numbered sequences; recorder extensions only as sniffer hints
+- [x] 0 silent defaults tested for every reader
+- [x] `dsp.synth`: bits → frames/CRC → scrambler → RS → byte interleaver → conv/LDPC/repetition → bit interleaver (block, helical, Forney, QPP, 802.11, random) → PSK/QAM/FSK/AM/FM → impairments; SigMF with truth in annotations; regenerable from (scene, seed)
+- [x] TorchSig 2.2.0 (WSL2) as an independent generator, dev-time only
+- [x] Bench v0 (`uv run bench generate|run dev|null|sealed|torchsig`): [dev](../bench/results/bench-v0-dev.md) 200 files, [null](../bench/results/bench-v0-null.md) 1,000 files, [TorchSig](../bench/results/bench-v0-torchsig.md) 84 files — 0 ingest mismatches, 0 wrong formats; sealed set never run during development
+- **Exit gate (met 27 Sep):** round trip for every format; sniffer confusion matrix published; 0 silent defaults; bench v0 and null set generated.
 
 ### M2 — Spectrum, detection, estimation, real tiles
 
-- **Detection:** streaming Welch PSD and spectrogram; percentile noise floor; OS-CFAR + hysteresis + morphological clean-up + connected-component labelling; run at 2–3 FFT sizes and merge with NMS; channelisation (mix, filter, decimate).
-- **Analog signals:** detect AM, FM, SSB and Morse CW before digital classification, from the envelope, the FM discriminator output and the spectrum's sideband symmetry. Label and measure them: carrier, occupied bandwidth, FM deviation, Morse keying speed. A signal labelled analog skips the digital chain, and the reason is stated. FM carrying audio otherwise looks like FSK or PSK (STANDARDS §6.11).
-- **Estimation:** occupied bandwidth; RRC roll-off by least-squares PSD fit, snapped to standard values; SNR from three estimators (PSD in-band vs guard, M2M4 for PSK, eigenvalue/MDL) with their agreement as the confidence; symbol rate from the |x|² line (x²/x⁴ for BPSK/QPSK), refined by cyclic autocorrelation and confirmed by our own FAM/SSCA, with an occupied-bandwidth fallback below β ≈ 0.1; FSK rate from instantaneous frequency; CFO by M-th power (gated for QAM); cumulants C20, C40, C42.
-- **Tiles in the UI:** server STFT pyramid with max-pooling; frontend switches from the demo texture to tiled level-of-detail rendering; detection boxes from real results.
-- **Real/complex ties:** when the format sniffer can't tell the real and complex readings apart, the stage graph carries both forward, as with phase ambiguity (M3), and downstream proof (sync recurrence, CRC) decides. This replaces the interim "complex by convention" rule; a branch that finds nothing is dropped and its cost goes to the run record.
-- *Stretch:* frequency-hopper clustering (DBSCAN over detections); co-channel overlap *detection* via multiple cyclic lines or MDL > 1.
-- **Exit gate:** STANDARDS §8 detection and estimation targets met per SNR bucket; a 4 GiB file streams through detection with bounded memory; first tile ≤ 2 s. **Not yet met** — see [§0 Open gates](#0-progress).
+- [x] Reader dispatcher by header magic and name (`dsp/ingest/dispatch.py`)
+- [x] Streaming Welch spectrogram/PSD bounded by `MAX_CELLS`; real input keeps non-negative frequencies
+- [x] Detection: OS-CFAR, split-sample significance test Bonferroni-corrected over cells and searches, hysteresis, morphology, connected components, multi-FFT merge, sidelobe absorption, I/Q-image mirroring (`dsp/detect.py`)
+- [x] Channelisation: streaming mix + Kaiser low-pass + decimate (`dsp/channel.py`)
+- [x] Estimation: symbol rate from the |x|² line, CFO by M-th power (gated for QAM), occupied bandwidth, SNR (one estimator), RRC roll-off fit, cumulants (`dsp/estimate/`)
+- [x] Analog AM/FM detection with a kurtosis gate against M-FSK (`dsp/analog.py`); FM skips the digital chain
+- [x] 4 GiB file streams with RSS < 512 MiB (`tests/dsp/test_scale.py`, `-m slow`)
+- [x] Tile pyramid served over `/api/v1/tiles`; frontend on server tiles; detections as `Parameter`s with boxes on the real waterfall
+- [ ] SNR from three estimators (PSD, M2M4, eigenvalue/MDL), agreement as confidence
+- [ ] Symbol-rate refinement by cyclic autocorrelation and FAM/SSCA; bandwidth fallback below β ≈ 0.1
+- [ ] **Capture quality** as `Parameter`s beside the Assumptions block: clipping fraction, DC offset, I/Q gain and phase imbalance, dropped-sample gaps (the checks `tools/inspect_iq.py` already prints), so a failed decode can be traced to the capture
+- [ ] **Drift:** a signal whose frequency moves slowly stays one detection, with its drift rate (Hz/s) as an ESTIMATED `Parameter`
+- [ ] Estimation and analog outputs as `Parameter`s; analog measurements (carrier, bandwidth, FM deviation); SSB and Morse CW with synth generators
+- [ ] First tile ≤ 2 s (pyramid in the background, coarse first); level-of-detail tiles (today only `levels[0]` is fetched)
+- [ ] Real/complex ties carried as two branches, decided by downstream proof (replaces the complex-by-convention rule)
+- [ ] OpenAPI-generated frontend types
+- [ ] *Stretch:* frequency-hopper clustering; co-channel overlap detection
+- **Exit gate:** STANDARDS §8 detection/estimation targets per SNR bucket (recall, rate and CFO met; SNR and false detections open); 4 GiB bounded memory (met); first tile ≤ 2 s.
 
-**Checklist** (detail: [PROGRESS_LOG.md](PROGRESS_LOG.md))
-- [x] Reader dispatcher picks a reader from header magic and name
-- [x] Streaming Welch spectrogram/PSD bounded by `MAX_CELLS`; real input keeps only non-negative frequencies
-- [x] Detection: OS-CFAR + hysteresis + morphological clean-up + connected-component labelling, multi-FFT-size merge, sidelobe absorption, I/Q-image mirroring
-- [x] Channelisation: streaming mix + Kaiser low-pass + decimate
-- [x] Estimation: symbol rate, CFO, occupied bandwidth, SNR (single estimator), RRC roll-off, cumulants
-- [x] Analog AM/FM detection with a kurtosis gate against M-FSK
-- [x] `dsp-reviewer` pass over the new modules; three real bugs found and fixed
-- [ ] STANDARDS §8 targets: recall/rate-error/CFO-error met; **SNR-error and false detections open** (see [§0](#0-progress))
-- [x] 4 GiB file streams with RSS < 512 MiB (`tests/dsp/test_scale.py`)
-- [x] Server STFT tile pyramid, max-pooled, served over `/api/v1/tiles`
-- [x] Frontend switched from the demo texture to server tiles; recording Assumptions as evidence cards
-- [ ] First tile ≤ 2 s: not measured, likely unmet (the pyramid builds from a full file read today)
-- [x] Detection results as `Parameter`s (`detection_parameters`); boxes on the real waterfall from real results
-- [ ] LOD tile rendering; estimator refinements (cyclic autocorrelation, FAM/SSCA, 2nd/3rd SNR estimator); analog measurements (carrier, bandwidth, deviation); real/complex branches; generated frontend types; hopper clustering/co-channel overlap (stretch)
+### M3 — Synchronisation and demodulation (R2)
 
-### M3 — Synchronisation and demodulation
-
-- RRC matched filter; Gardner / Mueller-Müller timing with a Farrow interpolator; Costas loop plus decision-directed tracking for QAM; FSK discriminator averaged over each symbol interior.
-- BPSK, QPSK, 8PSK, 16/64-QAM, 2/4/8-FSK (stretch: MSK/GMSK, OQPSK, π/4-DQPSK); Gray demapping to LLRs; EVM and lock metrics; eye diagram in the UI.
-- Phase ambiguity: carry every rotation forward; FEC and sync stages resolve it.
+- [x] Sinc resampling to 4 samples/symbol, RRC matched filter, Oerder-Meyr timing per block, M-th-power carrier with per-block phase (`dsp/sync.py`)
+- [x] BPSK/QPSK/8PSK/16QAM Gray max-log LLRs, EVM-based noise variance, M-fold rotation candidates (`dsp/demod.py`)
+- [x] Non-coherent 2-FSK (`dsp/fsk.py`)
+- [ ] Gardner / Mueller-Müller timing with a Farrow interpolator; Costas loop plus decision-directed tracking for QAM; carrier tracking that follows a LEO pass's Doppler (about ±3.5 kHz at 137 MHz), tested on a synth drift ramp
+- [ ] 64QAM
+- [ ] 2/4/8-FSK: tones from an instantaneous-frequency histogram (GMM, order by BIC, equal spacing), rate from the |dIF/dt| line, h = Δf/Rs; works on decimated and crowded channels; tone view for real detections
+- [ ] Eye diagram data in the report and an eye view in the UI
+- [ ] OQPSK (Meteor-M LRPT's 80 kBd mode)
+- [ ] *Stretch:* MSK/GMSK (needed for AIS), π/4-DQPSK
 - **Exit gate:** BER within 1 dB of theory on AWGN for every supported modulation.
 
-### M4 — Modulation classification
+### M4 — Modulation classification (R1)
 
-- Explainable cumulant and spectral-line rules, each decision listing its evidence.
-- A ~10K-parameter complex-as-real 1-D CNN on [I, Q, |x|, Δφ] after resampling to 4–8 samples per symbol, cumulant features fused before the head, trained on our impaired generator. Temperature calibration only if expected calibration error improves.
-- Three-layer open-set rejection: SNR gate → energy score → Mahalanobis distance to class prototypes with per-class thresholds; logits averaged over windows. An "analog" outcome sits beside "unknown", so AM/FM/SSB audio that slipped past the M2 check is never given a digital label.
-- Organiser data: the PS suggests using training data in both `.IQ` and `.wav` formats. If the organisers supply a labelled set, ingest it through the normal readers, evaluate on it, then fine-tune and report both results. It is never used as the sealed test set.
-- Fusion: agreement → ESTIMATED; disagreement → HYPOTHESIS with both rankings.
-- FP32 ONNX with no signal processing in the graph; model identity pinned in `ml/MODEL_CARD.md`.
-- Evaluation on data we didn't generate (TorchSig, HisarMod, RadioML with corrected labels — its SNR labels, AM-SSB class and 2018.01A class mapping are wrong, and its licence is non-commercial); accuracy vs SNR −20 to +30 dB; open-set AUROC, FPR@95 %TPR, OSCR per SNR bin.
-- **Exit gate:** STANDARDS §8 AMC targets met; labels are suppressed outside the validated SNR range.
+- [x] Cumulant ranking (|C40|, −C42) over BPSK/QPSK/8PSK/16QAM; confirmed only by a downstream CRC
+- [ ] Explainable cumulant and spectral-line rules, each listing its evidence
+- [ ] ~10K-parameter complex-as-real 1-D CNN on [I, Q, |x|, Δφ] at 4–8 samples/symbol, cumulants fused before the head, trained on `dsp.synth`; temperature calibration only if ECE improves
+- [ ] Open-set rejection: SNR gate → energy score → Mahalanobis distance to class prototypes; an "analog" outcome beside "unknown"
+- [ ] Fusion: agreement → ESTIMATED; disagreement → HYPOTHESIS with both rankings
+- [ ] FP32 ONNX, no DSP in the graph; `ml/MODEL_CARD.md`
+- [ ] Evaluation on data we didn't generate (TorchSig, HisarMod, RadioML with corrected labels): accuracy −20 to +30 dB; AUROC, FPR@95 %TPR, OSCR per SNR bin; organiser data, if supplied, for evaluation and fine-tuning only
+- **Exit gate:** STANDARDS §8 AMC targets; labels suppressed outside the validated SNR range.
 
-### M5 — GF(2) kernel, interleavers, FEC
+### M5 — GF(2) kernel, interleavers, FEC (R1, R3, R4)
 
-The core differentiator (D9): no public implementation of these methods exists.
+The core differentiator (D9). Built so far: soft Viterbi (numba) for K=7 r½ (171,133) only; an 8-entry block-interleaver catalogue aligned by the code's parity syndrome; RS(255,223) CCSDS via `galois` with the grid found from an error-free codeword.
 
-- **Kernel first:** one bit-packed, Numba-JIT GF(2) Gauss-Jordan elimination (GJETP) reused for code length, sync offset, puncturing period, parity-check recovery and interleaver period; soft variant (rows ordered by LLR reliability) and rank iteration.
-- **Catalogue** (versioned YAML, each entry with source and licence): convolutional K=3–9 at ½ and ⅓ with CCSDS / DVB / 802.11 punctures; RS(255,223) CCSDS, RS(204,188) DVB and shortened variants; concatenated RS + conv with a byte interleaver; LDPC from CCSDS, DVB-S2 short frames, 802.11n and 5G NR base-graph subsets.
-- **Identification:** convolutional via dual-code parity checks, punctured codes via Marazin's two-stage method, scored by parity-check probability from LLRs; RS via a binary rank scan then a Galois-field Fourier transform over 16 primitive polynomials × symbol offsets plus the CCSDS dual basis (`galois`); LDPC by soft syndrome-posterior scoring against the catalogue; concatenated chains inner-first.
-- **Interleavers:** block via rank-drop plus a KS test on rank distributions; Forney via an (I, J, phase) grid; helical via the dedicated period/row/column estimators; pseudo-random only against a catalogue of **standard permutations** (3GPP turbo, LTE QPP, 802.11, DVB-S2) — anything else is UNKNOWN with its measured period.
-- **False-alarm control:** every hypothesis counted into the ledger; Holm (or Benjamini–Hochberg) across the whole search; rank matrices always have L ≥ w + 30 rows; every detector also runs on shuffled bits and reports its empirical false-alarm rate.
-- **Decoders:** Numba Viterbi (soft), RS via `galois`, normalised min-sum LDPC.
-- *Stretch:* a gradient-boosted code-family pre-classifier on handcrafted bitstream features (run length, entropy, autocorrelation, rank features) that only **orders** the catalogue search; the full search still runs and decides. Built only if the search misses the §2 performance target; versioned and recorded in results like the AMC model.
+- [ ] **GF(2) kernel** (`dsp/gf2`): bit-packed uint64 rows, Numba popcount, Gauss-Jordan elimination (GJETP), rank iteration, soft variant (rows ordered by LLR reliability). The only elimination routine; reused for code length, sync offset, puncturing and interleaver period. Rank matrices always have L ≥ w + 30 rows.
+- [ ] **Convolutional identification:** a rank scan gives n and K (first deficient width w₀ = nK); a dual-vector search over each output-stream pair gives the generators (Su 2014: syndrome weight vs Bin(L, ½), λ ≈ 6–8, Bonferroni over (n, phase, K, h)); both polarities; codes compared up to equivalence. Punctured codes: a catalogue of 2/3, 3/4, 5/6, 7/8 patterns on the standard mother codes at every phase (Marazin 2012 for the general case).
+- [ ] **Viterbi** for any K ≤ 9, rate 1/n, with depuncturing (erasures as zero LLRs)
+- [ ] **Interleavers:** block found blind (rank-drop period and sync, then R×C factorisations scored by the code syndrome; KS test on rank distributions); helical/diagonal (period from rank, then rows, columns and step); convolutional/Forney (catalogue DVB (12,17), J.83-B pairs, Meteor-M LRPT 80k (36 branches × 2,048 symbols), then a generic B ≤ 64, M ≤ 32 grid, scored by RS zero-syndrome fraction after the inner decoder); pseudo-random only against **standard permutations** (802.11 N_CBPS 48/96/192/288, LTE sub-block, LTE QPP, DVB-S2), else UNKNOWN with its measured period
+- [ ] **RS:** binary rank scan, then Galois-field Fourier transform over 16 primitive polynomials × symbol offsets plus the CCSDS dual basis; interleave-depth scan (I = 1–5, 8; `rs.scan_interleave_depths` exists, not wired); shortened codes (RS(204,188))
+- [ ] **LDPC catalogue:** CCSDS TC (128,64) and (512,256), 802.11n 648-bit at four rates first; then CCSDS C2, DVB-S2 short, 5G NR BG2 (Sionna's Apache-2.0 base-graph files); each matrix with its source and licence recorded. Identified by the soft syndrome statistic (mean ∏ tanh(L/2) over checks; Moosavi–Larsson 2014) over code × offset × polarity, z > 6 with correction; decoded by layered normalised min-sum (α ≈ 0.75). Decoders are cross-checked in tests against independent implementations (`galois` for RS, the MIT `ldpc` package for min-sum), used as dev-time oracles only
+- [ ] **Concatenated chains** identified inner code first
+- [ ] **Chain matrix bench** (`bench run chains`): every modulation × code × interleaver × framing combination at fixed SNRs, reporting per-cell VERIFIED rate and false accepts
+- [ ] **Catalogue** as versioned YAML with source and licence per entry
+- [ ] **False-alarm control:** every hypothesis counted in the ledger; Holm (or Benjamini–Hochberg) across the whole search; every detector also run on shuffled bits, and a shuffled accept blocks acceptance
+- [ ] *Stretch:* a gradient-boosted code-family pre-classifier that only orders the search, built only if the search misses the §2 performance target
 - **Exit gate:** per-family, soft-decision FEC-ID targets from STANDARDS §8; **0 false accepts on ≥ 1,000 null files**.
 
-### M6 — Framing and known-system verification
+### M6 — Framing and known-system verification (R5)
 
-- Known-sync library (CCSDS ASM, Barker, POCSAG and others) plus blind sync discovery with a significance test against control words.
-- Frame length from autocorrelation; constant-bit and counter-field tests on headers; CRC-16/32 checks.
-- Frame table with header/payload split, exportable as bits, hex and JSON.
-- **Known-system catalogue** (`dsp/systems`): versioned YAML like the FEC catalogue.
-  - **What an entry records:** its public specification and licence note; modulation, symbol rate, tone shift or bandwidth; pulse shaping; interleaver; FEC; sync word or preamble; frame layout; and the system's own check. It may also name link-layer steps from a small fixed set: NRZI, HDLC bit de-stuffing, descrambling, time-diversity combining.
-  - **1.0 entries**, chosen because each is public, is relevant to Indian real-world targets (M8), and has a check that can prove a match:
+Built so far: correlation search for the CCSDS ASM (≤ 3 bit errors, both polarities), frame length from hit spacing, three CRC-16s at the frame end, a Bonferroni-corrected ledger of every cell tried, and shuffled-bit re-runs (`dsp/framing.py`, `dsp/analyse.py`).
 
-    | System | Specification | Signal | Proof that can make it VERIFIED (evidence-model proof kind) |
-    |---|---|---|---|
-    | CCSDS telemetry coding (also Meteor-M LRPT) | CCSDS 131.0-B, 132.0-B | BPSK/QPSK; ASM `0x1ACFFC1D`; conv K=7 r½, RS(255,223) | ASM recurrence (`sync_recurrence`); frame CRC-16 (`crc`) |
-    | AIS | ITU-R M.1371 | GMSK 9,600 bit/s; NRZI; HDLC | CRC-16 per packet (`crc`) |
-    | NAVTEX (SITOR-B) | ITU-R M.540, M.476/M.625 | 2-FSK 100 Bd, 170 Hz shift; 4-of-7 constant-ratio code; time diversity | Phasing-signal recurrence (`sync_recurrence`); the two time-diversity copies agree (`reencode`, of the repetition) |
-    | MF/HF DSC | ITU-R M.493 | 2-FSK 100 Bd, 170 Hz shift; 10-bit check code; time diversity | Phasing recurrence (`sync_recurrence`); check bits and diversity copies agree (`reencode`) |
-    | POCSAG | ITU-R M.584 | 2-FSK 512/1,200/2,400 bit/s | Sync codeword `0x7CD215D8` recurrence (`sync_recurrence`); BCH(31,21) check bits reproduced from the data bits (`reencode`) |
+- [ ] Known-sync library (CCSDS ASM, Barker, POCSAG, …)
+- [ ] **Blind sync discovery:** column-constancy over candidate frame lengths (Qin 2015: u ≥ 150 rows, 6σ), plus k-gram recurrence against a Poisson null with Bonferroni; inverted and NRZ-I variants; a discovered sync word is VERIFIED only by `sync_recurrence`
+- [ ] **Header fields:** constant columns, counters (toggle rate of the LSB), field boundaries; frames ≥ 64 bits with varying payload (idle patterns rejected)
+- [ ] **CRCs:** the catalogue (CRC-8/16/32 variants) with a position search; then **blind CRC recovery** for frames no catalogue entry fits — XOR two equal-length frames to cancel init and xor-out, take the GCD of the resulting polynomials to get the generator (Ewing's differential method), then solve init, xor-out and reflection. The polynomial is fitted on half the frames and counts as a `crc` proof only on the held-out half; every width and fit is counted in the ledger
+- [ ] Descrambler catalogue (CCSDS, G3RUH, 802.11), chosen by entropy drop
+- [ ] Frame table split into header and payload, exportable as bits, hex and JSON
+- [ ] **Known-system catalogue** (`dsp/systems`, versioned YAML). An entry records its public specification and licence note, signal parameters, interleaver, FEC, sync, frame layout, the system's own check, and link-layer steps from a fixed set (NRZI, HDLC de-stuffing, descrambling, time-diversity combining). 1.0 entries:
 
-    No new proof kind is added: every check above is one of the three the evidence model already accepts.
+  | System | Specification | Signal | Proof (existing proof kinds only) |
+  |---|---|---|---|
+  | CCSDS telemetry coding | CCSDS 131.0-B-5, 132.0-B-3 | BPSK/QPSK; ASM `0x1ACFFC1D`; conv K=7 r½, RS(255,223) | ASM recurrence; frame CRC-16 |
+  | Meteor-M LRPT (M2-3, M2-4) | CCSDS coding as above; no official public spec, so modes come from community decoder documentation and are confirmed on real recordings | QPSK 72 kBd; 80 kBd interleaved mode (OQPSK, 36 × 2,048 convolutional interleaver, 8-bit sync every 80 symbols); RS interleave depth 4 | ASM recurrence; RS decodes and CRC |
+  | AIS | ITU-R M.1371-6 | GMSK 9,600 bit/s; NRZI; HDLC | CRC-16 per packet |
+  | NAVTEX (SITOR-B) | ITU-R M.540-2, M.476-5/M.625-4 | 2-FSK 100 Bd, 170 Hz; 4-of-7 code; time diversity | Phasing recurrence; diversity copies agree (`reencode`) |
+  | MF/HF DSC | ITU-R M.493-16 | 2-FSK 100 Bd, 170 Hz; 10-bit check; time diversity | Phasing recurrence; check bits and copies agree (`reencode`) |
+  | POCSAG | ITU-R M.584-2 | 2-FSK 512/1,200/2,400 bit/s | Sync `0x7CD215D8` recurrence; BCH(31,21) re-encode |
 
-    AIS needs the GMSK demodulator, a stretch item in M3. If that slips, AIS moves after 1.0.
-  - **Match stage**, run after the blind chain:
-    1. Each entry's parameters are compared with the blind results, within stated tolerances.
-    2. Candidates that fit run their own link layer and check on this recording's demodulated bits.
-    3. Every entry tried is counted in the hypothesis ledger, with the Holm correction.
-    4. The output is a `System` parameter:
-       - VERIFIED "POCSAG 1200 (ITU-R M.584)", when the check passes above the corrected threshold
-       - HYPOTHESIS "consistent with …", when the parameters fit but the check can't run or doesn't pass
-       - UNKNOWN "no catalogued system matches", listing the closest entries and why each failed
-  - **Blind results always stand.** A verified system whose nominal values differ from them shows the difference, rather than hiding it. A VERIFIED match may promote upstream values (modulation, symbol rate) through the normal proof mechanism.
-  - **Testing:** each entry ships with a `dsp/synth` preset and a test that the blind chain plus Match identifies it. The null set gains near-misses (right rate, wrong sync word; right sync, failing check) that must not match.
-- **Exit gate:**
-  - blind sync false-alarm rate ≤ 10⁻⁶ per stream, measured and reported
-  - every catalogue entry VERIFIED on its synth preset
-  - 0 false system matches on the null set
+  AIS needs GMSK (M3 stretch); if that slips, AIS moves after 1.0. Once an entry is VERIFIED, plain-text payloads are rendered: NAVTEX messages (CCIR 476 characters) and POCSAG alphanumeric pages (7-bit ASCII). Text is shown only for verified frames and is never used as evidence itself.
+- [ ] **Match stage:** compare each entry's parameters with the blind results within tolerances; run the fitting entries' link layer and check on this recording; count every entry in the ledger with Holm; output a `System` parameter — VERIFIED when the check passes, HYPOTHESIS "consistent with …" when it can't run or fails, UNKNOWN with the closest entries and why each failed. Blind results always stand; differences are shown.
+- [ ] Each entry ships a `dsp.synth` preset and test; the null set gains near-misses (right rate, wrong sync; right sync, failing check)
+- **Exit gate:** blind sync false-alarm rate ≤ 10⁻⁶ per stream, measured; every entry VERIFIED on its preset; 0 false system matches on the null set.
 
-### M7 — Analyst workflow and reports
+### M7 — Analyst workflow and reports (G1–G3)
 
-- Open-recording flow: drag-and-drop or path, format candidates shown before analysis, assumptions editable (centre frequency, sample rate, IQ swap). Every `needsReview` item (a value resting on a convention rather than evidence, e.g. a real/complex tie) is shown as a visible prompt in the Assumptions table, and exports and the PDF report list them.
-- **Analyst context**, optional, at open time or later:
-  - What it takes: known parameters (sample rate, centre frequency, symbol rate, modulation, bandwidth), a suspected standard or service, and capture details (receiver, location, time).
-  - What entered values become: MEASURED with the method "entered by the analyst", and still checked against the data. A conflict (entered 9,600 Bd, measured 4,800 Bd) is shown as a warning, and the analyst resolves it.
-  - What a suspected standard does: it can name a known-system entry or a profile. It only reorders the FEC and known-system catalogue searches, which still run in full, so a wrong hint cannot hide the true answer.
-  - Where it is recorded: in the results beside the assumptions block.
-- **Every input route in the UI:** open a path; drag-and-drop upload; open a folder as a batch; select a numbered file sequence as one recording. The same routes are available from the `sanket analyse <paths…>` command line, which writes the same results JSON.
-- **Save as SigMF:** for any non-SigMF recording, write a `.sigmf-meta` holding the confirmed datatype, sample rate, centre frequency, IQ order and provenance. The samples stay untouched, and the source file is referenced with its header offset. The next open reads it as MEASURED instead of sniffing it.
-- **Capture from a connected receiver** (receive-only):
-  - Records a set duration into a SigMF recording, stamped with the device, gain, sample rate, centre frequency and time. The recording is then analysed like any file.
-  - **USB SDRs:** RTL-SDR, HackRF, Airspy, USRP and others. Their drivers (librtlsdr, libhackrf, UHD) are mostly GPL, so each runs as a **subprocess** through its own command-line recorder (`rtl_sdr`, `hackrf_transfer`, `airspy_rx`, `rx_samples_to_file`). Other recorders can be added as an argument template, run without a shell. No driver is ever linked or imported.
-  - **Sound-card input:** records a receiver's audio output, or an IQ output wired to a stereo input, to WAV via `sounddevice` (PortAudio, MIT). This is how HF receivers are commonly connected.
-  - Devices appear only when their recorder or input is present. No dead controls: with no device, the capture button isn't shown.
-  - Tested against a simulated recorder process and a virtual audio input.
-  - The UI states that capture needs authorisation (§8).
-- **Analyst profiles:** so the work isn't redone.
-  - **What a profile holds:** after an analysis the analyst accepts, the chain it found — assumptions (datatype, sample rate, IQ order), channel (offset, bandwidth), modulation and its parameters, sync settings, interleaver, FEC, sync word, frame layout, and the header-field names the analyst assigned. Plus a name, notes, author and version, the Sanket and catalogue versions, and the source recording's hash. No samples.
-  - **How it's applied:** to a new recording, a folder, or at open time.
-    - Profile values enter as analyst-entered (MEASURED, with the method naming the profile) and are still checked against the data.
-    - The decode is VERIFIED only by this recording's own CRC, sync or re-encode proof.
-    - If the checks fail, Sanket reports that the profile doesn't fit and why, then runs the blind chain.
-  - **How it's suggested:** the Match stage (M6) also compares results with saved profiles and suggests "matches your profile *X*". Suggestions are counted in the ledger like catalogue entries.
-  - **Sharing:** profiles are exported and imported as schema-versioned files. They are validated on import and never executed. Moving them by file keeps stations air-gapped.
-  - **Versions:** editing a profile creates a new version. Results record which version was applied.
-- Overrides on any stage → downstream re-run → before/after diff.
-- Job history; batch view; compare view.
-- Exports: JSON (schema-versioned), CSV, PDF report, SigMF annotations; each carries the assumptions block and the Sanket/catalogue/model versions.
-- **Plain-language summary**, for readers who aren't signal analysts (a supervisor, a case file, a judge):
-  - What it says: a few short sentences per signal, e.g. "A signal was found at +120 kHz. Its modulation is QPSK, verified: 44 of 44 frames passed their CRC." Every sentence comes from one Parameter and states its evidence level in words ("verified by CRC", "estimated", "a guess based on a convention", "could not be determined, because …"). It never states a value more firmly than its level, and an UNKNOWN is said as such, with its reason.
-  - Where it appears: at the top of the PDF report, and as a summary panel in the UI above the pipeline rail. `needsReview` items are listed in it as open questions.
-  - How it's made: deterministic templates over `results.json`, so the same results always give the same text. No LLM, no network (§2 Offline).
-  - Tested: every sentence traces to a Parameter, and a test on each synth preset checks that the level word in each sentence matches that Parameter's level.
-- Run record in exports: an "Include run record (timings, machine details)" checkbox in the export dialog, ticked by default and remembering the last choice; unticked, `run.json` is left out and the PDF drops its timing table. The CLI and batch export take `--no-run-record`.
-- **Exit gate:** Playwright E2E covers open → analyse → override → save profile → apply it to a second recording → export, with sockets blocked; the exported PDF opens with the plain-language summary. Capture is tested end to end against the simulated recorder.
+Built so far: open by path (`POST /recordings`, synchronous); Survey and Waterfall sections, the Assumptions modal (read-only), the full-screen deep dive, a persisted split ([UI.md](UI.md)); real detections, rail, constellation, ledger and frames from the chain.
+
+- [ ] **Background analysis:** open returns after tiles and detection; per-detection analysis runs as a job with SSE progress; results kept in the SQLite workspace
+- [ ] **Every input route:** drag-and-drop upload; open a folder as a batch; a numbered sequence as one recording; `sanket analyse <paths…>` writing the same results JSON
+- [ ] **Raw files open:** an unknown sample rate shows normalised units plus a prompt instead of a refusal; format candidates shown before analysis; editable assumptions (sample rate, centre frequency, IQ swap) that re-run analysis; `needsReview` items shown as prompts
+- [ ] **Analyst context:** known parameters, a suspected standard, capture details; entered values are MEASURED "entered by the analyst", checked against the data, conflicts shown as warnings; a suspected standard only reorders searches
+- [ ] **Save as SigMF** for confirmed non-SigMF recordings (samples untouched, source referenced with its offset)
+- [ ] **Overrides** on any stage → downstream re-run → before/after diff; job history, batch and compare views
+- [ ] **Exports:** JSON (schema-versioned), CSV, PDF, SigMF annotations, each with the Assumptions block, versions, the recording's SHA-256 and the results' SHA-256; an "Include run record" checkbox (default on, remembered; CLI `--no-run-record`)
+- [ ] **Plain-language summary:** deterministic templates over `results.json` (no LLM, no network), one sentence per Parameter stating its level in words, never firmer than its level; at the top of the PDF and above the pipeline rail; `needsReview` items as open questions; tested per synth preset
+- [ ] **Profiles:** the accepted chain (assumptions, channel, modulation, sync, interleaver, FEC, sync word, frame layout, named header fields) plus name, notes, author, versions and the source hash — no samples. Applied values enter as analyst-entered and are checked; VERIFIED only by this recording's own proof; on failure say so and run the blind chain. Suggested by Match and counted in the ledger. Exported and imported as schema-validated files, never executed; every edit is a new version.
+- [ ] **Capture** (receive-only): record a set duration to SigMF with device, gain, rate, frequency and time. USB SDRs through their own recorders as subprocesses (`rtl_sdr`, `hackrf_transfer`, `airspy_rx`, `rx_samples_to_file`), never linked; sound-card input via `sounddevice`. Devices shown only when present; the UI states that capture needs authorisation. Tested against a simulated recorder and a virtual audio input.
+- [ ] Replace the in-browser scripted synthetic capture with the bundled sample recordings, so the UI only ever shows real engine output
+- **Exit gate:** Playwright E2E covers open → analyse → override → save profile → apply to a second recording → export, with sockets blocked; the PDF opens with the summary; capture tested end to end against the simulated recorder.
 
 ### M8 — Hardening, validation and 1.0 release
 
-- **Packaging:** PyInstaller one-folder builds for Windows and Linux with pinned numba/llvmlite, hidden imports, writable `NUMBA_CACHE_DIR`, kernels pre-warmed on first launch; offline wheelhouse.
-- **Desktop window:** the start command launches the local server, then opens it in a pywebview window (BSD-3-Clause). It uses the same React UI, so there is no second frontend.
-  - **Windows** uses Edge WebView2. Air-gapped or older Windows 10 machines may lack its runtime, so the build bundles Microsoft's fixed-version WebView2 runtime instead of relying on an online install.
-  - **Linux** uses the GTK backend (WebKit2GTK, LGPL, a system package). Never the Qt backend through PyQt, which is GPL.
-  - With no usable webview, the start command says so and opens the default browser instead; `sanket --browser` does that on purpose.
-  - The window allows only 127.0.0.1: any other navigation is refused, and it gets the same socket-blocked smoke test as the browser.
-  - Closing the window stops the server, unless jobs are still running, in which case Sanket asks first.
-- **Robustness:** wrong format and wrong sample rate deliberately; truncated, corrupt and NaN files; ≥ 4 GiB files; parser fuzzing for every container; malicious archives and profiles; a Canvas2D waterfall fallback for machines without WebGL2.
-- **Security and accessibility:** security review (uploads, exports, subprocess use); axe clean; full keyboard pass.
-- **Real-signal validation**, sourced in this legal order (Telecommunications Act 2023 §3 makes *possessing* a receiver an authorisation question):
-  1. public licensed datasets (IQEngine/SigMF samples, ORACLE, DroneDetect; licence per file)
-  2. remote public KiwiSDRs — **Indian NAVTEX** from the seven DGLL stations on 518/490 kHz is the primary Indian ground truth; also AIR shortwave, VOLMET, HFDL
-  3. own RTL-SDR captures only under an institutional umbrella after checking with the organisers or WPC: ADS-B and AIS (CRC-verified), **Meteor-M LRPT** as the primary satellite target; NOAA APT and FM RDS only if confirmed on air in India
-
-  Ground truth comes from a `bench/decoder_truth/` harness that runs reference decoders (readsb, AIS-catcher, rtl_433, multimon-ng, SatDump — GPL, so **subprocess only**; redsea is MIT) and keeps only CRC-passing frames. Real recordings of catalogued systems (NAVTEX, AIS, POCSAG, Meteor-M LRPT) must be VERIFIED by Sanket's Match stage and, where a reference decoder exists, agree with it frame by frame. AMC is fine-tuned on labelled real captures (e.g. CORAL) and reported before/after.
-- **Head-to-head** against the leading public rival tools on the sealed bench where their licences allow, published neutrally including where they win.
-- **Docs:** user guide, method notes per stage, a limits page, `bench/VALIDATION.md` with every number, script, seed and hardware spec.
-- **Exit gate:** every row of §2 holds, and the release checklist in §6 is complete.
+- [ ] **Packaging:** PyInstaller one-folder builds for Windows and Linux (pinned numba/llvmlite, hidden imports, writable `NUMBA_CACHE_DIR`, kernels pre-warmed); offline wheelhouse
+- [ ] **Desktop window:** pywebview (BSD-3); Windows via Edge WebView2 with the fixed-version runtime bundled; Linux via GTK/WebKit2GTK (never the GPL Qt backend); no webview → open the browser with a message (`sanket --browser` on purpose); only 127.0.0.1 navigable; closing the window stops the server, asking first if jobs run
+- [ ] **Robustness:** wrong format and rate on purpose; truncated, corrupt and NaN files; ≥ 4 GiB files; parser fuzzing per container; malicious archives and profiles; Canvas2D waterfall fallback without WebGL2
+- [ ] **Security and accessibility:** review of uploads, exports and subprocesses; axe clean; full keyboard pass
+- [ ] **Real recordings,** in this legal order (Telecom Act 2023 §3 makes possessing a receiver an authorisation question): (1) public licensed datasets (IQEngine/SigMF samples, ORACLE, DroneDetect); (2) remote public KiwiSDRs — Indian NAVTEX from the DGLL stations on 518/490 kHz as the primary Indian ground truth, plus AIR shortwave, VOLMET, HFDL; (3) own RTL-SDR captures only under an institutional umbrella after checking with the organisers or WPC (ADS-B, AIS, Meteor-M LRPT — or published Meteor-M recordings used with their author's permission, [STANDARDS §11](STANDARDS_TO_BEAT.md#11-references); NOAA APT and FM RDS only if confirmed on air in India). Each file listed in `bench/real/manifest.json` with source, licence and SHA-256, plus the result expected for it, **committed before the first run** so the expectations can't be tuned to the output. Results, including abstains and why, in `bench/results/real-v0.md`. Every failure on a real recording gets a `dsp.synth` reproduction as a regression test.
+- [ ] **Decoder truth:** a `bench/decoder_truth/` harness runs reference decoders (readsb, AIS-catcher, rtl_433, multimon-ng, SatDump — GPL, subprocess only; redsea MIT) and keeps only CRC-passing frames; real recordings of catalogued systems must be VERIFIED by Match and agree frame by frame
+- [ ] AMC fine-tuned, or CORAL-adapted, on labelled real captures (e.g. Real-World IQ, Mendeley 2026), reported before and after
+- [ ] **Head-to-head** against public rival tools on the sealed bench where licences allow, published neutrally
+- [ ] **Docs:** user guide, method notes per stage, limits page, `bench/VALIDATION.md` with every number, script, seed and hardware spec
+- **Exit gate:** every §2 row holds and the §6 release checklist is complete.
 
 ## 6. Quality system
 
-**Tests, from fastest to slowest**
+**Tests, fastest first:** unit tests against exact ground truth (including fail/abstain cases) → property tests (Hypothesis) for parsers, the GF(2) kernel and decoders → golden results per bench file → nightly null-set run → Playwright E2E with networking blocked plus axe → nightly parser fuzzing → `bench perf` regression thresholds → frozen-build smoke test on both platforms.
 
-1. Unit tests against exact ground truth (bits in, exact values out), including failure and abstain cases.
-2. Property-based tests (Hypothesis) for parsers, the GF(2) kernel and decoders.
-3. Golden results: each bench file has a committed results JSON; any change is a reviewed diff.
-4. Null-set run for false accepts (nightly).
-5. Playwright E2E with networking blocked, plus axe checks.
-6. Parser fuzzing (nightly).
-7. `bench perf` with regression thresholds.
-8. Frozen-build smoke test on both platforms.
+**Definition of done:** tested against ground truth including a failure case; outputs carry level, confidence, method and evidence (UNKNOWN with its reason); limits written in docstrings and user-facing text; `bench/` numbers updated, and the README or any deck quotes only those; visible and overridable in the GUI per §4; works offline.
 
-**Definition of done** for any feature:
-
-- [ ] Tested against known ground truth, including a failure case.
-- [ ] Outputs carry an evidence level, confidence, method and evidence; UNKNOWN carries its reason.
-- [ ] Limits written down in docstrings and in the user-facing text.
-- [ ] `bench/` numbers updated; the README and any deck quote only those numbers.
-- [ ] Visible and overridable in the GUI, following the §4 UI rules.
-- [ ] Works with networking switched off.
-
-**Release checklist (1.0)**
-
-- [ ] All §2 rows green in CI on the release commit
-- [ ] Sealed-bench and null-set results published in `bench/VALIDATION.md`
-- [ ] Frozen builds pass the smoke test on a clean Windows and a clean Ubuntu machine
-- [ ] `THIRD_PARTY.md` and the licence check up to date
-- [ ] User guide and limits page reviewed against the shipped behaviour
-- [ ] Version, results-schema version, profile-schema version, both catalogue versions and model hash tagged together
+**Release checklist (1.0):** all §2 rows green on the release commit; sealed-bench and null-set results in `bench/VALIDATION.md`; frozen builds pass on clean Windows and Ubuntu machines; `THIRD_PARTY.md` current; user guide and limits page match the shipped behaviour; version, results-schema, profile-schema, both catalogue versions and model hash tagged together.
 
 ## 7. Versioning and compatibility
 
-- Semantic versioning for Sanket. The results JSON carries `schema_version`; a breaking schema change is a major version.
-- The FEC/interleaver catalogue, the known-system catalogue and the AMC model are versioned independently and recorded in every result, so any result can be reproduced.
-- Profiles carry their own schema version and a version per edit. A profile saved by an older minor version must still import; a profile that references a catalogue entry that no longer exists is reported, not silently ignored.
-- SQLite schema changes ship as migrations; the workspace from the previous minor version must open.
-- A changelog entry for every user-visible change.
+Semantic versioning; results JSON carries `schema_version` (a breaking change is a major version). The FEC/interleaver catalogue, the known-system catalogue and the AMC model are versioned independently and recorded in every result. Profiles carry a schema version and a version per edit; an older minor version's profile must import, and a reference to a removed catalogue entry is reported. SQLite changes ship as migrations. A changelog entry for every user-visible change.
 
 ## 8. Risk register
 
 | Risk | Mitigation |
 |---|---|
-| Blind FEC / de-interleaving is unsolved in general | Catalogue-bounded search; VERIFIED only with proof; publish the false-accept rate |
-| No absolute sample rate or centre frequency in a headerless file | Ranked candidates, promoted only by structural matches; normalised units otherwise; assumptions on every output |
-| AMC collapses at low SNR | Publish the curve; suppress labels outside the validated range |
-| Synthetic-to-real domain gap | Impairment-rich generator; independent TorchSig tests; real-capture fine-tuning in M8 |
-| Mono WAV mistaken for IQ | Channel count, quadrature check, HYPOTHESIS labels |
-| Analog voice in real recordings mislabelled as a digital mode | Analog check before digital classification (M2); "analog" outcome in open-set rejection (M4) |
-| GPL SDR drivers leaking into the product via capture | Drivers run only as subprocesses; licence check in CI |
-| Analyst context is wrong | Entered values are still checked against the data; hints reorder the search but never skip it |
-| A profile is applied to a signal it doesn't fit | Its values are checked on each recording; VERIFIED only from that recording's own proof; on failure, say so and run the blind chain |
-| A known-system match is a coincidence | The system's own check must pass; every entry is counted with Holm correction; near-miss signals in the null set |
-| Many containers multiply parser bugs | One chunked reader interface; round-trip tests and fuzzing per container |
-| Lossy audio (MP3, Ogg) distorts the waveform | Accepted with a warning; digital labels capped at HYPOTHESIS |
-| False matches from many code/interleaver guesses | Ledger of every hypothesis; Holm correction; L ≥ w + 30; shuffled-bit runs; ≥ 1,000-file null set |
+| Blind FEC / de-interleaving is unsolved in general; many guesses cause false matches | Catalogue-bounded search; every hypothesis in the ledger; Holm correction; L ≥ w + 30; shuffled-bit runs; ≥ 1,000-file null set; VERIFIED only with proof |
+| No absolute sample rate or centre frequency in a headerless file | Ranked candidates, promoted only by structural matches; normalised units; assumptions on every output |
 | Pseudo-random interleaver with an unknown permutation | Standard-permutation catalogue; otherwise UNKNOWN with the measured period |
 | A flat "95 % at 3 % BER" FEC target is unreachable for long codes | Per-family, soft-decision targets (STANDARDS §8) |
-| Frozen Numba fails on Windows | Pinned numba/llvmlite, one-folder build, writable cache, frozen-build test in CI |
-| WebView2 runtime missing on an air-gapped Windows machine, or no WebKit2GTK on Linux | Bundle the fixed-version WebView2 runtime; fall back to the default browser with a clear message; `sanket --browser` |
-| No WebGL2 on a target machine | Clear message today; Canvas2D fallback over the same tiles in M8 |
-| Huge files exceed GPU texture limits | Tiled pyramid with level of detail, never one texture per file |
-| Receiver possession needs authorisation (Telecom Act 2023 §3) | Public datasets and remote KiwiSDRs first; own captures only under an institutional umbrella after checking. The capture feature states this in the UI, and the operator is responsible for it. |
+| AMC collapses at low SNR; synthetic-to-real gap | Publish the curve; suppress labels outside the validated range; impairment-rich generator; TorchSig tests; real-capture fine-tuning |
+| Mono WAV mistaken for IQ; lossy audio distorts phase | Channel count, quadrature check, HYPOTHESIS caps with the reason |
+| Analog voice mislabelled as digital | Analog check before classification (M2); "analog" outcome in open-set rejection (M4) |
+| Analyst context, a profile or a known-system match is wrong | Entered and profile values are checked; hints only reorder searches; the system's own check must pass; near-misses in the null set |
+| Many containers multiply parser bugs | One reader interface; round-trip tests and fuzzing per container |
+| GPL or unlicensed code in the product (SDR drivers, rival repos, LDPC matrices) | Drivers only as subprocesses; licence check in CI; rival repos studied, never copied; matrices from published standards with a recorded source |
+| Frozen Numba fails on Windows; WebView2 or WebKit2GTK missing; no WebGL2; huge files exceed texture limits | Pinned builds and a frozen-build test; bundled WebView2 runtime and browser fallback; Canvas2D fallback; tiled pyramid with level of detail |
+| Receiver possession needs authorisation (Telecom Act 2023 §3) | Public datasets and remote KiwiSDRs first; own captures only under an institutional umbrella; the capture UI says so |
 | RadioML label/SNR flaws and non-commercial licence | Train on our generator; RadioML only as a corrected benchmark |
-| NOAA APT / Indian RDS may not be on air | Meteor-M LRPT and NAVTEX as primary targets |
-| TorchSig needs Linux and ~1 TB | WSL2; generate only needed subsets |
-| LDPC matrix licences unclear | Matrices from published standards with a recorded source |
-| GPL or unlicensed code leaking into the product | Licence check in CI; rival repos studied, never copied |
-| Scope too broad for 1.0 | Milestone exit gates; FEC depth before UI polish; stretch items cut first |
-| Gate-chasing stalls the build | A missed number is recorded as an Open gate ([§0](#0-progress)) rather than blocked on; every open gate closes by M8 |
+| NOAA APT / Indian RDS may not be on air; TorchSig needs Linux and ~1 TB | Meteor-M LRPT and NAVTEX as primary targets; WSL2 and only the subsets needed |
+| Scope too broad; gate-chasing stalls the build | Exit gates; FEC depth before UI polish; stretch items cut first; missed numbers become Open gates |
 
 ## 9. External dates (SIH)
 
-- **Idea submission: Tuesday 30 September 2026.** The deck draws on this plan: the problem, the §3 architecture, the §4 identity with screenshots of the workspace (labelled *synthetic demo data*), and the STANDARDS §9 competitive matrix with our column labelled as targets. The PS text is in [PROBLEM_STATEMENT.md](PROBLEM_STATEMENT.md); confirm the submission template on sih.gov.in before submitting.
-  - [x] Plan, standards to beat, source dossier and research report
-  - [x] Workspace UI to screenshot, labelled *synthetic demo data*
-  - [x] Official PS text, category and theme recorded in [PROBLEM_STATEMENT.md](PROBLEM_STATEMENT.md)
-  - [ ] Confirm the submission template on sih.gov.in
-  - [ ] Re-run the rival scan ([STANDARDS §10](STANDARDS_TO_BEAT.md#10-how-to-refresh-this-document)); `gh` is logged in
-  - [ ] Build the deck; every number traced to STANDARDS or labelled as a target
-- **Grand finale:** date not yet announced; confirm on sih.gov.in. The finale demo is whatever state the milestones have reached, run from the offline build with networking switched off.
+- **Idea submission:** submitted by 30 Sep 2026; the deck was built outside this repository. Template, rules and evaluation criteria are in [PROBLEM_STATEMENT.md](PROBLEM_STATEMENT.md#sih-2026-facts).
+- **Rival scan:** re-run on 30 Sep ([STANDARDS §5](STANDARDS_TO_BEAT.md#5-sih26147-rival-repositories)); re-run before every pitch ([STANDARDS §10](STANDARDS_TO_BEAT.md#10-how-to-refresh-this-document)).
+- **Grand finale:** proposed for December 2026; dates not yet published. The finale demo is whatever state the milestones have reached, run from the offline build with networking off.

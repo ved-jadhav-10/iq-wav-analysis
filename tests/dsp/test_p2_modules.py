@@ -1,5 +1,5 @@
-"""P2 modules (PROTOTYPE_PLAN P2): exact ground-truth round trips against dsp.synth's own
-encoders - RS(255,223) via galois, and the block-interleaver catalogue."""
+"""Outer-code and interleaver modules (PLAN M5): exact ground-truth round trips against
+dsp.synth's own encoders - RS(255,223) via galois, and the block-interleaver catalogue."""
 
 import numpy as np
 import pytest

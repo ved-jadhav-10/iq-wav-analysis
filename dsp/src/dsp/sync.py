@@ -1,4 +1,4 @@
-"""Symbol timing and carrier recovery for linear modulations (PROTOTYPE_PLAN P1).
+"""Symbol timing and carrier recovery for linear modulations (PLAN M3).
 
 From a channel centred on a detection (`dsp.channel`) and its estimated symbol rate:
 1. resample to SPS samples per symbol (Kaiser-windowed sinc interpolation);

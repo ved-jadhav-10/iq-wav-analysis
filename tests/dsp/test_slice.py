@@ -1,5 +1,5 @@
-"""The P1 thin slice end to end: a dsp.synth recording through detect and analyse, checked
-against the exact transmitted frames (PROTOTYPE_PLAN P1)."""
+"""The decode chain end to end: a dsp.synth recording through detect and analyse, checked
+against the exact transmitted frames (PLAN M3-M6)."""
 
 import math
 from dataclasses import replace

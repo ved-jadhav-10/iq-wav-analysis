@@ -1,4 +1,4 @@
-"""A catalogue of standard block interleavers and their inverse (PROTOTYPE_PLAN P2).
+"""A catalogue of standard block interleavers and their inverse (PLAN M5).
 
 Sanket never claims to recover a general pseudo-random permutation (project rule) - only a
 fixed, small catalogue of standard block sizes actually used elsewhere in this codebase:

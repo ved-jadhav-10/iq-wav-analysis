@@ -27,7 +27,7 @@ export interface Assumptions {
 }
 
 /** One detected signal's box, `detect`'s own evidence, and the full per-detection analysis
- * (PROTOTYPE_PLAN P1): estimate, sync, classify, demod, FEC and framing, as far as the chain
+ * (PLAN M3-M6): estimate, sync, classify, demod, FEC and framing, as far as the chain
  * gets for this signal. */
 export interface DetectionInfo {
   id: string

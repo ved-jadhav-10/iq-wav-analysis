@@ -32,9 +32,9 @@ zoom and selection — those are genuinely different lifetimes.
 | **Assumptions** | A modal, not a section | Everything the analysis took as given, over whatever is on screen |
 
 Switch by clicking the nav in the top bar, or with `Alt+1`–`Alt+2`. The choice is persisted in
-`localStorage` under `sanket.view.v1`, because a demo that reopens the tool on Survey and has to be
-clicked back mid-talk costs a beat. A bare `1`–`3` is deliberately *not* used: it would fight numeric
-fields and the demo worker's inputs.
+`localStorage` under `sanket.view.v1`, because an analyst who reopens the tool on Survey and has to
+click back costs a beat. A bare `1`–`3` is deliberately *not* used: it would fight numeric
+fields and the synthetic-capture worker's inputs.
 
 The **Assumptions** item keeps its place in the nav but does not switch the workspace. It opens the
 Settings / Assumptions modal instead, because a modal can be summoned over any section and dismissed,
@@ -44,6 +44,19 @@ per-detection deep dive is handled the same way, as a full-screen overlay.
 The nav list lives in `lib/views.ts` and is the only place an item is declared, so the button and the
 behaviour cannot drift apart. Its definitions, digit mapping and wrap-around stepping are covered by
 `lib/views.test.ts`.
+
+## What each view shows
+
+Before a file is opened, the workspace runs on a synthetic capture generated in the browser and labelled *Synthetic demo* (PLAN M7 replaces it with bundled sample recordings). Once a recording is open, every view shows real engine output:
+
+- **Waterfall:** one box per detection, placed in time and frequency. Frequency is relative to the capture centre when the centre frequency is unknown; levels are relative, not calibrated.
+- **Detections list:** each detection's overall level as glyph + word, never colour alone.
+- **Pipeline rail:** one evidence level per stage. Sync, Classify, FEC and Frame read VERIFIED only because a CRC passed on this recording. An analog (FM) detection stops after Classify, and says why.
+- **Constellation:** the real symbols after timing, carrier and phase recovery. It is empty for FSK, which is decided by tone energy, and for analog signals.
+- **Evidence cards:** each value with its level, method, evidence, alternatives and warnings; UNKNOWN cards say why and what would settle it (e.g. how many FEC hypotheses were tried).
+- **Hypotheses tab (ledger):** *Tried* counts every cell of the search grid (modulation × rotation × code × alignment, interleaver × alignment, RS grid × sync word × CRC), including cells never run. The threshold is corrected for that count, and the accepted chain is re-run on shuffled bits.
+- **Frames tab:** start bit, sync word, CRC result, header and payload hex.
+- **Assumptions (modal):** container, datatype, sample rate, centre frequency, IQ order and everything else taken as given, each with its level.
 
 ## The Signal overlay
 

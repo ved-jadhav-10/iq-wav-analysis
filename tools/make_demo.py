@@ -1,12 +1,12 @@
-"""Write the demo SigMF scene(s) (PROTOTYPE_PLAN P1) to data/demo/ from a fixed seed, then verify
+"""Write the synthetic sample recordings to data/demo/ from a fixed seed, then verify
 them the way the backend does: open, detect, analyse each detection, and check the coded PSK
 signals' passing frames against the exact transmitted payload bytes.
 
 All three files are synthetic (dsp.synth, truth in the SigMF annotations and a .truth.json):
-  - scene.sigmf-meta, PROTOTYPE_PLAN's demo target: QPSK + BPSK (both conv K=7 r1/2, CCSDS ASM,
+  - scene.sigmf-meta: QPSK + BPSK (both conv K=7 r1/2, CCSDS ASM,
     CRC-16) that must reach VERIFIED, one uncoded/unframed QPSK that must not, and an FM signal
     that must be labelled analog.
-  - scene_widen.sigmf-meta, P2's chains: 8PSK through a 16x36 block interleaver, and QPSK with
+  - scene_widen.sigmf-meta: 8PSK through a 16x36 block interleaver, and QPSK with
     an outer RS(255,223) code, both VERIFIED.
   - scene_fsk.sigmf-meta: a lone coded 2-FSK signal, VERIFIED.
 
@@ -138,7 +138,7 @@ def build_main() -> tuple[Generated, Scene, list[TruthEntry]]:
 
 
 def build_widen() -> tuple[Generated, Scene, list[TruthEntry]]:
-    """PROTOTYPE_PLAN P2's chains: 8PSK through a block interleaver, and QPSK with an outer
+    """Deeper chains: 8PSK through a block interleaver, and QPSK with an outer
     RS(255,223) code - both conv K=7 r1/2 inside, CCSDS ASM + CRC-16 frames."""
     psk8 = _spec(
         "8psk",
@@ -173,7 +173,7 @@ def build_widen() -> tuple[Generated, Scene, list[TruthEntry]]:
 
 def build_fsk() -> tuple[Generated, Scene, list[TruthEntry]]:
     """2-FSK on its own: its symbol-rate estimate is only reliable on an undecimated channel
-    with nothing else in it (see PROTOTYPE_PLAN P4)."""
+    with nothing else in it (an Open gate in PLAN §0)."""
     fsk = _spec("2fsk", 8, 15.0, inner=CONV, offset=100_000.0 / SAMPLE_RATE, stream_offset=5)
     scene = Scene(samples=1 << 18, signals=(fsk,), noise_db=NOISE_DB, sample_rate=SAMPLE_RATE)
     g = generate(scene, SEED + 2)

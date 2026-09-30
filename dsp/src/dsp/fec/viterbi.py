@@ -1,4 +1,4 @@
-"""Soft-decision Viterbi decoding of rate-1/n convolutional codes (PROTOTYPE_PLAN P1).
+"""Soft-decision Viterbi decoding of rate-1/n convolutional codes (PLAN M5).
 
 Conventions match `dsp.synth.fec.Convolutional`: generators are octal as the standards write
 them, the most significant tap multiplies the newest input bit, and the output interleaves the

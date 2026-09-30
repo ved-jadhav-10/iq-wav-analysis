@@ -2,9 +2,9 @@
 
 This document sets the bar our tool has to clear. It covers commercial products, open-source tools, published research, and every public SIH26147 repository we could find.
 
-- **Snapshot date:** 26 September 2026; §2 was re-checked against vendor material on 27 September. The field moves daily, so re-run the scan before any pitch (see [§10](#10-how-to-refresh-this-document)).
+- **Snapshot date:** rivals re-scanned **30 September 2026** (first scan 26 Sep); vendor facts in §2 checked against primary sources on 29 Sep. The field moves daily, so re-run the scan before any pitch (see [§10](#10-how-to-refresh-this-document)).
 - **How it was verified:** repository metadata (created, last push, licence) came from the GitHub REST API. Capabilities were checked against each repo's **file tree** and its **README**. We did not clone or run rival code.
-- **Source dossier:** [`SIHPS_ANALYSIS.md`](SIHPS_ANALYSIS.md) §B1–B7. Where this document disagrees with the dossier, this document is newer (see [§5.5](#55-corrections-to-the-dossier-b6f)).
+- **Sources:** every citation behind this document, the plan's methods and the standards versions is in [§11](#11-references).
 
 **Legend:** ✅ backed by code in the repo tree · 📄 README claim, not traced to code · ❌ not found · — not applicable.
 
@@ -12,63 +12,42 @@ This document sets the bar our tool has to clear. It covers commercial products,
 
 ## 1. Summary — what the bar looks like now
 
-1. **There are 35 live SIH26147 repos, not the "14+" the dossier counted.** About 26 contain real code. Two named repos are gone or were misattributed.
-2. **Real off-air validation is no longer a differentiator.** `SumitKumar00113/sigma-signal-analysis` decodes real NAVTEX, RTTY, RS41 radiosonde and NOAA APT recordings. `SomeNobody21112/ICHNOVA` decodes WWV, DCF77, MSF, JJY, DDH47 and All India Radio carriers received through KiwiSDR.
-3. **The technical leader is `sigma-signal-analysis`**, a PySide6 desktop app. It covers 18 modulations and blindly identifies:
-   - convolutional codes from K=3 to 9, including punctured codes
-   - Reed-Solomon parameters
-   - LDPC codes from a standards catalogue (DVB-S2, 5G NR, CCSDS)
-   - interleavers, including a pseudo-random seed search
-   - sync words, using a Poisson test
-
-   The dossier's one-line summary badly underrates it.
-4. **The rigour leader is `ICHNOVA`.** It runs a sealed benchmark with **0 false accepts**, corrects for multiple tests, keeps a SHA-256 decision receipt chain, and documents its limits honestly. It covers only BPSK/QPSK with convolutional codes and a block interleaver.
-5. **Honesty labels, SigMF ingestion, four interleaver types, Viterbi + RS, and CRC/sync/re-encode checks are now table stakes.** At least 8 repos have them.
-6. **Verified gaps nobody fills yet:**
-   - a deep-learning AMC model evaluated on **public** datasets with a full accuracy-vs-SNR curve
-   - a **web** GUI with sigma-level decoding depth
-   - a sealed benchmark that compares rivals **head-to-head**
-   - **committed, licensed Indian over-the-air recordings**
-   - automatic downstream re-runs after an analyst correction
-   - multi-GB streaming through the **whole** chain, not just detection
-   - overlapping co-channel and frequency-hopping signals
-
-   Details are in [§7](#7-table-stakes-vs-open-differentiators).
-7. **Overclaiming exists and judges will spot it.** One repo shows a "SIH 2026 Finalist" badge before any finale was held. It also claims ">95% accuracy at −10 dB SNR" but ships no model files and has 2 test files. Our deck must never make a claim that the `bench/` scripts cannot reproduce.
+1. **About 60 SIH26147 repos are public** (35 on 26 Sep, about 60 by 30 Sep); about 40 contain real code. The strongest newcomer is `Venkata-Manoj/RF-signal-analysis` (§5.3): all four interleaver families, Viterbi/RS/LDPC/concatenated behind a CRC gate, desktop + web + CLI.
+2. **Real off-air decoding is table stakes among the leaders.** `sigma-signal-analysis-SIH-2026` decodes real NAVTEX (SITOR-B), RTTY and NOAA APT to messages and images; ICHNOVA decodes WWV, DCF77, MSF, JJY, DDH47 and All India Radio carriers via KiwiSDR; Pinpoint scores a frozen benchmark of 170 real SigMF captures.
+3. **The technical leader is sigma** (PySide6 desktop, now with Windows and macOS installers): 18 modulations; blind convolutional (K=3–9, punctured), RS and catalogue-LDPC identification; interleavers including a pseudo-random seed search; Poisson-tested sync words.
+4. **The rigour leader is ICHNOVA:** sealed benchmark with 0 false accepts, multiple-testing correction, a SHA-256 receipt chain, a payload-reliability gate — but only BPSK/QPSK, convolutional codes and a block interleaver.
+5. **Table stakes:** honesty labels, SigMF ingest, four interleaver types, Viterbi + RS, CRC/sync/re-encode checks (8+ repos).
+6. **Commercial tools automate more than we first assumed.** R&S CA250 advertises fully automated detection of convolutional, RS and BCH codes; Wavecom W-BitView has an automatic convolutional-code search. What no vendor documents is **automatic interleaver recovery chained to blind FEC, starting from raw IQ, with stated evidence** — that is our claim (§2).
+7. **Gaps nobody fills yet:** deep-learning AMC evaluated on public datasets with a full SNR curve; a web GUI with sigma-level decoding depth; a head-to-head sealed benchmark; committed, licensed Indian off-air recordings; automatic downstream re-runs after an analyst correction; multi-GB streaming through the whole chain; co-channel and frequency-hopping signals ([§7](#7-table-stakes-vs-open-differentiators)).
+8. **Overclaiming exists and judges will spot it** (a "SIH 2026 Finalist" badge before any finale; ">95 % at −10 dB" with no model files). Our docs and deck never make a claim `bench/` can't reproduce.
 
 ---
 
 ## 2. Commercial incumbents
 
-Sources: dossier §B1, §B4, and vendor brochures and sites checked on 27 Sep 2026 (links below). **No vendor publishes a price.** The two figures in the table are third-party reports that we could not confirm on 27 Sep, so quote them only as "reported".
+Checked against vendor material on 29 Sep 2026 (sources in [§11](#11-references)). **No vendor publishes a price.**
 
 | Product | Maker | Price | Constraints |
 |---|---|---|---|
-| Krypto500 / Krypto1000 | COMINT Consulting (USA) | Krypto500 reported at about US$7,400 (dossier; **unverified**) | ITAR-controlled; no demo, trial or light version |
-| W-CODE, W-PCIe | Wavecom (Switzerland) | Reported at about US$995 per user (third-party page; **unverified**) | Commercial licence |
-| go2MONITOR / go2DECODE / go2ANALYSE | PROCITEC (Germany) | Quotation only | Export-controlled |
+| Krypto500 / Krypto1000 | COMINT Consulting (USA) | None public. "US$7,400" appears only in a Feb 2012 third-party review (*Monitoring Quarterly*) — never quote it as current | ITAR-controlled (22 CFR §120-130, vendor brochure); no demo, trial or light version |
+| R&S CA120 + CA250 | Rohde & Schwarz (Germany) | Quotation only | Export status not public |
+| go2MONITOR / go2DECODE / go2ANALYSE | PROCITEC (Germany) | Quotation only | German export permission for its MIL/PMR packages |
+| W-CODE, W-BitView | Wavecom (Switzerland) | Via contact only | Export status not public |
 | CODE300-32 | Hoka Electronic (Netherlands) | Not checked | Commercial licence |
-| GX430 | Rohde & Schwarz (Germany) | Quotation only | Export-controlled |
 | Decodio | Decodio (Switzerland) | Quotation only | — |
 
 What the vendors' own material says:
 
-- **Krypto500** ([brochure](https://datatec.es/wp-content/uploads/2016/04/Krypto500.pdf), [site](https://www.comintconsulting.com/krypto500)):
-  - Narrowband signals up to **48 kHz** wide; Krypto1000 covers wideband.
-  - "Automatic classification of nearly **4000** FSK & PSK modems" in the brochure; the site says "more than 3,000".
-  - "Hundreds of decoders" for on-air modes. Parsers, radio fingerprinting ("RadioID"), traffic and network analysis, and output formats that support cryptanalysis.
-  - Inputs: baseband audio, WAV/RF64 and many I/Q formats. Outputs: decoded text, or the demodulated bitstream as ASCII or hex. Runs on Windows with 400+ supported receivers and SDRs.
-- **PROCITEC go2signals** ([go2DECODE brochure](https://procitec.com/file_access/6816/4250/3024/PRO_Broschure_go2DECODE_22.1_lres.pdf)):
-  - go2MONITOR does wideband detection and classification.
-  - go2DECODE does automatic modem recognition and decoding, including digital voice (DMR, TETRA, P25, NXDN). For "new, unidentified signals" it offers manual analysis displays: spectrogram and baud-rate measurement, autocorrelation, constellation, amplitude/frequency/phase behaviour, and a raster display for coding analysis. It also has a language (DDL/pyDDL) for writing new decoders.
-  - go2ANALYSE does forensic bitstream analysis.
-- **Wavecom W-CODE** ([site](https://www.wavecom.ch/)): 300+ modes, including MIL-STD-188-110 and STANAG 4285/4529/4539/5066; a classifier; the W-BitView bitstream tool.
+- **Krypto500:** narrowband signals up to 48 kHz (Krypto1000 wideband); automatic classification of ">3,000" modems (current site; older brochures say "nearly 4000" / "4000+"); "hundreds of decoders"; RadioID fingerprinting, traffic analysis; inputs baseband audio, WAV/RF64 and I/Q formats; Windows, 400+ receivers. **No blind FEC or de-interleaving is documented.**
+- **R&S CA120** recognises modulation and transmission systems automatically and reports unknowns as "unknown". **R&S CA250** (a separate bitstream tool) advertises "fully automated detection of convolutional, Reed-Solomon and BCH codes", plus descrambling and de-interleaving functions; automatic *interleaver* recovery is not stated. GX430 is the legacy product (rated best automatic classifier in the 2012 review).
+- **PROCITEC:** go2MONITOR wideband detection and classification; go2DECODE recognition and decoding of ">470 modems" including digital voice, with manual displays for unknown signals and a decoder-writing language (DDL/pyDDL); go2ANALYSE tests bitstreams against a list of codes and de-interleaves with set parameters — its own brochure says manual analysis of unknowns takes "often hours!".
+- **Wavecom:** W-CODE has an automatic classifier and ">226" modes (2015 brochure), including MIL-STD-188-110 and STANAG 4285/4529/4539/5066. W-BitView's convolutional-code analysis searches K = 2–14, n = 2–4 automatically; de-interleaving takes user-set parameters.
 
-**How incumbents work.** They pair a large **library of known modems**, which recognise and decode automatically, with **analyst-driven toolsets** for signals the library doesn't know. The PS describes the same situation: "the analysis is being carried out manually". Their public material documents blind FEC and interleaver work only as manual tools. We have no evidence either way on whether they automate it, so don't claim they can't.
+**How incumbents work.** A large **library of known modems**, recognised and decoded automatically, plus **analyst tools** for what the library doesn't know — the "carried out manually" the PS describes. Modulation recognition and convolutional/RS/BCH code detection are automated by at least R&S and Wavecom.
 
-**Our angle:** open, indigenous, air-gapped, SigMF-native, and ground-truth verified. None of these products is all of those at once (dossier §B6e). We will not claim to match their protocol libraries or live-monitoring features. We claim three things:
-- **automated blind analysis** of what the library doesn't know, the part that is manual today
-- **transparent evidence** for every result
+**Our angle:** open, indigenous, air-gapped, SigMF-native and ground-truth verified — no vendor is all of these. We don't claim their protocol libraries or live monitoring. We claim:
+- **automatic interleaver recovery chained to blind FEC and framing, from raw IQ in one chain** — undocumented by any vendor
+- **transparent evidence and hypothesis accounting** for every result
 - **no licence or ITAR lock-in**
 
 ---
@@ -80,7 +59,7 @@ These are tools to learn from or build on. Star counts and pushes are as of 26 S
 | Tool | What it is | Licence | Relevance to us |
 |---|---|---|---|
 | [GNU Radio](https://www.gnuradio.org/) | Signal-processing flowgraph toolkit | GPL-3.0 | Synthetic data generation and reference receivers. **Dev-time only**: don't link GPL code into the product. |
-| [TorchSig](https://github.com/TorchDSP/torchsig) (★376, pushed 2 Sep) | PyTorch RF-ML toolkit: 57 modulation variants, impairments, Sig53 / WidebandSig53 | MIT | AMC training data. **Needs Ubuntu ≥ 22.04**, so use WSL2 on Windows. |
+| [TorchSig](https://github.com/TorchDSP/torchsig) (★376, pushed 2 Sep) | PyTorch RF-ML toolkit; 2.x is a configurable generator with "60+" signal types and impairments. Sig53/WidebandSig53 were renamed Narrowband/Wideband in v0.6.0 | MIT | Independent test generator (training uses `dsp.synth`). **Needs Ubuntu ≥ 22.04**, so WSL2 on Windows. |
 | [IQEngine](https://github.com/IQEngine/IQEngine) (★332) | Web SDR toolkit for viewing and annotating recordings: React/TS client, FastAPI backend, SigMF, its own `webfft` package | MIT | **Closest match to our architecture.** Borrow components rather than start from scratch. Pinpoint studied it too. |
 | OpenWebRX | Web SDR receiver UI | **AGPL-3.0** | UX reference only |
 | [SigMF](https://github.com/sigmf/SigMF) (★466) + `sigmf` Python package | Metadata standard for recordings | Spec CC-BY-SA-4.0 | Native input/output format |
@@ -94,13 +73,14 @@ These are tools to learn from or build on. Star counts and pushes are as of 26 S
 | [PySDR](https://pysdr.org) | Free IQ/DSP textbook with code examples (FSM/TSM/FAM, etc.) | **CC BY-NC-SA** | Onboarding and method reference; don't copy its code into the product |
 | Sionna 2.1 | NVIDIA link-level simulator, now on PyTorch | Apache-2.0 | Too heavy for an air-gapped CPU install |
 | onnxruntime 1.30, numba 0.67, sigmf 1.13 | Inference, JIT, metadata | MIT / BSD / LGPL | All have Windows wheels; numpy 2.5 needs Python 3.12+ |
+| [iqscan](https://github.com/gdamdam/iqscan) (new, Sep 2026) | Scans raw IQ recordings for activity; interactive offline HTML report | **GPL-3.0** | UX reference only |
 | Reference decoders: readsb, AIS-catcher, rtl_433, multimon-ng, SatDump; redsea | Ground-truth decoders for real captures | GPL; redsea MIT | Run as subprocesses in the test harness only |
 
 ---
 
 ## 4. Academic AMC benchmarks
 
-Source: dossier §B3, §B6a.
+Sources: the papers themselves (O'Shea 2018 in [§11](#11-references)); MobileRaT and Harper et al. as cited below.
 
 | Model / paper | Dataset | Reported accuracy |
 |---|---|---|
@@ -117,10 +97,10 @@ Source: dossier §B3, §B6a.
 
 ### 5.1 Capability matrix — the eight leaders
 
-| | [sigma](https://github.com/SumitKumar00113/sigma-signal-analysis) | [ICHNOVA](https://github.com/SomeNobody21112/ICHNOVA) | [Devansh-567](https://github.com/Devansh-567/hackathon) | [Team Vertex](https://github.com/Gururaghavendra123/sihps2-2026) | [RadioFry](https://github.com/The-4Script/RadioFry) | [arachknight66](https://github.com/arachknight66/SIH26147) | [Pinpoint](https://github.com/pranshu1141-sharma/Pinpoint) | [SignalScope](https://github.com/Manas-Dikshit/SignalScope) |
+| | [sigma](https://github.com/SumitKumar00113/sigma-signal-analysis-SIH-2026) | [ICHNOVA](https://github.com/SomeNobody21112/ICHNOVA) | [Devansh-567](https://github.com/Devansh-567/hackathon) | [Team Vertex](https://github.com/Gururaghavendra123/sihps2-2026) | [RadioFry](https://github.com/The-4Script/RadioFry) | [arachknight66](https://github.com/arachknight66/SIH26147) | [Pinpoint](https://github.com/pranshu1141-sharma/Pinpoint) | [SignalScope](https://github.com/Manas-Dikshit/SignalScope) |
 |---|---|---|---|---|---|---|---|---|
-| Last push | 26 Sep | 25 Sep | 17 Sep | 18 Sep | 25 Sep | 22 Sep | 26 Sep | 19 Sep |
-| GUI | PySide6 desktop | React 19 web console | React/TS web | PyQt6 + vanilla-JS web | Streamlit | PySide6 | React/TS web | Next.js web |
+| Last push | 29 Sep | 29 Sep | 17 Sep | 28 Sep | 25 Sep | 29 Sep | 29 Sep | 19 Sep |
+| GUI | PySide6 desktop; Windows/macOS installers | React 19 web console | React/TS web | PyQt6 + vanilla-JS web | Streamlit | PySide6 | React/TS web | Next.js web |
 | SigMF input | ✅ | ❌ (WAV + JSON sidecar) | ✅ full datatype vocabulary | ❌ | ❌ | ✅ | ✅ validated with `sigmf` | ✅ |
 | Raw IQ formats | cf32, ci16, cu8 | IQ WAV | full SigMF set, LE/BE | float32 only | int16, float32 | int16/float, explicit order | cf32/ci16 LE/BE | 📄 |
 | Mono WAV handled honestly | ✅ Hilbert FIR + FM re-mod | — | ✅ | ❌ | ✅ labels withheld | ✅ asks stereo mode | ✅ never invents Q | 📄 |
@@ -136,11 +116,11 @@ Source: dossier §B3, §B6a.
 | Decode verification | Trial-decode residual vs EVM + sync | Significance-tested syndrome | Re-encode distance | **CRC-16 + sync + re-encode BER** | Sync significance vs control words | CRC | — | CRC |
 | Multiple-testing control | ✅ Poisson test, p_fa 10⁻⁶ | ✅ explicit | ❌ | ❌ | ✅ control words | ❌ | — | ❌ |
 | Blind framing / header fields | ✅ sync discovery, counters, fixed fields | Time-code frames | Sync word, periodic framing | Sync word | Sync significance | Correlation | — | Bit correlation |
-| Real over-the-air validation | ✅ NAVTEX, RTTY, RS41, NOAA APT (**recordings not committed**) | ✅ WWV, DCF77, MSF, JJY, DDH47, AIR (**committed**) | ❌ synthetic only | ❌ | ❌ ("real-world accuracy not established") | ❌ | Synthetic + 1 GiB test | ❌ |
+| Real over-the-air validation | ✅ NAVTEX, RTTY, NOAA APT decoded to messages/images; RS41 (**recordings not committed**) | ✅ WWV, DCF77, MSF, JJY, DDH47, AIR (**committed**) | ❌ synthetic only | ❌ | ❌ ("real-world accuracy not established") | ❌ | ✅ **frozen 170-capture real SigMF benchmark** (sha256-pinned) | ❌ |
 | Large files | First 10 M samples only | — | Chunked detection (80 MB tested), 2 M-sample cap on the signal of interest | — | — | Chunked streaming | ✅ **2 GiB** async (1 GiB validated) | — |
-| Tests (README claim / test files in tree) | — / 46 | 30 / 15 | 188 / 16 ⚠️ | 132 / 6 | — / 79 | — / 61 + ctest | — / 15 | 55 + 32 / 35 |
+| Tests (README claim / test files in tree) | — / ~42–46 | 30 / 27 | 188 / 16 ⚠️ | 132 / 6 | — / 79 | — / 61 + ctest | — / 15 | 55 + 32 / 35 |
 | CI | ✅ | ✅ | ❌ | ❌ | Removed | ✅ | ❌ | ❌ |
-| Licence | MIT | None | None | None | CC0 | None | None | Usage note, no SPDX |
+| Licence | MIT in README; no LICENSE file detected | None | None | None | CC0 | None | None | Usage note, no SPDX |
 
 ⚠️ Devansh-567's README says "188/188 tests" in one place and "104 tests across 10 files" in another. It also lists multi-signal segmentation as both built and not built.
 
@@ -148,7 +128,7 @@ Source: dossier §B3, §B6a.
 
 ### 5.2 What to match and what to exploit, per leader
 
-**`SumitKumar00113/sigma-signal-analysis`**, the technical leader.
+**`SumitKumar00113/sigma-signal-analysis-SIH-2026`** (renamed ~29 Sep), the technical leader.
 - *Match:*
   - blind conv-code ID from dual-code parity checks
   - RS parameter ID (n, k, field polynomial, first root, alignment)
@@ -157,11 +137,13 @@ Source: dossier §B3, §B6a.
   - burst separation
   - 18-type classifier (99% at 4 dB in hybrid mode, on its own synthetic signals)
   - regression tests created from off-air failures
+  - message-level output for real signals (NAVTEX text, APT images) and installers for Windows/macOS
 - *Exploit:*
   - desktop only, no web GUI
   - analyses only the first 10 M samples
   - no deep learning; AMC is never evaluated on a public dataset
   - off-air recordings are not in the repo, so results can't be reproduced
+  - no LICENSE file, so its README's "MIT" is not machine-detectable
   - no SigMF export (JSON/HTML only)
   - it lists its own limits: OFDM/APSK are unknown, no Doppler tracking
 
@@ -174,6 +156,7 @@ Source: dossier §B3, §B6a.
   - SHA-256 receipt chain
   - "sufficiency": what evidence would settle a refusal
   - committed real recordings with GPS timestamps
+  - a payload-reliability gate that withholds unreliable payloads (it measures its own Doppler limitation)
 - *Exploit:*
   - BPSK/QPSK only
   - convolutional code + block interleaver only
@@ -232,7 +215,9 @@ Source: dossier §B3, §B6a.
   - CFAR-style detection
   - pulse width and PRI
   - every panel mapped to a PS requirement
-- *Exploit:* no demodulation or decoding at all.
+  - a frozen 170-capture real benchmark with pre-registered expectations, and a diagnosis of why it abstains
+  - an offline batch CLI
+- *Exploit:* demodulation limited to simple ASK/FSK checks; no FEC or interleaver decoding.
 
 **`Manas-Dikshit/SignalScope`**, the full-stack reference.
 - *Match:* per-estimate provenance record (`source`, `confidence`, `evidence`, `alternatives`, `warnings`); Vitest tests on the frontend.
@@ -263,15 +248,36 @@ Source: dossier §B3, §B6a.
 | [Selvamurugan-hub/SpectraSense-AI](https://github.com/Selvamurugan-hub/SpectraSense-AI) | 9 Sep (new) | Web | Fingerprints, anomaly detection | 4 | Analytics only; no demod/FEC |
 | [DevWithShubham18/SAGE-RF](https://github.com/DevWithShubham18/SAGE-RF) | 10 Sep (new) | Firebase, Vercel, Render, LLM | Hosted workstation | 5 | Cloud-dependent; no FEC |
 | [Akshat030307/SIH](https://github.com/Akshat030307/SIH) | 1 Sep | Python, spec in `CLAUDE.md` | I/O done; detector in progress | 9 | **Stalled.** Multi-signal analysis is *planned*, not built. |
+| [mks-Roald/ps26147_toolkit](https://github.com/mks-Roald/ps26147_toolkit) | 29 Sep | CLI + Streamlit, Next.js front end | Random Forest on RadioML 2016.10a (4 mods), low-confidence fallback, regression ledger | 20 | Live again (was a 404 on 26 Sep) |
+| [Akhil-0911/SigIQ](https://github.com/Akhil-0911/SigIQ) | 25 Sep (new) | Tkinter | BPSK/QPSK/16QAM/2FSK/4FSK; joint search over 4 interleavers × Viterbi/RS/concatenated/LDPC; sync false-alarm test; provenance labels | 4 | Has a LICENSE; broad claims, few tests |
+| [pranav21122007-hackathon/SIG-Sense](https://github.com/pranav21122007-hackathon/SIG-Sense_Blind_Signal_Intelligence_for_Unknown_RF_Transmissions) | 27 Sep (new) | React/D3 | "Zero-prior" pipeline: GF(2) rank de-interleaving, ONNX ResNet1D + cumulants, RS, Viterbi | 0 | Claims unverified; no tests |
+| [yoganandasp15/SIH_2026_Signal-Analyser](https://github.com/yoganandasp15/SIH_2026_Signal-Analyser) | 26 Sep (new) | Python | Rule-based modulation families, multi-window stability gate, 95 % bounds; no FEC | 19 | Honesty-focused, shallow decode |
+| [richennacht/demod](https://github.com/richennacht/demod) | 27 Sep (new) | Python | WAV/IQ measurements, ranked hypotheses, JSON report; explicitly no blind FEC | 9 | Honest, early |
+| [kunal-shetty/SIH2026_Signal_Intelligence_Recognition_Engine](https://github.com/kunal-shetty/SIH2026_Signal_Intelligence_Recognition_Engine) | 13 Sep (new) | FastAPI + React | ResNet-18 on RadioML 2016.10a (11 classes) | 0 | AMC only |
+| [Venkata-Manoj/RF-signal-analysis](https://github.com/Venkata-Manoj/RF-signal-analysis) | 25 Sep (new) | PyQt6 desktop + web dashboard + CLI | Block/Forney/diagonal/pseudo-random de-interleaving; CRC-16/32, Viterbi, RS, LDPC, concatenated, all from scratch; sweeps 30 FEC × interleaver combinations gated on CRC-16 (420-case sweep); tested on two real PySDR captures (GPS L1, NTSC), honestly reporting no decode | 56 | **Strongest newcomer**; catalogue sweep rather than blind identification; no licence |
+| [Kush11318/IQWAVE](https://github.com/Kush11318/IQWAVE) (DAWC) | 29 Sep (new) | FastAPI + JS lab UI | LLRs, blind FEC ID, CRC-16/32 by GF(2) division, rank-profile de-interleaver; "258/258 tests" 📄 | 15 | MIT; claims broad, verify before quoting |
+| [GSRaghav/Analysis-of-signal-files](https://github.com/GSRaghav/Analysis-of-signal-files) (AutoSig-Intel) | 26 Sep (new) | Streamlit, 9 tabs | 4 interleaver families; Viterbi K=7/K=3, RS, concatenated, Gallager (12,6) LDPC; blind LDPC disclosed as not implemented; "127 tests" 📄 | 17 | Honest disclosure; toy LDPC |
+| [anshumanarchit-crypto/SIH_Wavemindss](https://github.com/anshumanarchit-crypto/SIH_Wavemindss) (SpectralQ) | 29 Sep (new) | Streamlit | Cyclic baud, M2M4 SNR, cumulants, ML + rule AMC; matrix and convolutional de-interleavers; Viterbi K=7, RS(255,223), BCH; CRC-16/32 | 17 | Solid mid-tier |
+| [dev-mat-4522/spectra-sense-signal-parameter-extraction](https://github.com/dev-mat-4522/spectra-sense-signal-parameter-extraction) (SpectraSense) | 28 Sep (new) | Python | Burst extraction, multi-voter baud rate, CNN-heuristic AMC incl. 64QAM/AFSK, 4 phase rotations, block/diagonal/convolutional de-interleavers, Viterbi + RS probing; float32 IQ only | 10 | Mid |
+| [lileshkatre01/DrishtiRF](https://github.com/lileshkatre01/DrishtiRF) | 29 Sep (new) | FastAPI + Celery + React | Parameter estimation incl. fs, AMC, joint de-interleaving + FEC, bitstream correlation; "real captured waveforms" in `sample_data/` 📄 | 11 | Claims unverified; heavy stack |
+| [rajivdey2/Wave](https://github.com/rajivdey2/Wave) | 28 Sep (new) | FastAPI, hosted on Render | Multi-signal detection (CFAR), parameters, classical + ML classification with evidence per field, JSON + SigMF output; publishes accuracy vs SNR (100 % at ≥ 5 dB, UNKNOWN at −5 dB) | 12 | No FEC; honest numbers |
+| [rezowanhussain02/SignalScope](https://github.com/rezowanhussain02/SignalScope) | 28 Sep (new) | React + FastAPI | Random Forest AMC (BPSK/QPSK/2-FSK/16QAM), block de-interleaving, Viterbi | 6 | Mid–low |
+| [iamsayandas2-blip/IQWAV](https://github.com/iamsayandas2-blip/IQWAV) | 6 Sep (new) | Python + notebooks | Heuristic detection of spectrally significant candidates; FEC and interleaving planned | 29 | Early but tested |
 
 ### 5.4 Early stage or placeholder
 
-These have 15 files or fewer, or no README: [gourabde7/Spectra](https://github.com/gourabde7/Spectra) (★1), [Muizzahmed786/SIH26147](https://github.com/Muizzahmed786/SIH26147), [xarjunpatil/SIH26147-…](https://github.com/xarjunpatil/SIH26147-Automated-model-for-analysis-of-IQ-and-wav-files-along-with-signal), [Jagzz-Coder/sigscope](https://github.com/Jagzz-Coder/sigscope), [sautiksamui-tech/SIH2026](https://github.com/sautiksamui-tech/SIH2026), [dharsankumar250053-spec/SignalLens](https://github.com/dharsankumar250053-spec/SignalLens), [dasmahapatrapranati-rgb/Signal_Analyzer](https://github.com/dasmahapatrapranati-rgb/Signal_Analyzer), [26147-alt/index](https://github.com/26147-alt/index), [harideskzone-hue/SIH26147-Border](https://github.com/harideskzone-hue/SIH26147-Border) (empty).
+These have 15 files or fewer, or no README: [gourabde7/Spectra](https://github.com/gourabde7/Spectra) (★1), [Muizzahmed786/SIH26147](https://github.com/Muizzahmed786/SIH26147), [xarjunpatil/SIH26147-…](https://github.com/xarjunpatil/SIH26147-Automated-model-for-analysis-of-IQ-and-wav-files-along-with-signal), [Jagzz-Coder/sigscope](https://github.com/Jagzz-Coder/sigscope), [sautiksamui-tech/SIH2026](https://github.com/sautiksamui-tech/SIH2026), [dharsankumar250053-spec/SignalLens](https://github.com/dharsankumar250053-spec/SignalLens), [dasmahapatrapranati-rgb/Signal_Analyzer](https://github.com/dasmahapatrapranati-rgb/Signal_Analyzer), [26147-alt/index](https://github.com/26147-alt/index), [harideskzone-hue/SIH26147-Border](https://github.com/harideskzone-hue/SIH26147-Border) (empty); new since 26 Sep: sumitsawant562-source/SIH-PROJECT---SIH26147, hn260/signalscope, VASANTH-Balaji/signal-analyzer-webapp, AtharvaSharma27/.IQ-.WAV-signal-analyzer-, and empty Ardcode12/IQ_WAV, shreyxshh/iq-and-wav, deepanshushrivas/.IQ-and-.wav-signal. UI or analytics only, no decoding: [25A31A0454/SpectrumX](https://github.com/25A31A0454/SpectrumX) (React dashboard, `node_modules` committed), [GaurangJagtap/Radio-Frequency-Signal-Analyzer](https://github.com/GaurangJagtap/Radio-Frequency-Signal-Analyzer) (PyQt5 UI on mock data), [SrishtiPriya27/signalscope](https://github.com/SrishtiPriya27/signalscope) (frontend with simulated results), [adityabisoyee28-cpu/SignalLens-AI](https://github.com/adityabisoyee28-cpu/SignalLens-AI) (Random Forest on 6 analog classes, Supabase), [palanisamysantosh2-creator/SIGNAL-ANALYZER](https://github.com/palanisamysantosh2-creator/SIGNAL-ANALYZER) (Streamlit wrapper).
 
-### 5.5 Corrections to the dossier (§B6(f))
+### 5.5 Status changes since the first scan
 
-| Dossier says | Verified on 26 Sep 2026 |
+| Repo | Change |
 |---|---|
+| `SumitKumar00113/sigma-signal-analysis` | Renamed to `sigma-signal-analysis-SIH-2026` (the old URL redirects) |
+| `mks-Roald/ps26147_toolkit` | A 404 on 26 Sep; live again on 30 Sep (§5.3) |
+| `harikesh2709-creator/FUTURISTICS` | Now a freight app for another PS; the team's SIH26147 repo is `spectra-signal-analyzer` |
+| `Akshat030307/SIH` | Multi-signal analysis only planned; last push 1 Sep |
+
+---|---|
 | `mks-Roald/ps26147_toolkit`: CLI + Streamlit, RF on RadioML 2016.10a | **404**: deleted, renamed or made private |
 | `harikesh2709-creator/FUTURISTICS`: full DSP chain | That repo is now **FreightForecast Pro**, a maritime freight app for a different PS. The team's SIH26147 repo is `spectra-signal-analyzer`, created 25 Sep. |
 | `Akshat030307/SIH` "now does multi-signal scene analysis" | Only planned. Phase 3 of 8 is in progress; last push 1 Sep. |
@@ -316,7 +322,7 @@ Other teams found these bugs by testing against ground truth. We should design t
 - offline operation
 - a pytest suite and CI
 
-**Open differentiators** (no public rival does these as of 26 Sep):
+**Open differentiators** (no public rival does these as of the 30 Sep scan):
 
 | # | Differentiator | Closest rival and its gap |
 |---|---|---|
@@ -328,7 +334,7 @@ Other teams found these bugs by testing against ground truth. We should design t
 | D6 | **Multi-GB streaming through the entire chain**, not just detection | Pinpoint streams 2 GiB (detection only); sigma stops at 10 M samples |
 | D7 | **Overlapping co-channel and frequency-hopping signals** (detect and label, even when decoding isn't possible) | No rival attempts this |
 | D8 | **Transparent hypothesis accounting in the UI:** how many code/interleaver guesses were tried, the corrected threshold, the empirical false-alarm rate on shuffled bits, and why each was rejected | ICHNOVA and sigma compute it but don't expose it as an analyst view |
-| D9 | **The first open, benchmarked implementation of the literature's blind code and interleaver identification methods:** GJETP/dual-code for convolutional and punctured codes, GFFT for RS, rank-drop and KS tests for interleavers. Research in Sep 2026 found **no public implementation** of these methods anywhere. | Rivals use ad-hoc search or trial decoding; deep-learning papers only pick among trained classes and release no code |
+| D9 | **An open, benchmarked implementation of the literature's blind code and interleaver identification methods, chained from raw IQ:** GJETP/dual-code for convolutional and punctured codes, GFFT for RS, rank-drop and KS tests for interleavers, soft syndrome scoring for LDPC. Blind FEC itself is *not* unique (sigma; R&S CA250 for conv/RS/BCH) — the claim is the open, benchmarked implementation plus automatic interleaver recovery in the same chain. | sigma uses its own methods, unbenchmarked against the literature; vendors document no automatic interleaver recovery; deep-learning papers release no code |
 
 **Talking point for judges:** RadioML, the dataset most rivals cite, has SNR labels off by tens of dB, a noise-only AM-SSB class (2016.10a), a wrong class-name mapping in 2018.01A, and a non-commercial licence. We train on our own impaired generator and use RadioML only as a benchmark, with corrected labels.
 
@@ -372,7 +378,8 @@ Our column shows **targets** and must say so on the slide. The point is to show 
 |---|---|---|---|---|---|---|
 | Open source & indigenous | ✅ | ✅ MIT | ✅ | ✅ | ✅ | ❌ ITAR |
 | Web GUI, air-gapped | ✅ | Desktop | ✅ | ✅ | Desktop + web | Desktop |
-| Blind FEC (conv + RS + LDPC) | ✅ | ✅ | Conv only | Conv + RS | Catalogue | ✅ |
+| Blind FEC (conv + RS + LDPC) | ✅ | ✅ | Conv only | Conv + RS | Catalogue | Not documented |
+| Automatic interleaver recovery chained to FEC | ✅ | ✅ (incl. PR seed search) | Block | ✅ | Catalogue | Not documented |
 | Verified decode + false-accept rate published | ✅ | Partial | ✅ | ❌ | Partial | ? |
 | DL AMC on public datasets | ✅ | ❌ | ❌ | ❌ | ❌ | ? |
 | Committed Indian off-air recordings | ✅ | ❌ | AIR carriers | ❌ | ❌ | — |
@@ -385,6 +392,42 @@ Our column shows **targets** and must say so on the slide. The point is to show 
 ## 10. How to refresh this document
 
 - **Automated:** the `rival-scan` custom skill ([CLAUDE_SKILLS_MCP §8](../.claude/CLAUDE_SKILLS_MCP.md#8-custom-project-skills); not created yet) will re-run the searches and diff the results against this file. Until it exists, run the queries below by hand.
-- **Queries used on 26 Sep:** `SIH26147`, `SIH 26147`, `26147 in:name,description,readme`, `iq wav signal parameter extraction`, `NTRO signal analysis`, `automated model analysis .IQ .wav`, `modulation classification iq wav created:>2026-08-15`, and `sigmf created:>2026-08-20`.
-- **Before each pitch:** re-check the top 8. `sigma` and `Pinpoint` were both pushed on the day of this snapshot.
+- **Queries used on 26 and 30 Sep:** `SIH26147`, `SIH 26147`, `26147`, `26147 in:readme`, `iq wav signal`, `iq wav analysis`, `blind signal analysis`, `signal parameter extraction`, `blind fec`, `interleaver identification`, `NTRO`, `rf signal intelligence created:>2026-08-15`, `26147 in:name,description,readme`, `iq wav signal parameter extraction`, `NTRO signal analysis`, `automated model analysis .IQ .wav`, `modulation classification iq wav created:>2026-08-15`, and `sigmf created:>2026-08-20`.
+- **Before each pitch:** re-check the top 8 (`gh api repos/OWNER/REPO/commits?per_page=15`). sigma, ICHNOVA, Pinpoint and arachknight66 were all pushed the day before the 30 Sep scan.
 - **Unauthenticated GitHub API limit:** 60 requests/hour. Run `gh auth login` to raise it.
+
+---
+
+## 11. References
+
+Verified against publisher records (Crossref, arXiv, vendor PDFs) on 29–30 Sep 2026. Plan methods cite these by author and year.
+
+**Methods**
+1. O'Shea, Roy & Clancy, "Over-the-Air Deep Learning Based Radio Signal Classification", IEEE JSTSP 12(1):168–179, 2018, doi:10.1109/JSTSP.2018.2797022 — deep AMC; RadioML baseline.
+2. Marazin, Gautier & Burel, "Blind recovery of k/n rate convolutional encoders in a noisy environment", EURASIP JWCN 2011:168, doi:10.1186/1687-1499-2011-168 — dual-code convolutional recovery. Punctured codes: Marazin et al., IET Signal Processing 6(2):122–131, 2012, doi:10.1049/iet-spr.2010.0343.
+3. Su et al., Scientific World Journal 2014, doi:10.1155/2014/798612 — correlation search over the dual vector (convolutional identification, M5).
+4. Sicot, Houcke & Barbier, "Blind detection of interleaver parameters", Signal Processing 89(4):450–462, 2009, doi:10.1016/j.sigpro.2008.09.012 — GF(2) rank: interleaver period and frame sync.
+5. Wee, Choi & Jeong, "Blind Interleaver Parameters Estimation Using Kolmogorov–Smirnov Test", *Sensors* 21(10):3458, 2021, doi:10.3390/s21103458 (not *Entropy*; not the similarly titled Kim et al., J. KICS 2020).
+6. Swaminathan, Madhukumar, Wang & Kee, "Blind Reconstruction of Reed-Solomon Encoder and Interleavers Over Noisy Environment", IEEE Trans. Broadcasting 64(4):830–845, 2018, doi:10.1109/TBC.2018.2795461.
+7. Moosavi & Larsson, "Fast Blind Recognition of Channel Codes", IEEE Trans. Commun. 62(5):1393–1405, 2014, doi:10.1109/TCOMM.2014.050614.130297 — soft syndrome test for catalogue codes (LDPC).
+8. Xu, Zhong & Huang, IEEE Access 7:101775–101784, 2019, doi:10.1109/ACCESS.2019.2930663 — convolutional (Forney) interleavers.
+9. Jeong, Yoon, Lee & Choi, ICICS 2011, doi:10.1109/ICICS.2011.6174276 — helical-scan (diagonal) interleavers.
+10. Qin et al., PLoS ONE 2015, doi:10.1371/journal.pone.0132114 — blind frame sync by column constancy (M6).
+11. G. Ewing, "Reverse-Engineering a CRC Algorithm" (2010), https://www.csse.canterbury.ac.nz/greg.ewing/essays/CRC-Reverse-Engineering.html — the differential (XOR) method behind blind CRC recovery (M6). CRC RevEng implements it but is GPL: method reference only.
+12. No paper recovers an absolute sampling rate from samples alone (time and rate scale together); Sanket ranks candidates and promotes one only by a structural match.
+
+**Standards**
+- CCSDS 131.0-B-5 (Sep 2023), TM synchronisation and channel coding: ASM `1ACFFC1D`, K=7 (171,133 octal), RS(255,223)/(255,239), interleave depths 1–5 and 8. CCSDS 132.0-B-3 (Oct 2021), TM space data link.
+- ITU-R M.1371-6 (02/2026) AIS; M.493-16 (12/2023) DSC; M.540-2, M.476-5, M.625-4 NAVTEX; M.584-2 paging (POCSAG).
+- SigMF v1.2.6 (Dec 2025), spec CC BY-SA 4.0.
+- Meteor-M LRPT has no official public specification. Community decoder documentation gives QPSK 72 kBd and an 80 kBd interleaved OQPSK mode (36 branches × 2,048 symbols, 8-bit sync every 80 symbols) over CCSDS coding ([usradioguy](https://usradioguy.com/meteor-satellite/), [Libre Space forum](https://community.libre.space/t/oqpsk-for-meteor-mn2-2-lrpt/4383), [SatNOGS DB M2-4](https://db.satnogs.org/satellite/VSVI-4798-5613-4587-2414/)). Confirm on real recordings before relying on it.
+
+**Datasets**
+- RadioML 2018.01A (DeepSig): synthetic with simulated channel effects (not over-the-air), 24 classes, 26 SNRs (−20…+30 dB), 2,555,904 × 1,024 IQ, CC BY-NC-SA 4.0. Documented flaws — SNR labels off by tens of dB, a noise-only AM-SSB class in 2016.10a, a wrong `classes.txt` in 2018.01A — from C. Spooner's CSP Blog (Aug and Sep 2020) and radioML/dataset GitHub issue #25.
+- TorchSig (MIT): Sig53/WidebandSig53 (Boegner et al., arXiv:2207.09918) renamed Narrowband/Wideband in v0.6.0; 2.x is a configurable generator.
+- HisarMod2019.1: 26 classes, 5 channel types, 780,000 × 1,024 IQ, −20…18 dB, doi:10.21227/8k12-2g70 (label quality questioned).
+- Real Meteor-M2-4 LRPT CF32 recordings with decoded images: [Kishore-T20/meteor-m2-4-cf32-dataset](https://github.com/Kishore-T20/meteor-m2-4-cf32-dataset) (Sep 2026) — relevant to the M8 satellite target, but **no licence**, so usable only with the author's permission. [LakeShark Signal Corpus](https://github.com/SAMS0N1TE/LakeShark-Signal-Corpus) (MIT repo, CC0/CC-BY recordings, reviewed SigMF `cu8`) was still empty on 13 Sep.
+- Real-World IQ (Mendeley Data, Jan 2026): 7 classes, 1,024-sample frames, over the air, CC BY 4.0, doi:10.17632/tjzsbph49x.2. "CORAL" is a domain-adaptation method, not a dataset.
+
+**Law (India)**
+- Telecommunications Act 2023 (No. 44): §20 (lawful interception) in force 26 Jun 2024 (S.O. 2408(E)); §3(1) (authorisation, incl. possessing radio equipment) reportedly notified 23 Jun 2026 (secondary report; S.O. number not found); Interception Rules 2024, G.S.R. 754(E). Whether the final radio-equipment possession rules replaced the Feb 2025 draft is unconfirmed.

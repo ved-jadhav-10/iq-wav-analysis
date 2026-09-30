@@ -1,4 +1,4 @@
-"""Frame synchronisation and CRC checks on a decoded bit stream (PROTOTYPE_PLAN P1).
+"""Frame synchronisation and CRC checks on a decoded bit stream (PLAN M6).
 
 A catalogued sync word is searched for with up to MAX_SYNC_ERRORS bit errors, in both
 polarities (a 180-degree phase ambiguity through a code with odd-weight generators inverts

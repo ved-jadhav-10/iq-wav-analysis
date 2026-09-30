@@ -1,4 +1,4 @@
-"""Non-coherent 2-FSK demodulation to soft bits (PROTOTYPE_PLAN P2).
+"""Non-coherent 2-FSK demodulation to soft bits (PLAN M3).
 
 1. The frequency discriminator: the phase step between successive samples, in cycles/sample.
 2. Resampled to SPS samples per symbol at the rate from `fsk_symbol_rate`.

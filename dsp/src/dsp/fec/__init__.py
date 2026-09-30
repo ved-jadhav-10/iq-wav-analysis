@@ -1,1 +1,1 @@
-"""Forward-error-correction decoders (PROTOTYPE_PLAN P1+)."""
+"""Forward-error-correction decoders (PLAN M5)."""

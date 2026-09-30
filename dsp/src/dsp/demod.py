@@ -1,4 +1,4 @@
-"""PSK/QAM demapping to soft bits (PROTOTYPE_PLAN P1, P2).
+"""PSK/QAM demapping to soft bits (PLAN M3).
 
 Gray mappings match `dsp.synth.modulate` (copied here so product code doesn't import synth):
 - BPSK: 0 -> +1, 1 -> -1.

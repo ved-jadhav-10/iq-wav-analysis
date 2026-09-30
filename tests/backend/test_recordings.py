@@ -83,7 +83,7 @@ def test_a_detection_reports_a_box_in_seconds_and_hz_with_its_own_evidence(
     assert set(params) == {"center_frequency", "bandwidth", "start_sample", "stop_sample", "snr_db"}
     for p in params.values():
         assert p["level"] == "ESTIMATED"
-    # The per-detection analysis (PROTOTYPE_PLAN P1): the real chain runs here (detect through
+    # The per-detection analysis (PLAN M3-M6): the real chain runs here (detect through
     # FEC), but this fixture's signal is uncoded and unframed (`frame=None`), so it can never
     # decode - no VERIFIED, no frames, and the honest reason is stated.
     analysis = d["analysis"]

@@ -1,4 +1,4 @@
-"""Outer Reed-Solomon decoding via `galois` (PROTOTYPE_PLAN P2; project rule: use `galois` for
+"""Outer Reed-Solomon decoding via `galois` (PLAN M5; project rule: use `galois` for
 finite fields and RS, don't depend on scikit-commpy/pyldpc).
 
 Supports CCSDS 131.0-B's RS(255, 223) in its **conventional (polynomial) basis** representation

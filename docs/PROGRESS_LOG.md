@@ -1,108 +1,86 @@
 # Sanket — progress log
 
-The detailed, dated record of what landed for each milestone: the long narrative that used to live
-in `PLAN.md` §0. `PLAN.md` §0 now holds only the current snapshot (a stage table and the open
-gates); this file is where the story of how each stage got there is kept, verbatim, as it was
-written at the time. Newest entries at the top. [PLAN §0](PLAN.md#0-progress) is still the only
-place *current* status is tracked — this file never gets edited to update status, only appended to.
+A dated history of what landed, newest first. It is append-only: current status lives only in [PLAN §0](PLAN.md#0-progress), and each entry here is written once, when its work lands. Numbers link to `bench/results/`.
 
-## 28 September 2026 — M0–M2 narrative, carried over from PLAN.md §0 before its rewrite
+## 30 Sep 2026 — docs consolidated, rivals re-scanned
 
-**Overall:** M0 is done: CI is green on Windows and Ubuntu, and `sanket` starts one local process
-that serves the workspace UI. M1 is done: the evidence model, the results schema, readers for
-every planned container, the raw-format sniffer, sample-rate candidates, the ground-truth
-generator and bench v0 exist; 0 silent defaults is tested for every reader, and the sniffer
-proposed 0 wrong formats on the 864-file sniffer bench, the 200-file dev set, the 1000-file null
-set and 84 files from TorchSig, an independent generator. M2 is in progress: the DSP core
-(streaming spectrogram, detection, channelisation, estimation, analog AM/FM detection, a reader
-dispatcher) exists and is tested against dsp.synth ground truth; STANDARDS §8's detection/
-estimation numbers are measured in `bench/` — recall, rate-error and CFO-error meet their targets,
-but SNR-error misses ±1 dB below 15 dB (a single estimator; M2M4 and eigenvalue/MDL aren't built)
-and false detections miss ≤ 0.05/scene at every bucket on both M-FSK (traced to unshaped tone
-splatter in `dsp.synth`, with a three-way conflict found in the obvious fix) and, untraced so far,
-the linear modulations too; a 4 GiB file streams through detection with RSS growth held under
-512 MiB. Sanket can now open a real recording end to end from the UI: the server builds a real STFT
-tile pyramid and runs real detection, the frontend opens a recording by path and renders both from
-`/api/v1/recordings`/`/api/v1/tiles` in place of the demo texture — detection boxes on the
-waterfall and PSD, a real detections list, and real `Parameter` evidence cards for each one — with
-the recording's own Assumptions also shown as evidence cards; sync, classify, demod and their
-evidence are still M3+ work, so those panels say so rather than showing demo fixtures against a
-real waterfall. M2's exit gate still needs the SNR-error and false-detection numbers fixed and
-first-tile timing measured (and probably fixed — the pyramid and detection both build from a full
-file read today); M2's own scope also still needs `dsp/estimate/`'s and `dsp/analog.py`'s outputs
-wrapped as `Parameter`s the same way detection's now are, LOD tiling, and generated frontend types.
-M3–M8 have not started.
+- One plan: the separate prototype/demo track is gone, and its work is recorded as built items in PLAN's milestones. The dossier, Q&A, prototype plan, demo guide and research reports were folded into PLAN, PROBLEM_STATEMENT, STANDARDS, UI and README, then deleted.
+- PROBLEM_STATEMENT gained requirement IDs R1–R5 and G1–G3, our reading of each, and the confirmed SIH 2026 facts.
+- STANDARDS got the 29 Sep research corrections: the Krypto500 price is from a 2012 review; the W-CODE price was dropped; R&S CA250 and Wavecom W-BitView automate convolutional/RS code detection, so our claim narrowed to automatic interleaver recovery chained to blind FEC from IQ; CCSDS and ITU issue numbers were added; CORAL is a method, not a dataset. It also got the 30 Sep rival re-scan (about 60 public SIH26147 repos, up from 35; the strongest newcomer is Venkata-Manoj/RF-signal-analysis) and a references section.
+- Plan additions taken from the rival scan and research, each adopted only where it beats what we had:
+  - blind CRC recovery (M6)
+  - a Meteor-M LRPT entry, whose 80k mode is a real convolutional interleaver (M3 OQPSK, M5, M6)
+  - drift and Doppler tracking in 1.0 (M2, M3)
+  - verified NAVTEX/POCSAG text (M6)
+  - capture-quality parameters (M2)
+  - recording and results SHA-256 in results and exports (§2, M7)
+  - a chain-matrix bench (M5)
+  - independent decoder oracles in tests (M5)
+  - real-recording expectations committed before the first run, and every real-recording failure turned into a synth regression test (M8)
+- Build order set: PS coverage first (M7 inputs, M5, M6, M3), then M4, then real recordings. A code audit added six Open gates (PLAN §0).
 
-**Idea submission** ([§9](PLAN.md#9-external-dates-sih))
-- [x] Plan, standards to beat, source dossier and research report
-- [x] Workspace UI to screenshot, labelled *synthetic demo data*
-- [x] Official PS text, category and theme recorded in [PROBLEM_STATEMENT.md](PROBLEM_STATEMENT.md)
-- [ ] Confirm the submission template on sih.gov.in
-- [ ] Re-run the rival scan ([STANDARDS §10](STANDARDS_TO_BEAT.md#10-how-to-refresh-this-document)); `gh` is logged in
-- [ ] Build the deck; every number traced to STANDARDS or labelled as a target
+## 28 Sep 2026 — workspace sections and layout
 
-**M0**
-- [x] Vite + React 19 + TypeScript (strict) + Tailwind 4 frontend
-- [x] Product identity (§4): name, mark, colour tokens, evidence levels, type, colormaps
-- [x] Analysis workspace on a deterministic synthetic capture: WebGL2 waterfall, uPlot PSD, constellation and FSK tone views, evidence cards, hypothesis ledger, frames and assumptions tables
-- [x] 26 unit tests pass; lint, typecheck and production build clean (all re-run 27 Sep)
-- [x] Browser check in both themes at 390/1180/1512 px: no console errors, no requests beyond localhost
-- [x] Python 3.12 + uv workspace for `dsp/`, `ml/`, `backend/`, `bench/`; ruff, pyright (strict on `dsp/`) and pytest clean; `ml/` kept out of the product install
-- [x] FastAPI app serving the built frontend and `GET /api/v1/health`; `sanket` start command binding 127.0.0.1 by default; no CDN-backed `/docs` pages
-- [x] Python tests may only open loopback connections (pytest-socket)
-- [x] pre-commit hooks (large-file guard, ruff, ESLint, licence check)
-- [x] `THIRD_PARTY.md` generated from the lockfiles by `tools/third_party.py`, which fails on GPL/AGPL, non-commercial or unrecognised licences
-- [x] Playwright smoke test against `sanket`: every request outside 127.0.0.1 is aborted and fails the test; no console errors
-- [x] CI on Windows and Ubuntu (`.github/workflows/ci.yml`): green on both, including the offline smoke test
-- [x] Claude Code setup for M0 ([tooling map](../.claude/CLAUDE_SKILLS_MCP.md#1-tooling-by-milestone)): project MCP servers, permissions, `plan-status`, and the `ponytail` and `frontend-design` plugins (project scope)
+- The workspace was split into Survey and Waterfall sections, with the Assumptions modal, a full-screen per-detection deep dive and a draggable, persisted split ([UI.md](UI.md)).
+- Three layout bugs were fixed, all a container sizing itself to its content: a grid with no `grid-template-rows`, a missing `flex-1` on the plot column, and the waterfall canvas ratchet (the `ResizeObserver` wrote a grown size back and held the plot at 2,681 px inside a 956 px box). The lesson, now in the UI.md invariants: verify layout by measuring the DOM, not from screenshots.
 
-**M1**
-- [x] Evidence model (`dsp/evidence.py`) with the honesty rules enforced at construction, and `promote()` for downstream proof
-- [x] All 28 SigMF `core:datatype` formats parsed, decoded to normalised samples and encoded; round-trip test for every format; IQ/QI swap
-- [x] Chunked, random-access sample reader with header offset and trailing-byte count
-- [x] SigMF metadata to Parameters: datatype, sample rate and centre frequency MEASURED, or UNKNOWN with a resolve hint, never defaulted; file size checked against the datatype
-- [x] JSON schema generated from the evidence model (`dsp/results.schema.json`, honesty rules included, stale-schema test); results JSON with `schemaVersion` and the `Assumptions` block (datatype, data offset, sample rate, centre frequency, IQ order — each stated, UNKNOWN if need be)
-- [x] `needsReview` in the results: every value taken on a convention rather than evidence (`Parameter.convention`), derived from the parameters and rejected on input if it disagrees with them
-- [x] Raw files without metadata: format sniffer with ranked candidates (`dsp/ingest/sniff.py`), raw ingest with every layout fact stated (`dsp/ingest/raw.py`), and a confusion matrix over all 28 formats in [`bench/results/sniffer.md`](../bench/results/sniffer.md): 0 wrong formats on 864 files
-- [x] Sample-rate candidates (`dsp/ingest/rate.py`): file-name hints (rate and centre-frequency tags, the gqrx naming scheme, rate units, SDR#/HDSDR `…Hz` names) and standard SDR device rates, ranked with the recorders that write the file's datatype first; a raw file's sample rate and centre frequency stay UNKNOWN with the candidates as alternatives. Structural-match test: every (candidate, recognised symbol rate) pair counted, tolerance 3σ within 0.01–0.1 %, file-name candidates and all candidates as two tiers sharing α = 1 %, and a match that implies more than one rate stays UNKNOWN; the null promotion rate is tested ≤ α. *M2's symbol-rate estimator calls it. A WAV header states its sample rate (MEASURED), so the `auxi` chunk contributes the centre frequency.*
-- [x] WAV (`dsp/ingest/wav.py`): RIFF, RIFX, RF64/BW64 and Wave64; 8/16/24/32-bit integer and 32/64-bit float PCM, plain or `WAVE_FORMAT_EXTENSIBLE` (24-bit is `ri24_le`/`ci24_le`, a stated extension SigMF can't express); the `auxi` chunk before or after the data (centre frequency and start time, MEASURED); truncated and unfinished data chunks read with a warning; compressed encodings and more than two channels UNKNOWN with the reason. Stereo quadrature check on blocks sampled across the file: impropriety (mirror-frequency correlation) and spectral asymmetry against its Gamma null → I/Q as HYPOTHESIS, audio-like channels UNKNOWN with an analyst prompt, or I/Q on a stated convention under `needsReview`. Tested against the standard library's `wave` writer. *Mono WAV's analytic-signal path and HYPOTHESIS cap on digital labels land with the stages that use them (M2–M4).*
-- [x] Other containers, all behind one chunked reader interface (`dsp/ingest/reader.py`: byte segments, kept as arrays for per-packet formats):
-  - SigMF archives read in place from the tar (nothing extracted), multi-capture datasets with per-capture `header_bytes`, Non-Conforming Datasets via `core:dataset` (a bare file name, never a path) with `trailing_bytes`; multi-channel datasets UNKNOWN; a changing centre frequency is warned
-  - NumPy `.npy` (header parsed as a literal, never executed; (N, 2) real arrays are I/Q by a stated convention; planar layouts and native-order dtypes UNKNOWN)
-  - SDRangel `.sdriq` (header CRC-32 checked; a mismatch drops the header values to HYPOTHESIS; 24-bit builds flagged as 32-bit words)
-  - MIDAS Blue type 1000/1001 (both byte orders, S/C × B/I/L/F/D, rate from `xdelta`, centre frequency from an `RF_FREQ` keyword, detached `.det` data)
-  - VITA 49 packet recordings, plain or VRL-framed: stream, class ID, timestamps and trailer handled; rate, RF frequency and payload format from context packets; the sniffer proposes a format when no payload format is sent; extra streams warned
-  - FLAC/MP3/Ogg via `soundfile` (libsndfile, LGPL): decoded on demand, stereo quadrature check, lossy codecs flagged so digital labels are capped at HYPOTHESIS
-  - `.gz`/`.zip` decompressed into a target directory, disk cost reported first; refuses path traversal, symlinks, encrypted members, and bombs (absolute limit and 1000:1 ratio, checked on bytes produced); nothing partial is left
-  - numbered file sequences (raw or WAV) read as one recording; formats must agree; gaps in the numbering are warned
-  - `THIRD_PARTY.md` now also lists native libraries bundled in wheels (NumPy's OpenBLAS and GCC runtime, libsndfile and its codecs); the licence policy allows GPL only under the GCC Runtime Library Exception
-  *Tested against files written by independent writers where one exists (`np.save`, `tarfile`, `wave`, `gzip`, `zipfile`, libsndfile); `.sdriq`, Blue and VITA 49 test files are written from the verified layouts.*
-- [x] 0 silent defaults (`tests/dsp/test_no_silent_defaults.py`): every reader, given the barest file its container allows (named with rate and centre-frequency tags), reports each fact the file doesn't state (sample format, data offset, sample rate, centre frequency) as UNKNOWN or HYPOTHESIS with evidence, and the facts it does state as MEASURED; IQ order is never MEASURED; a file-name hint is a candidate, never a value. *It found two gaps, now fixed: an `.sdriq` header with a bad CRC still called its data offset MEASURED, and SigMF metadata without a sample rate or centre frequency offered no file-name or device-rate candidates.*
-- [x] Recorder file extensions as sniffer hints (`dsp/ingest/sniff.py`): `.cu8`, `.cs8`/`.sc8`, `.cs16`/`.sc16`, `.cf32`/`.fc32` and `.cfile` each name the format their recorders write; `.raw`/`.bin`/`.dat`/`.iq` name none. A hint only puts its format first among the candidates of an UNKNOWN tie; it never decides a format, breaks a tie or raises a level, and an extension that contradicts the sniffer's proposal is a warning.
-- [x] Ground-truth generator `dsp/synth` (NumPy): bits → frames with sync word and CRC → scrambler → Reed-Solomon → byte interleaver → convolutional/LDPC/repetition code → bit interleaver → PSK/QAM/FSK/AM/FM mapping → RRC or rectangular pulses → non-integer samples per symbol; impairments (CFO, phase noise, IQ imbalance, multipath and fading, clock offset and drift, AGC, clipping, AWGN), an explicit noise class, multi-signal scenes; SigMF output with the truth in annotations; everything regenerable from (scene, seed)
-- [x] TorchSig 2.2.0 as an independent generator, dev-time only: `bench/torchsig/export.py` runs under WSL2 in its own environment (CPU PyTorch), exports 14 classes × 6 files with TorchSig's impairments and labels as SigMF, and `uv run bench run torchsig` scores them ([`bench/results/bench-v0-torchsig.md`](../bench/results/bench-v0-torchsig.md): 0 ingest mismatches, 0 wrong formats on 84 files). Nothing in the product imports it.
-- [x] Bench v0 (`uv run bench generate|run dev|null|sealed`): every file follows from its seed (`bench/presets.py`), so only seeds and results are committed; a sealed set whose seeds are fixed in `bench/sealed/manifest.json` and whose results are totals only, not run during development; the null set (noise, uncoded bits, repetition code, idle flags). Results: [dev](../bench/results/bench-v0-dev.md) (200 files: 0 ingest mismatches, 0 wrong formats) and [null](../bench/results/bench-v0-null.md) (1000 files: 0 wrong formats, 0 VERIFIED values). *Accepted decodes are 0 by construction until FEC and framing land (M5/M6), and the results say so.*
+## 28 Sep 2026 — first end-to-end decode chain
 
-**M2**
-- [x] Reader dispatcher (`dsp/ingest/dispatch.py`): picks the reader for a file from its header magic and name, so a caller no longer has to pick one; refuses a compressed file with the reason (decompress first); exposes whether a recording is lossy, mono/real, or a raw file's real/complex reading tied
-- [x] Streaming Welch spectrogram and PSD (`dsp/spectrum.py`): Hann/50 % overlap frames, cells bounded by `MAX_CELLS` regardless of recording length, real input keeping only non-negative frequencies; even- and odd-numbered frames accumulated separately for the split-sample significance test below
-- [x] Detection (`dsp/detect.py`): OS-CFAR noise floor (Gamma-quantile corrected), candidates chosen on even frames and tested on odd ones so the significance test isn't biased by the selection it's given, Bonferroni-corrected over cells and searches, morphological clean-up and connected-component labelling, multiple FFT sizes plus a whole-recording integrated search merged finest-frequency-first, sidelobe absorption, time-edge refinement, I/Q-image mirroring
-- [x] Channelisation (`dsp/channel.py`): streaming mix + Kaiser low-pass + decimate to a detection's band with margin; a real source's negative-frequency mirror is removed by the filter even when no decimation is needed
-- [x] Estimation (`dsp/estimate/`): a generic significant-spectral-line finder (`lines.py`) behind symbol rate (linear modulations via |x|², FSK via tone-transition rate), carrier offset (M-th power, gated off for QAM and for 8PSK's too-weak line), occupied bandwidth, SNR (PSD in-band vs guard band; the other two estimators PLAN calls for, M2M4 and eigenvalue/MDL, aren't built yet, so there's no cross-check by agreement), RRC roll-off fit, and cumulants
-- [x] Analog AM/FM detection (`dsp/analog.py`): envelope and instantaneous-frequency statistics tested against the floor AWGN alone would produce at the signal's own power, with a kurtosis gate so M-FSK's discrete tones aren't mistaken for FM; SSB and Morse CW aren't implemented (dsp.synth has no generator for either, so nothing claims to detect them)
-- [x] `dsp-reviewer` run over the new modules; three real bugs it found are fixed: a real recording's mirror image surviving channelisation when no decimation was needed, `welch()` always treating input as complex, and `SnrEstimate.signal_power` off by a factor of `nfft` relative to `noise_density`
-- [ ] STANDARDS §8 detection and estimation targets measured in `bench/` (`uv run python -m bench.detect_bench`, [`bench/results/bench-v0-detect.md`](../bench/results/bench-v0-detect.md): 8 scenes × 8 modulations × 8 SNR buckets, clean AWGN, one signal per scene — STANDARDS' own "multi-signal bench" wording isn't measured yet, only this single-signal characterisation curve). Recall meets its target (100%) at every bucket; rate-error meets ≤ 0.1% at ≥ 10 dB; CFO-error meets ≤ 1% of Rs wherever it has coverage. **SNR-error does not meet ±1 dB over 0–20 dB**: median error is −8.7/−8.6/−8.2/−6.6 dB at 0/3/6/10 dB, only landing inside ±1 dB at 15 and 20 dB — `snr_psd` (`dsp/estimate/params.py`) is a single estimator whose in-band/guard-band split degrades as the signal nears the floor; M2M4 and eigenvalue/MDL, still to build, are what PLAN's own design relies on to catch this by agreement. False detections don't meet the ≤ 0.05/scene target at any bucket, and **not only on M-FSK**: linear modulations alone already score 0.20/scene at 3, 6 and 20 dB (see the split column in the bench table), which the M-FSK explanation below doesn't cover — the extra detections there haven't been traced yet, and `merge`/`absorb_sidelobes` (`dsp/detect.py`) are the likely place to look first. For M-FSK, the bench's own notes trace it to `dsp.synth.modulate.fsk` shaping no pulse onto the frequency trajectory, which splatters real energy between tones that `merge_tone_combs`' honest "no spacing pattern, no merge" rule correctly refuses to absorb — a generator limitation, not a detector bug, for that share of it. A fix was attempted and `dsp-reviewer`-checked: `fsk()` gained an optional Gaussian premodulation filter (`bt`, GFSK-style; `dsp/synth/modulate.py`'s `_gaussian_taps`), wired through `SignalSpec.fsk_bt`. The review caught that the first sweep (`bt` = 1.0, 2.0) had picked values too weak to matter; a follow-up sweep over `bt` in [0.02, 2.0] against the full test suite found a genuine three-way conflict instead: `bt` in roughly [0.02, 0.15] does absorb the splatter into one detection, but by blurring M-FSK's discrete tone histogram toward FM's continuous one it fails `dsp.analog`'s kurtosis gate, and by smearing the sharp transitions `fsk_symbol_rate`'s edge-rate comb depends on, it breaks the FSK symbol-rate estimate; `bt` in [0.2, 0.4] fails two of those three at once; only `bt` = 0 or `bt` ≳ 0.5-2.0 (weak enough to be a near no-op) pass every test, and those barely move the bench numbers. `fsk_bt` stays 0 (unchanged behaviour) by default; still unmet, and needs a filter that cuts splatter without erasing the discrete-tone signature the other two stages rely on, not just a different `bt`
-- [x] A 4 GiB file streams through detection with bounded memory (`tests/dsp/test_scale.py`, run explicitly with `-m slow` since it writes a multi-GB file): RSS growth stays under 512 MiB streaming a 4 GiB `cf64_le` file, and a planted burst is still found
-- [x] Server STFT tile pyramid with max-pooling (`dsp/tiles.py`: quantised uint8 dB, pooled levels, fixed-size tiles) built and served from `backend/src/backend/recordings.py` over `POST /api/v1/recordings` and `GET /api/v1/tiles/...`, tested in `tests/dsp/test_tiles.py` and `tests/backend/test_recordings.py`
-- [x] The frontend's switch from the demo texture to the server tiles: an "Open a recording by path" control in `TopBar` calls the new `frontend/src/lib/api.ts` client; `frontend/src/lib/waterfallSource.ts` adapts a `RecordingInfo` + fetched tile grid into the same shape `Waterfall`/`PsdPlot` already render (never defaulting a sample rate — a recording with an UNKNOWN rate is refused with that reason, not shown with a fabricated axis); the recording's own Assumptions render as real evidence cards (`RecordingAssumptionsPanel`, reusing `EvidencePanel`'s `ParameterCard`); panels with no backend data yet (detections, pipeline, symbol view, per-stage evidence) say so instead of showing demo fixtures against a real waterfall. Verified end to end in a browser (both themes, no console errors) against a `dsp.synth`-generated SigMF file; `frontend/src/lib/waterfallSource.test.ts` covers the adapter.
-- [ ] First tile ≤ 2 s: unmeasured, and probably not met on a large file as built — `RecordingStore.open` (`backend/src/backend/recordings.py`) reads the whole file and builds the full pyramid before `POST /recordings` returns, so no tile is servable until the whole file has been read. Needs either a fast coarse first pass or building the pyramid in the background while early tiles are served, plus a Playwright timing assertion once it's true
-- [x] Detection results as `Parameter`s (`dsp/detect.py`'s `detection_parameters`): each detection's centre frequency, bandwidth, start/stop and SNR, ESTIMATED with a stated uncertainty, in cycles/sample and samples (no sample rate needed) — a `dsp.results.Signal` model (`id` + `stages: tuple[StageResult, ...]`) carries this in `Results.signals`, with `needsReview` extended to cover signal-scoped conventions too. `dsp/estimate/`'s and `dsp/analog.py`'s outputs are still plain dataclasses, not yet wrapped
-- [x] Detection boxes on the real waterfall from real results: `RecordingStore.open` (`backend/src/backend/recordings.py`) now also runs `dsp.detect.detect()`; `RecordingInfo.detections` (`backend/src/backend/app.py`) converts each detection to a box in seconds/Hz (via the recording's own known sample rate — empty when it's UNKNOWN, same rule as `freqsHz`) plus its Parameters. The frontend's `DetectionsPanel` (left nav list) and `DetectionEvidencePanel` (real evidence cards, reusing `EvidencePanel`'s `ParameterCard`) replace the "detection isn't built yet" placeholder for a real recording; `Waterfall`/`PsdPlot` now accept a `DetectionMarker` (id/label/level/boxes), a structural subset both the demo `Detection` and a real one satisfy, so the same box-drawing code renders both. Verified end to end in a browser (both themes, no console errors) against a `dsp.synth`-generated SigMF file: detection matched the file's own ground truth almost exactly (centre 0.1505 cycles/sample vs the true 0.15 offset). Two real bugs the check itself found and fixed: `DetectionsPanel`'s headline first divided the *raw cycles/sample Parameter* by 1000 as if it were Hz (showing "0.0 kHz" instead of the true value) — fixed to read the box, which is already in Hz; and `Workspace`'s `view` state didn't reset when switching from the demo to a real recording (or between recordings), so the first view after opening one could show a sliver of the true extent — fixed by keying `Workspace` on the recording id so it remounts with fresh view/selection state. No modulation kind, per-stage rail, hypothesis ledger or frames yet — those stay M3+/M4/M6, honestly labelled as not built
-- [ ] Level-of-detail tile rendering: the frontend fetches only `levels[0]` and stitches the whole grid (`App.tsx`'s `openRecording`) rather than switching level with zoom, so a long recording shows no extra detail when zoomed in
-- [ ] Estimation still missing per PLAN §5: symbol-rate refinement by cyclic autocorrelation and FAM/SSCA confirmation, the occupied-bandwidth fallback below β ≈ 0.1, and (see above) the second and third SNR estimators; and, per the item above, still not wrapped as `Parameter`s or wired into a `Signal`
-- [ ] Analog AM/FM reports a label only, not the measurements PLAN §5 asks for (carrier, occupied bandwidth, FM deviation); no SSB, Morse CW or keying speed; nothing yet routes an analog signal away from the digital chain; not wrapped as `Parameter`s either
-- [ ] Real/complex ties aren't carried forward as two branches yet (no stage graph exists to carry them); the interim "complex by convention" rule this was meant to replace is still in force
-- [ ] `frontend/src/lib/evidence.ts` and `frontend/src/lib/api.ts` are still hand-written, not generated from the OpenAPI schema as PLAN §3 describes for M2
-- [ ] Frequency-hopper clustering and co-channel overlap detection (stretch items)
+- `dsp/analyse.py` runs per detection:
+  - channelise, then symbol rate, the analog check and the 2-FSK path
+  - RRC matched filter with Oerder-Meyr timing and M-th-power carrier recovery
+  - cumulant ranking over BPSK/QPSK/8PSK/16QAM, trying every rotation
+  - soft Viterbi, K=7 r½
+  - an 8-entry block-interleaver catalogue aligned by the code's parity syndrome
+  - RS(255,223) CCSDS via `galois`
+  - CCSDS ASM framing with a CRC-16 catalogue
+  - a Bonferroni-corrected ledger and shuffled-bit re-runs
 
-**Next (as of 28 Sep, before the prototype sprint):** two exit-gate numbers were still open — SNR-error (±1 dB over 0–20 dB; then off by 6–9 dB below 15 dB) and false detections (≤ 0.05/scene; then failing on linear modulations too, not only M-FSK). A single Gaussian premod filter on `dsp.synth.modulate.fsk` can't resolve the M-FSK half alone (see M2's checklist for the three-way conflict a full sweep found), and the linear-modulation false detections hadn't been traced yet. Beyond the exit gate, M2's own scope still needed `dsp/estimate/`'s and `dsp/analog.py`'s outputs wrapped as `Parameter`s the same way detection's now are, the LOD tiling, the remaining estimators and analog measurements, and the generated frontend types PLAN §3 calls for. At this point the project switched into prototype mode ([PROTOTYPE_PLAN.md](PROTOTYPE_PLAN.md)) to reach a demo; M2's own exit gate is picked back up in Phase P4, before any M3 production work.
+  It returns a `DetectionReport` (`dsp/report.py`), which the backend runs on open and the UI draws.
+- `tools/make_demo.py` writes three synthetic sample recordings and checks every frame against the truth. The coded QPSK and BPSK decode to VERIFIED (44/44 and 24/24 frames), FM is labelled analog, and uncoded QPSK stays UNKNOWN with the reason.
+- A browser run-through fixed the waterfall time axis (one row is `hop` samples), the "Real recording" badge on synthetic files (now read from SigMF `core:recorder`), a `NaN` in an empty ledger, and unrounded values.
+- pytest-xdist and a CI Playwright cache were added.
+
+## 28 Sep 2026 — M2 DSP, bench and real tiles
+
+- Built:
+  - the reader dispatcher
+  - streaming Welch spectrogram/PSD
+  - OS-CFAR detection with a split-sample significance test
+  - channelisation
+  - estimation: symbol rate, CFO, bandwidth, SNR, roll-off, cumulants
+  - analog AM/FM with a kurtosis gate
+  - the server tile pyramid
+  - detections as `Parameter`s with boxes on the real waterfall
+- [Detection bench](../bench/results/bench-v0-detect.md): recall 100 % in every bucket, rate error ≤ 0.1 % at ≥ 10 dB, CFO ≤ 1 % of Rs. SNR error misses ±1 dB below 15 dB, and false detections miss ≤ 0.05/scene (both Open gates). A 4 GiB file streams with RSS growth < 512 MiB.
+- The `dsp-reviewer` found three real bugs, all fixed:
+  - a real recording's mirror image survived when no decimation was needed
+  - `welch()` always treated input as complex
+  - `SnrEstimate.signal_power` was off by a factor of `nfft`
+- The M-FSK false detections were traced to unshaped tone splatter in `dsp.synth`. A Gaussian premod filter sweep over bt 0.02–2.0 found a three-way conflict: small bt merges the splatter but breaks the analog kurtosis gate and the FSK rate estimate, and large bt changes nothing. `fsk_bt` stays at 0.
+
+## 27 Sep 2026 — M1: ingest, evidence model, ground truth, bench v0
+
+- Built:
+  - the evidence model with honesty rules at construction
+  - the generated results schema with `needsReview`
+  - all 28 SigMF datatypes round-tripped
+  - readers for WAV/RF64/Wave64 (with the stereo quadrature check), SigMF archives, `.npy`, `.sdriq`, Blue, VITA 49, FLAC/MP3/Ogg, `.gz`/`.zip` and numbered sequences
+  - the format sniffer, with [0 wrong formats on 864 files](../bench/results/sniffer.md)
+  - sample-rate candidates
+  - `dsp.synth`
+  - TorchSig (WSL2) as an independent generator
+  - bench v0: [dev](../bench/results/bench-v0-dev.md) 200 files and [null](../bench/results/bench-v0-null.md) 1,000 files, with 0 ingest mismatches and 0 wrong formats; [TorchSig](../bench/results/bench-v0-torchsig.md) 84 files, likewise
+- The 0-silent-defaults test found two gaps, both fixed: an `.sdriq` header with a bad CRC still called its data offset MEASURED, and SigMF metadata without a rate offered no candidates.
+
+## 27 Sep 2026 — M0: foundations and identity
+
+- Built:
+  - the identity and the workspace on an in-browser synthetic capture
+  - the uv workspace
+  - the FastAPI app and `sanket` on 127.0.0.1
+  - pytest-socket (loopback only)
+  - generated `THIRD_PARTY.md` with a licence gate
+  - pre-commit
+  - a Playwright smoke test that fails on any outside request
+- CI is green on Windows and Ubuntu.

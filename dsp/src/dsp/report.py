@@ -1,4 +1,4 @@
-"""The per-detection analysis report (PROTOTYPE_PLAN P1): what `dsp.analyse.analyse` returns for
+"""The per-detection analysis report (PLAN M3-M6): what `dsp.analyse.analyse` returns for
 one detected signal, and what the backend sends as `RecordingInfo.detections[i].analysis`.
 
 It mirrors the frontend's `Detection` shape (`frontend/src/lib/analysis.ts`), so the existing

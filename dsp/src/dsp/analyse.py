@@ -1,4 +1,4 @@
-"""Per-detection analysis (PROTOTYPE_PLAN P1): channelise, estimate, sync, demodulate, decode
+"""Per-detection analysis (PLAN M3-M6): channelise, estimate, sync, demodulate, decode
 and frame one detected signal, returning a `DetectionReport`.
 
 The digital chain is a blind search over a small, fixed grid of hypotheses: modulation (ranked
