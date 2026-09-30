@@ -42,6 +42,15 @@ export interface Frame {
   payloadHex: string
 }
 
+/** Eye diagram traces: the matched-filter output around a spread of symbols, from one symbol before
+ * to one after, after carrier correction; each trace has `2 * samplesPerSymbol + 1` points, and
+ * the samples at the symbol instants have unit RMS. */
+export interface Eye {
+  samplesPerSymbol: number
+  i: number[][]
+  q: number[][]
+}
+
 export type SignalKind = 'psk' | 'fsk' | 'cw' | 'analog' | 'unknown'
 
 export interface DetectionReport {
@@ -57,4 +66,6 @@ export interface DetectionReport {
   noFramesReason: string | null
   /** Symbol-spaced [I, Q] points after sync and phase correction, unit RMS, at most 2048. */
   constellation: [number, number][]
+  /** Present for a linear signal whose symbols were recovered; absent or null otherwise. */
+  eye?: Eye | null
 }

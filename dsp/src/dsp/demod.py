@@ -6,6 +6,8 @@ Gray mappings match `dsp.synth.modulate` (copied here so product code doesn't im
 - 8PSK: 3 bits, label L at phase position p where L = gray(p): exp(j 2 pi p / 8).
 - 16QAM: the first two bits Gray-code the I level, the last two Q; levels -3, -1, 1, 3 over
   sqrt 10.
+- 64QAM: the first three bits Gray-code the I level, the last three Q; levels -7 ... 7 over
+  sqrt 42.
 
 Symbols come from `dsp.sync.correct_carrier`, whose M-fold phase ambiguity is left open:
 `rotations` lists the candidate rotations, each a hypothesis the decoder tries and the CRC
@@ -23,8 +25,8 @@ Complex = NDArray[np.complex128]
 Float = NDArray[np.float64]
 
 # The M-th power used for carrier recovery; also the number of phase rotations to try.
-ORDERS = {"BPSK": 2, "QPSK": 4, "8PSK": 8, "16QAM": 4}
-BITS_PER_SYMBOL = {"BPSK": 1, "QPSK": 2, "8PSK": 3, "16QAM": 4}
+ORDERS = {"BPSK": 2, "QPSK": 4, "8PSK": 8, "16QAM": 4, "64QAM": 4}
+BITS_PER_SYMBOL = {"BPSK": 1, "QPSK": 2, "8PSK": 3, "16QAM": 4, "64QAM": 6}
 
 
 def _gray_position(label: int) -> int:
@@ -47,9 +49,12 @@ def _table(modulation: str) -> tuple[Complex, NDArray[np.uint8]]:
         points = ((1 - 2 * (labels >> 1)) + 1j * (1 - 2 * (labels & 1))) / math.sqrt(2)
     elif modulation == "8PSK":
         points = np.exp(2j * np.pi * np.array([_gray_position(int(v)) for v in labels]) / 8)
-    elif modulation == "16QAM":
-        level = np.array([2 * _gray_position(v) - 3 for v in range(4)], np.float64)
-        points = (level[labels >> 2] + 1j * level[labels & 3]) / math.sqrt(10)
+    elif modulation in ("16QAM", "64QAM"):
+        half = k // 2  # bits per axis
+        side = 1 << half
+        level = np.array([2 * _gray_position(v) - (side - 1) for v in range(side)], np.float64)
+        energy = 2 * (side * side - 1) / 3
+        points = (level[labels >> half] + 1j * level[labels & (side - 1)]) / math.sqrt(energy)
     else:
         raise ValueError(f"unknown modulation {modulation!r}")
     bits = ((labels[:, None] >> np.arange(k - 1, -1, -1)[None, :]) & 1).astype(np.uint8)

@@ -8,8 +8,9 @@ the CRC field at the end of the frame (the layout `dsp.synth.bits.FrameSpec` wri
 pass is the only thing here that can make a result VERIFIED.
 
 The catalogues are data copied from the standards (not imported from dsp.synth, which is the
-test oracle): CCSDS 131.0-B's attached sync marker, and the CRC-16 parameter sets from the
-reveng catalogue.
+test oracle): CCSDS 131.0-B's attached sync marker, and the CRC parameter sets of Greg Cook's
+"Catalogue of parametrised CRC algorithms" (reveng). Each CRC entry carries the catalogue's
+check value, the CRC of the nine bytes "123456789", which the tests recompute.
 """
 
 import math
@@ -17,6 +18,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Literal
 
+import numba  # pyright: ignore[reportMissingTypeStubs]
 import numpy as np
 from numpy.typing import NDArray
 
@@ -64,6 +66,15 @@ class Crc:
     refout: bool
     xorout: int
 
+    check: int = 0  # the CRC of b"123456789"; 0 for an entry not from the catalogue
+
+    def compute_many(self, frames: NDArray[np.uint8]) -> NDArray[np.int64]:
+        """The CRC of each row of a 2-D bit array (all rows the same length), one per row."""
+        rows = np.ascontiguousarray(frames, np.uint8)
+        return _crc_rows(
+            rows, self.width, self.poly, self.init, self.refin, self.refout, self.xorout
+        )
+
     def compute(self, bits: Bits) -> int:
         top, mask = 1 << (self.width - 1), (1 << self.width) - 1
         data = np.asarray(bits, np.uint8)
@@ -81,15 +92,77 @@ class Crc:
         return reg ^ self.xorout
 
 
-CRCS = (
-    Crc("CRC-16/CCITT-FALSE", 16, 0x1021, 0xFFFF, False, False, 0x0000),
-    Crc("CRC-16/X-25", 16, 0x1021, 0xFFFF, True, True, 0xFFFF),
-    Crc("CRC-16/XMODEM", 16, 0x1021, 0x0000, False, False, 0x0000),
+@numba.njit(cache=True)  # pyright: ignore[reportUntypedFunctionDecorator]
+def _crc_rows(
+    rows: NDArray[np.uint8],
+    width: int,
+    poly: int,
+    init: int,
+    refin: bool,
+    refout: bool,
+    xorout: int,
+) -> NDArray[np.int64]:  # pragma: no cover - compiled
+    count, length = rows.shape
+    out = np.empty(count, np.int64)
+    top = 1 << (width - 1)
+    mask = (1 << width) - 1
+    whole = length - length % 8  # a trailing partial byte is not reflected
+    for f in range(count):
+        reg = init
+        for i in range(length):
+            j = i
+            if refin and i < whole:
+                j = (i // 8) * 8 + 7 - i % 8
+            feedback = ((reg & top) != 0) != (rows[f, j] != 0)
+            reg = (reg << 1) & mask
+            if feedback:
+                reg ^= poly
+        if refout:
+            flipped = 0
+            for _ in range(width):
+                flipped = (flipped << 1) | (reg & 1)
+                reg >>= 1
+            reg = flipped
+        out[f] = reg ^ xorout
+    return out
+
+
+# name, width, poly, init, refin, refout, xorout, check. Parameters and check values are the
+# reveng catalogue's; a wrong entry fails its check in tests/dsp/test_framing_crcs.py.
+_CATALOGUE = (
+    ("CRC-16/CCITT-FALSE", 16, 0x1021, 0xFFFF, False, False, 0x0000, 0x29B1),
+    ("CRC-16/X-25", 16, 0x1021, 0xFFFF, True, True, 0xFFFF, 0x906E),
+    ("CRC-16/XMODEM", 16, 0x1021, 0x0000, False, False, 0x0000, 0x31C3),
+    ("CRC-16/KERMIT", 16, 0x1021, 0x0000, True, True, 0x0000, 0x2189),
+    ("CRC-16/MCRF4XX", 16, 0x1021, 0xFFFF, True, True, 0x0000, 0x6F91),
+    ("CRC-16/AUG-CCITT", 16, 0x1021, 0x1D0F, False, False, 0x0000, 0xE5CC),
+    ("CRC-16/GENIBUS", 16, 0x1021, 0xFFFF, False, False, 0xFFFF, 0xD64E),
+    ("CRC-16/ARC", 16, 0x8005, 0x0000, True, True, 0x0000, 0xBB3D),
+    ("CRC-16/MODBUS", 16, 0x8005, 0xFFFF, True, True, 0x0000, 0x4B37),
+    ("CRC-16/USB", 16, 0x8005, 0xFFFF, True, True, 0xFFFF, 0xB4C8),
+    ("CRC-16/BUYPASS", 16, 0x8005, 0x0000, False, False, 0x0000, 0xFEE8),
+    ("CRC-16/DNP", 16, 0x3D65, 0x0000, True, True, 0xFFFF, 0xEA82),
+    ("CRC-16/EN-13757", 16, 0x3D65, 0x0000, False, False, 0xFFFF, 0xC2B7),
+    ("CRC-16/DECT-X", 16, 0x0589, 0x0000, False, False, 0x0000, 0x007F),
+    ("CRC-16/T10-DIF", 16, 0x8BB7, 0x0000, False, False, 0x0000, 0xD0DB),
+    ("CRC-16/CDMA2000", 16, 0xC867, 0xFFFF, False, False, 0x0000, 0x4C06),
+    ("CRC-8", 8, 0x07, 0x00, False, False, 0x00, 0xF4),
+    ("CRC-8/MAXIM", 8, 0x31, 0x00, True, True, 0x00, 0xA1),
+    ("CRC-8/ROHC", 8, 0x07, 0xFF, True, True, 0x00, 0xD0),
+    ("CRC-8/DARC", 8, 0x39, 0x00, True, True, 0x00, 0x15),
+    ("CRC-8/DVB-S2", 8, 0xD5, 0x00, False, False, 0x00, 0xBC),
+    ("CRC-8/ITU", 8, 0x07, 0x00, False, False, 0x55, 0xA1),
+    ("CRC-8/SAE-J1850", 8, 0x1D, 0xFF, False, False, 0xFF, 0x4B),
+    ("CRC-8/WCDMA", 8, 0x9B, 0x00, True, True, 0x00, 0x25),
+    ("CRC-32", 32, 0x04C11DB7, 0xFFFFFFFF, True, True, 0xFFFFFFFF, 0xCBF43926),
+    ("CRC-32/BZIP2", 32, 0x04C11DB7, 0xFFFFFFFF, False, False, 0xFFFFFFFF, 0xFC891918),
+    ("CRC-32/MPEG-2", 32, 0x04C11DB7, 0xFFFFFFFF, False, False, 0x00000000, 0x0376E6E7),
+    ("CRC-32/POSIX", 32, 0x04C11DB7, 0x00000000, False, False, 0xFFFFFFFF, 0x765E7680),
+    ("CRC-32/JAMCRC", 32, 0x04C11DB7, 0xFFFFFFFF, True, True, 0x00000000, 0x340BC6D9),
+    ("CRC-32C", 32, 0x1EDC6F41, 0xFFFFFFFF, True, True, 0xFFFFFFFF, 0xE3069283),
+    ("CRC-32/XFER", 32, 0x000000AF, 0x00000000, False, False, 0x00000000, 0xBD0BE338),
 )
-
-
-def _to_int(bits: Bits) -> int:
-    return int("".join(map(str, bits.tolist())), 2) if len(bits) else 0
+CRCS = tuple(Crc(*row[:7], check=row[7]) for row in _CATALOGUE)
 
 
 def _hex(bits: Bits, sep: str = "") -> str:
@@ -167,6 +240,14 @@ def binomial_tail(k: int, n: int, p: float) -> float:
     return max(math.exp(total), 1e-300)
 
 
+def _passes(crc: Crc, rows: NDArray[np.uint8]) -> NDArray[np.bool_]:
+    """Which complete frames (equal-length rows, CRC field last) carry a valid `crc`."""
+    if rows.size == 0 or rows.shape[1] <= crc.width:
+        return np.zeros(len(rows), bool)
+    received = rows[:, -crc.width :].astype(np.int64) @ (1 << np.arange(crc.width - 1, -1, -1))
+    return crc.compute_many(rows[:, : -crc.width]) == received
+
+
 def find_frames(
     bits: Bits,
     word: SyncWord,
@@ -192,18 +273,17 @@ def find_frames(
             body = descrambler.frame(body)  # each frame restarts the register after its sync word
         bodies.append((s, body))
     complete = [b for _, b in bodies if b is not None]
+    rows = np.array(complete, np.uint8) if complete else np.zeros((0, 0), np.uint8)
     best: Crc | None = None
     best_passes = 0
     for crc in crcs:
-        passes = sum(
-            1
-            for b in complete
-            if len(b) > crc.width and crc.compute(b[: -crc.width]) == _to_int(b[-crc.width :])
-        )
+        passes = int(_passes(crc, rows).sum())
         if passes > best_passes:
             best, best_passes = crc, passes
     frames: list[DecodedFrame] = []
     width = best.width if best else 16
+    passed = _passes(best, rows) if best else np.zeros(len(complete), bool)
+    done = 0  # index into the complete frames
     for i, (s, body) in enumerate(bodies):
         if body is None:
             tail = stream[s + word.width :]
@@ -214,7 +294,8 @@ def find_frames(
             )
             continue
         data = body[:-width]
-        ok = best is not None and best.compute(data) == _to_int(body[-width:])
+        ok = bool(passed[done])
+        done += 1
         frames.append(
             DecodedFrame(
                 i + 1,

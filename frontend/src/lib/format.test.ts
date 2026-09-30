@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatRate, niceTicks, parseRate, sci, signed } from './format'
+import { formatRate, niceTicks, parseFrequency, parseRate, sci, signed } from './format'
 
 describe('parseRate', () => {
   it('reads plain, exponent and SI-suffixed rates', () => {
@@ -13,6 +13,20 @@ describe('parseRate', () => {
 
   it('refuses anything that is not a positive number', () => {
     for (const bad of ['', 'abc', '0', '-5', '1e999', '2.4 MHz', '1,000']) expect(parseRate(bad)).toBeNull()
+  })
+})
+
+describe('parseFrequency', () => {
+  it('reads plain, exponent and SI-suffixed frequencies, and zero', () => {
+    expect(parseFrequency('433920000')).toBe(433_920_000)
+    expect(parseFrequency('433.92M')).toBe(433_920_000)
+    expect(parseFrequency('1.09 G')).toBe(1_090_000_000)
+    expect(parseFrequency('518 kHz')).toBe(518_000)
+    expect(parseFrequency('0')).toBe(0)
+  })
+
+  it('refuses anything that is not a non-negative number', () => {
+    for (const bad of ['', 'abc', '-5', '1e999', '2.4 MS/s', '1,000']) expect(parseFrequency(bad)).toBeNull()
   })
 })
 

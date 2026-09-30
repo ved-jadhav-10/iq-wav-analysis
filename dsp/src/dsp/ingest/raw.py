@@ -13,6 +13,7 @@ from dsp.ingest.rate import (
     sample_rate_parameter,
 )
 from dsp.ingest.reader import SampleReader
+from dsp.ingest.recording import entered
 from dsp.ingest.sniff import FormatSniff, sniff
 from dsp.results import Assumptions
 
@@ -21,9 +22,12 @@ from dsp.results import Assumptions
 class RawRecording:
     data_path: Path
     format_sniff: FormatSniff
+    entered_datatype: str | None = None  # the analyst's choice, which replaces the sniffer's
 
     @property
     def datatype(self) -> Parameter:
+        if self.entered_datatype is not None:
+            return entered("datatype", self.entered_datatype, prior=self.format_sniff.datatype)
         return self.format_sniff.datatype
 
     @property

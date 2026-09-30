@@ -71,6 +71,8 @@ CRCS: dict[str, Crc] = {
         Crc("CRC-16/X-25", 16, 0x1021, 0xFFFF, True, True, 0xFFFF, 0x906E),
         Crc("CRC-16/XMODEM", 16, 0x1021, 0x0000, False, False, 0x0000, 0x31C3),
         Crc("CRC-32", 32, 0x04C11DB7, 0xFFFFFFFF, True, True, 0xFFFFFFFF, 0xCBF43926),
+        # Not in the product's catalogue (dsp.framing.CRCS), so frames carrying it are found blind.
+        Crc("CRC-32/Q", 32, 0x814141AB, 0x00000000, False, False, 0x00000000, 0x3010BF7F),
     )
 }
 

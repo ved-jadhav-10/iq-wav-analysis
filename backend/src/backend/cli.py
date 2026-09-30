@@ -1,12 +1,16 @@
 import argparse
 import ipaddress
+import math
 import os
 import sys
 from pathlib import Path
 
 import uvicorn
 
+from backend.analysis import Entries, analyse_recording
 from backend.app import create_app, default_workspace
+from backend.inputs import FormatUnknownError, Input, RecordingError, expand, open_input
+from dsp.frame_table import FORMATS, render
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -26,7 +30,45 @@ def main(argv: list[str] | None = None) -> int:
         help="where uploaded recordings are kept (default: ~/.sanket/workspace, "
         "or SANKET_WORKSPACE)",
     )
+    commands = parser.add_subparsers(dest="command", metavar="{analyse}")
+    analyse = commands.add_parser(
+        "analyse",
+        help="analyse recordings without the UI, one results JSON each",
+        description="Analyse recordings and write each one's results JSON (the same document "
+        "the UI exports). A folder is a batch of its files.",
+    )
+    analyse.add_argument("paths", nargs="+", type=Path, help="recording files or folders")
+    analyse.add_argument(
+        "--out", type=Path, default=Path("."), help="folder for the results (default: here)"
+    )
+    analyse.add_argument(
+        "--sequence",
+        action="store_true",
+        help="read numbered files (rec_000.cu8, rec_001.cu8, ...) as one recording each",
+    )
+    analyse.add_argument(
+        "--sample-rate", type=_rate, help="S/s the file doesn't state (e.g. 2.4M); entered, checked"
+    )
+    analyse.add_argument("--center-frequency", type=_rate, help="Hz the file doesn't state")
+    analyse.add_argument(
+        "--frames",
+        choices=FORMATS,
+        action="append",
+        default=[],
+        help="also write each signal's frame table in this format (repeatable)",
+    )
+    analyse.add_argument(
+        "--datatype",
+        help="sample format of a raw file the sniffer can't tell (cu8, ci16_le, cf32_le, ...)",
+    )
+    analyse.add_argument(
+        "--iq-order",
+        choices=("IQ", "QI"),
+        help="QI swaps the two components (mirrors the spectrum)",
+    )
     args = parser.parse_args(argv)
+    if args.command == "analyse":
+        return _analyse(args)
 
     dist = Path(os.environ.get("SANKET_FRONTEND_DIST", REPO_ROOT / "frontend" / "dist"))
     if not (dist / "index.html").is_file():
@@ -56,3 +98,90 @@ def _is_loopback(host: str) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+def _rate(text: str) -> float:
+    """A number with an optional k, M or G suffix: 2.4M, 250k, 48000."""
+    scale = {"k": 1e3, "M": 1e6, "G": 1e9}.get(text[-1:], 1.0)
+    try:
+        value = float(text[:-1] if scale != 1.0 else text) * scale
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number like 2.4M or 250000") from None
+    if not math.isfinite(value):
+        raise argparse.ArgumentTypeError(f"{text!r} is not finite")
+    return value
+
+
+def _analyse(args: argparse.Namespace) -> int:
+    entries: Entries = tuple(
+        (name, value)
+        for name, value in (
+            ("sample_rate", args.sample_rate),
+            ("center_frequency", args.center_frequency),
+            ("iq_order", args.iq_order),
+        )
+        if value is not None
+    )
+    failed = False
+    items: list[Input] = []
+    for path in args.paths:
+        try:
+            items.extend(expand(path, sequence=args.sequence))
+        except RecordingError as exc:
+            print(f"sanket: {exc}", file=sys.stderr)
+            failed = True
+    args.out.mkdir(parents=True, exist_ok=True)
+    written: set[Path] = set()
+    for item in items:
+        try:
+            _analyse_one(item, entries, args.out, written, args.datatype, args.frames)
+        except FormatUnknownError as exc:
+            print(f"sanket: {exc}: {', '.join(exc.candidates)} (pass --datatype)", file=sys.stderr)
+            failed = True
+        except RecordingError as exc:
+            print(f"sanket: {item.name}: {exc}", file=sys.stderr)
+            failed = True
+    return 1 if failed else 0
+
+
+def _analyse_one(
+    item: Input,
+    entries: Entries,
+    out: Path,
+    written: set[Path],
+    datatype: str | None,
+    frame_formats: list[str],
+) -> None:
+    opened = open_input(item, datatype)
+    fmt = opened.recording.sample_format
+    assert fmt is not None  # open_input raised for an UNKNOWN format
+    if not fmt.is_complex and any(name == "iq_order" for name, _ in entries):
+        raise RecordingError("IQ order applies to complex samples; this recording is real")
+    results, reports = analyse_recording(
+        opened.recording, opened.container, entries, real=not fmt.is_complex
+    )
+    target = _unused(out / f"{item.paths[0].stem}.results.json", written)
+    target.write_text(results.to_json(), encoding="utf-8")
+    print(f"{item.name}: {len(reports)} signal(s) -> {target}")
+    for i, report in enumerate(reports):
+        print(f"  signal_{i}: {report.level.value} {report.headline}")
+        for fmt in dict.fromkeys(frame_formats):  # each once, in the order given
+            ext = fmt if fmt in ("json", "csv") else f"{fmt}.txt"
+            name = target.name.removesuffix(".results.json")
+            (out / f"{name}.signal_{i}.frames.{ext}").write_text(
+                render(report.frames, fmt),  # type: ignore[arg-type]
+                encoding="utf-8",
+            )
+    if results.assumptions.sample_rate.value is None:
+        print("  the sample rate is UNKNOWN; pass --sample-rate to analyse the bands")
+
+
+def _unused(target: Path, written: set[Path]) -> Path:
+    """`target`, or the first `name-2.results.json` not already written by this run."""
+    base = target.name.removesuffix(".results.json")
+    candidate, n = target, 1
+    while candidate in written:
+        n += 1
+        candidate = target.with_name(f"{base}-{n}.results.json")
+    written.add(candidate)
+    return candidate

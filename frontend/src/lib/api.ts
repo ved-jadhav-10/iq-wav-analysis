@@ -73,31 +73,65 @@ export interface RecordingInfo {
   detections: DetectionInfo[]
 }
 
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  /** Set when the sample format is UNKNOWN: the sniffer's candidates, possibly none. */
+  formatCandidates: string[] | null = null
+}
 
 async function asJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null)
     const detail = typeof body === 'object' && body && 'detail' in body ? String(body.detail) : null
-    throw new ApiError(detail ?? `request failed: ${response.status} ${response.statusText}`)
+    const error = new ApiError(detail ?? `request failed: ${response.status} ${response.statusText}`)
+    if (typeof body === 'object' && body && 'formatCandidates' in body && Array.isArray(body.formatCandidates)) {
+      error.formatCandidates = body.formatCandidates.map(String)
+    }
+    throw error
   }
   return response.json() as Promise<T>
 }
 
-export async function openRecording(path: string): Promise<RecordingInfo> {
+/** One recording a path names: a file, or several numbered files read as one. */
+export interface InputInfo {
+  /** The file to open; the first of them for a sequence. */
+  path: string
+  name: string
+  files: number
+  sequence: boolean
+}
+
+/** What a path names, without reading any samples: a file is itself, a folder is a batch of its
+ * files. `sequence` joins numbered files (rec_000.cu8, rec_001.cu8, ...) into one recording each. */
+export async function listInputs(path: string, sequence = false): Promise<InputInfo[]> {
+  const response = await fetch('/api/v1/inputs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, sequence }),
+  })
+  return asJson<InputInfo[]>(response)
+}
+
+/** `datatype` is the analyst's choice of sample format for a raw file the sniffer can't read
+ * (an ApiError with `formatCandidates` says when); the server records it as entered. */
+export async function openRecording(path: string, sequence = false, datatype?: string): Promise<RecordingInfo> {
   const response = await fetch('/api/v1/recordings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path }),
+    body: JSON.stringify({ path, sequence, datatype }),
   })
   return asJson<RecordingInfo>(response)
 }
 
-/** Values the analyst enters for what the file leaves UNKNOWN; the server restarts the analysis. */
-export async function putAssumptions(
-  id: string,
-  values: { sampleRate?: number; centerFrequency?: number },
-): Promise<RecordingInfo> {
+/** What the analyst can enter for a recording; the server restarts the analysis with it. */
+export interface AssumptionValues {
+  sampleRate?: number
+  centerFrequency?: number
+  /** 'QI' swaps the two components, which mirrors the spectrum; the samples can't tell them apart. */
+  iqOrder?: 'IQ' | 'QI'
+}
+
+/** Values the analyst enters for what the file leaves UNKNOWN (or gets wrong). */
+export async function putAssumptions(id: string, values: AssumptionValues): Promise<RecordingInfo> {
   const response = await fetch(`/api/v1/recordings/${id}/assumptions`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

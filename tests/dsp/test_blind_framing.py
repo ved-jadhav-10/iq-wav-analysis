@@ -158,7 +158,7 @@ def test_random_bytes_are_not_called_constant_or_counters() -> None:
 # --- CRC -----------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("crc", list(CRCS))
+@pytest.mark.parametrize("crc", [name for name in CRCS if name != "CRC-32/Q"])
 def test_the_crc_is_recovered_blind_with_its_name_and_passes_on_held_out_frames(crc: str) -> None:
     spec = FrameSpec(crc=crc, payload_bytes=40)
     bits, _ = make(spec, 100, seed=5)
@@ -178,6 +178,16 @@ def test_the_crc_is_recovered_blind_with_its_name_and_passes_on_held_out_frames(
     body = found.frames[:, 32:]
     assert all(fit.check(row) for row in body)
     assert not fit.check(body[0] ^ np.eye(1, len(body[0]), 5, dtype=np.uint8)[0])
+
+
+def test_a_32_bit_crc_outside_the_catalogue_is_recovered_with_no_name() -> None:
+    spec = FrameSpec(crc="CRC-32/Q", payload_bytes=40)
+    bits, _ = make(spec, 100, seed=6)
+    found = analyse_stream(bits)
+    assert found is not None and found.crc is not None
+    fit, truth = found.crc, CRCS["CRC-32/Q"]
+    assert (fit.width, fit.poly, fit.refin, fit.refout) == (32, truth.poly, False, False)
+    assert fit.name is None and fit.passes == fit.heldout
 
 
 def test_a_crc_with_no_catalogue_name_is_still_recovered() -> None:

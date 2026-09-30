@@ -128,7 +128,35 @@ function CrcBadge({ crc }: { crc: 'pass' | 'fail' | 'truncated' }) {
   )
 }
 
-function Frames({ detection }: { detection: Detection }) {
+const EXPORTS = [
+  { format: 'json', label: 'JSON', hint: 'every frame with its CRC outcome' },
+  { format: 'csv', label: 'CSV', hint: 'every frame with its CRC outcome' },
+  { format: 'hex', label: 'Hex', hint: 'payload bytes of the CRC-passing frames, one per line' },
+  { format: 'bits', label: 'Bits', hint: 'payload bits of the CRC-passing frames, one per line' },
+] as const
+
+/** The frame table as a file. A plain download link: the server renders it, nothing leaves the
+ * machine. The report holds at most the first 500 frames, and so does the file. */
+function FrameExport({ url }: { url: (format: string) => string }) {
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 border-b px-3 py-1.5 text-xs text-muted-foreground">
+      <span>Export</span>
+      {EXPORTS.map((e) => (
+        <a
+          key={e.format}
+          href={url(e.format)}
+          download
+          title={e.hint}
+          className="rounded-md border border-border-strong px-1.5 py-0.5 text-2xs font-medium hover:bg-surface-2 hover:text-foreground"
+        >
+          {e.label}
+        </a>
+      ))}
+    </p>
+  )
+}
+
+function Frames({ detection, exportUrl }: { detection: Detection; exportUrl?: (format: string) => string }) {
   const frames = detection.frames
   if (frames.length === 0) return <Empty>{detection.noFramesReason ?? 'No frames found.'}</Empty>
   const complete = frames.filter((f) => f.crc === 'pass').length
@@ -152,6 +180,7 @@ function Frames({ detection }: { detection: Detection }) {
           </>
         )}
       </p>
+      {exportUrl && <FrameExport url={exportUrl} />}
       <table className="w-full text-xs">
         <caption className="sr-only">Frames found by sync-word correlation</caption>
         <thead>
@@ -227,9 +256,11 @@ interface Props {
    * this component doesn't need to know about `lib/api`'s `Assumptions` shape). */
   assumptionsPanel?: ReactNode
   assumptionsCount?: number
+  /** The download link for the frame table in a format, for a real recording. */
+  frameExportUrl?: (format: string) => string
 }
 
-export function BottomPanel({ detection, assumptionsPanel, assumptionsCount }: Props) {
+export function BottomPanel({ detection, assumptionsPanel, assumptionsCount, frameExportUrl }: Props) {
   const [tab, setTab] = useState<TabId>('hypotheses')
   const tabRefs = useRef<Record<TabId, HTMLButtonElement | null>>({ hypotheses: null, frames: null, assumptions: null })
 
@@ -286,7 +317,7 @@ export function BottomPanel({ detection, assumptionsPanel, assumptionsCount }: P
       </div>
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} tabIndex={0} className="min-h-0 flex-1 overflow-auto">
         {tab === 'hypotheses' && <Hypotheses detection={detection} />}
-        {tab === 'frames' && <Frames detection={detection} />}
+        {tab === 'frames' && <Frames detection={detection} exportUrl={frameExportUrl} />}
         {tab === 'assumptions' && (assumptionsPanel ?? <Assumptions />)}
       </div>
     </section>

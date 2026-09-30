@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Detection } from '@/data/demoAnalysis'
+import type { Eye } from '@/lib/analysis'
 import { DEMO_CONFIG, type DemoProducts } from '@/lib/demoSignal'
 import { integer, signed } from '@/lib/format'
 import { cssVar, useTheme } from '@/hooks/theme'
@@ -123,6 +124,76 @@ function drawConstellationPoints(
   ctx.globalAlpha = 1
 }
 
+/** Eye diagram: I and Q side by side, every trace overlaid, one symbol either side of the
+ * symbol instant. Dashed lines mark the ideal QPSK levels; an open eye is where the traces bunch
+ * at the instant and cross between. */
+function drawEye(ctx: CanvasRenderingContext2D, w: number, h: number, eye: Eye, dark: boolean) {
+  const gap = 12
+  const padLeft = 22
+  const padTop = 14
+  const padBottom = 18
+  const panelW = (w - gap) / 2
+  const plotW = panelW - padLeft - 4
+  const plotH = h - padTop - padBottom
+  const range = 1.6
+  ctx.font = FONT
+
+  for (const [index, panel] of [
+    { label: 'I', traces: eye.i },
+    { label: 'Q', traces: eye.q },
+  ].entries()) {
+    const x0 = index * (panelW + gap) + padLeft
+    const X = (t: number) => x0 + ((t + 1) / 2) * plotW
+    const Y = (v: number) => padTop + plotH / 2 - (v / range) * (plotH / 2)
+
+    ctx.strokeStyle = cssVar('--plot-grid')
+    ctx.lineWidth = 1
+    for (const t of [-1, -0.5, 0, 0.5, 1]) {
+      ctx.beginPath()
+      ctx.moveTo(X(t), padTop)
+      ctx.lineTo(X(t), padTop + plotH)
+      ctx.stroke()
+    }
+    ctx.strokeStyle = cssVar('--plot-axis')
+    ctx.globalAlpha = 0.6
+    ctx.beginPath()
+    ctx.moveTo(x0, Y(0))
+    ctx.lineTo(x0 + plotW, Y(0))
+    ctx.stroke()
+    ctx.setLineDash([2, 3])
+    for (const level of [-Math.SQRT1_2, Math.SQRT1_2]) {
+      ctx.beginPath()
+      ctx.moveTo(x0, Y(level))
+      ctx.lineTo(x0 + plotW, Y(level))
+      ctx.stroke()
+    }
+    ctx.setLineDash([])
+    ctx.globalAlpha = 1
+
+    ctx.strokeStyle = cssVar('--primary')
+    ctx.lineWidth = 1
+    ctx.globalCompositeOperation = dark ? 'lighter' : 'source-over'
+    ctx.globalAlpha = dark ? 0.16 : 0.12
+    for (const trace of panel.traces) {
+      ctx.beginPath()
+      trace.forEach((v, k) => {
+        const px = X(-1 + k / eye.samplesPerSymbol)
+        if (k === 0) ctx.moveTo(px, Y(v))
+        else ctx.lineTo(px, Y(v))
+      })
+      ctx.stroke()
+    }
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.globalAlpha = 1
+
+    ctx.fillStyle = cssVar('--subtle-foreground')
+    ctx.textAlign = 'center'
+    for (const t of [-1, 0, 1]) ctx.fillText(t === 0 ? '0' : signed(t, 0), X(t), h - 5)
+    ctx.textAlign = 'left'
+    ctx.fillText(panel.label, index * (panelW + gap) + 2, padTop + 8)
+  }
+}
+
 function drawInstFreq(ctx: CanvasRenderingContext2D, w: number, h: number, values: Float32Array) {
   const lim = 15_000
   const nBins = 90
@@ -198,6 +269,7 @@ export function SymbolView({ detection, demo }: { detection: Detection; demo?: D
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [width, setWidth] = useState(0)
+  const [view, setView] = useState<'constellation' | 'eye'>('constellation')
   const { theme } = useTheme()
 
   useEffect(() => {
@@ -211,33 +283,40 @@ export function SymbolView({ detection, demo }: { detection: Detection; demo?: D
   const kind = detection.kind
   const hasFskHistogram = kind === 'fsk' && !!demo
   const hasCanvas = kind === 'psk' || hasFskHistogram
-  const height = kind === 'psk' ? Math.min(width, 300) : 150
+  // A real detection may carry an eye; the demo path has none.
+  const eye = !demo && kind === 'psk' ? (detection.eye ?? null) : null
+  const showEye = eye !== null && view === 'eye'
+  const height = showEye ? 180 : kind === 'psk' ? Math.min(width, 300) : 150
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || width === 0 || !hasCanvas) return
-    const canvasW = kind === 'psk' ? height : width
+    const canvasW = kind === 'psk' && !showEye ? height : width
     const ctx = setupCanvas(canvas, canvasW, height)
     if (!ctx) return
-    if (kind === 'psk') {
+    if (showEye && eye) {
+      drawEye(ctx, width, height, eye, theme === 'dark')
+    } else if (kind === 'psk') {
       if (demo) drawConstellation(ctx, height, demo.constellation, theme === 'dark')
       else drawConstellationPoints(ctx, height, detection.constellation, theme === 'dark')
     } else if (hasFskHistogram && demo) {
       drawInstFreq(ctx, width, height, demo.fskInstFreqHz)
     }
-  }, [kind, width, height, demo, theme, hasCanvas, hasFskHistogram, detection.constellation])
+  }, [kind, width, height, demo, theme, hasCanvas, hasFskHistogram, detection.constellation, showEye, eye])
 
   const symbols = demo ? demo.constellation.length / 2 : detection.constellation.length
-  const title = kind === 'psk' ? 'Constellation' : hasFskHistogram ? 'Instantaneous frequency' : 'Symbols'
+  const title = showEye ? 'Eye diagram' : kind === 'psk' ? 'Constellation' : hasFskHistogram ? 'Instantaneous frequency' : 'Symbols'
   const subtitle = demo
     ? kind === 'psk'
       ? `${integer.format(symbols)} symbols after matched filter, Gardner timing and Costas loop`
       : hasFskHistogram
         ? `Channelised to ${DEMO_CONFIG.fskChannel.fs / 1000} kS/s · dashed lines are the estimated tones`
         : 'Unmodulated carrier'
-    : kind === 'psk'
-      ? `${integer.format(symbols)} symbols after sync and phase correction`
-      : detection.headline
+    : showEye
+      ? `${integer.format(eye?.i.length ?? 0)} symbols overlaid, one symbol either side of the instant, after phase correction`
+      : kind === 'psk'
+        ? `${integer.format(symbols)} symbols after sync and phase correction`
+        : detection.headline
 
   return (
     <section aria-labelledby="symview-title" className="border-b px-3 pt-3 pb-3">
@@ -248,6 +327,26 @@ export function SymbolView({ detection, demo }: { detection: Detection; demo?: D
           </h2>
           <p className="text-xs text-muted-foreground">{subtitle}</p>
         </div>
+        {eye && (
+          <div role="radiogroup" aria-label="Symbol view" className="flex shrink-0 gap-1">
+            {(['constellation', 'eye'] as const).map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={view === id}
+                onClick={() => setView(id)}
+                className={`rounded-md border px-1.5 py-0.5 text-2xs font-medium ${
+                  view === id
+                    ? 'border-primary bg-surface-2 text-foreground'
+                    : 'border-border-strong text-muted-foreground hover:bg-background hover:text-foreground'
+                }`}
+              >
+                {id === 'eye' ? 'Eye' : 'Constellation'}
+              </button>
+            ))}
+          </div>
+        )}
         {kind === 'psk' && demo && (
           <span className="num shrink-0 rounded-[3px] bg-surface-2 px-1.5 py-0.5 text-2xs text-muted-foreground">
             EVM {(demo.evm * 100).toFixed(1)}&nbsp;%
@@ -258,11 +357,13 @@ export function SymbolView({ detection, demo }: { detection: Detection; demo?: D
         {hasCanvas ? (
           <canvas
             ref={canvasRef}
-            style={{ width: kind === 'psk' ? height : width, height, maxWidth: '100%' }}
+            style={{ width: kind === 'psk' && !showEye ? height : width, height, maxWidth: '100%' }}
             className="block"
             role="img"
             aria-label={
-              kind === 'psk'
+              showEye
+                ? `${detection.label} eye diagram, I and Q, ${eye?.i.length ?? 0} traces`
+                : kind === 'psk'
                 ? `${detection.label} constellation, ${symbols} symbols`
                 : 'Histogram of instantaneous frequency with two peaks at the FSK tones'
             }

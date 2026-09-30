@@ -69,6 +69,15 @@ export function parseRate(text: string): number | null {
   return Number.isFinite(value) && value > 0 ? value : null
 }
 
+/** A centre frequency typed as "433920000", "433.92M" or "1.09 G" (with an optional trailing Hz);
+ * null when it isn't a finite number of at least zero (a baseband recording is centred on 0). */
+export function parseFrequency(text: string): number | null {
+  const m = /^\s*([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)\s*([kKMG]?)\s*(?:Hz)?\s*$/.exec(text)
+  if (!m) return null
+  const value = Number(m[1]) * (SI[m[2]] ?? 1)
+  return Number.isFinite(value) ? value : null
+}
+
 /** A rate with an SI prefix and a non-breaking space: 2400000 → "2.4 MS/s". */
 export function formatRate(rate: number): string {
   const [div, prefix] = rate >= 1e9 ? [1e9, 'G'] : rate >= 1e6 ? [1e6, 'M'] : rate >= 1e3 ? [1e3, 'k'] : [1, '']

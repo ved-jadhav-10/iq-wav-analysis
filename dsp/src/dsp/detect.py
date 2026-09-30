@@ -195,7 +195,11 @@ def detect_resolution(
     biased by the selection (frames of opposite parity correlate by rho^2 = 0.028)."""
     floor = floor or noise_floor(spec)
     level = floor.level[None, :]
-    chosen, tested, ratio = spec.even / level, spec.odd / level, spec.power / level
+    # A silent recording has a zero floor: 0/0 is nothing to detect, not a warning.
+    with np.errstate(invalid="ignore", divide="ignore"):
+        chosen, tested, ratio = (
+            np.nan_to_num(x / level, nan=0.0, posinf=0.0) for x in (spec.even, spec.odd, spec.power)
+        )
     dof_even, dof_odd = spec.half_dof
     seeds = chosen > _thresholds(dof_even, SEED_PFA)[:, None]
     extent = chosen > _thresholds(dof_even, EXTENT_PFA)[:, None]

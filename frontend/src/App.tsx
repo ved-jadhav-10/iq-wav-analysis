@@ -8,10 +8,13 @@ import {
   ApiError,
   fetchLevelGrid,
   getRecording,
+  listInputs,
   openRecording,
   putAssumptions,
   uploadFiles,
   watchAnalysis,
+  type AssumptionValues,
+  type InputInfo,
   type RecordingInfo,
 } from '@/lib/api'
 import type { DetectionReport } from '@/lib/analysis'
@@ -21,8 +24,10 @@ import { integer } from '@/lib/format'
 import { fullView } from '@/lib/view'
 import { loadStoredView, storeView, viewByDigit, type ViewId } from '@/lib/views'
 import { sourceFromRecording, type WaterfallSource } from '@/lib/waterfallSource'
+import { BatchChooser } from '@/components/BatchChooser'
 import { BottomPanel } from '@/components/BottomPanel'
 import { EvidenceBadge } from '@/components/EvidenceBadge'
+import { FormatPrompt } from '@/components/FormatPrompt'
 import { EvidencePanel } from '@/components/EvidencePanel'
 import { PipelineRail } from '@/components/PipelineRail'
 import { PsdPlot } from '@/components/PsdPlot'
@@ -135,11 +140,13 @@ function Workspace({
   view,
   railOpen,
   onRailOpenChange,
+  onEnterAssumptions,
 }: {
   mode: Mode
   view: ViewId
   railOpen: boolean
   onRailOpenChange: (open: boolean) => void
+  onEnterAssumptions: (values: AssumptionValues) => Promise<void>
 }) {
   const demo = mode.kind === 'demo' ? mode.demo : undefined
   const source = mode.kind === 'demo' ? mode.demo : mode.source
@@ -167,7 +174,7 @@ function Workspace({
   }
 
   const assumptionsPanel =
-    mode.kind === 'recording' ? <RecordingAssumptionsPanel assumptions={mode.info.assumptions} /> : undefined
+    mode.kind === 'recording' ? <RecordingAssumptionsPanel assumptions={mode.info.assumptions} onEnter={onEnterAssumptions} /> : undefined
 
   const waterfall = (
     <Waterfall
@@ -200,9 +207,17 @@ function Workspace({
       {view === 'survey' && (
         <div className="flex h-[232px] shrink-0 flex-col">
           {selected ? (
-            <BottomPanel detection={selected} assumptionsPanel={assumptionsPanel} />
+            <BottomPanel
+              detection={selected}
+              assumptionsPanel={assumptionsPanel}
+              frameExportUrl={
+                mode.kind === 'recording'
+                  ? (format) => `/api/v1/recordings/${mode.info.id}/detections/${selected.id - 1}/frames?format=${format}`
+                  : undefined
+              }
+            />
           ) : mode.kind === 'recording' ? (
-            <RecordingAssumptionsPanel assumptions={mode.info.assumptions} />
+            <RecordingAssumptionsPanel assumptions={mode.info.assumptions} onEnter={onEnterAssumptions} />
           ) : null}
         </div>
       )}
@@ -381,6 +396,12 @@ export default function App() {
   const [view, setView] = useState<ViewId>(loadStoredView)
   const [railOpen, setRailOpen] = useState(true)
   const [assumptionsModalOpen, setAssumptionsModalOpen] = useState(false)
+  // A folder that holds several recordings, until the analyst picks one.
+  const [batch, setBatch] = useState<{ source: string; items: InputInfo[] } | null>(null)
+  // Counts restarts of the analysis (entered values), so the progress stream is followed again.
+  const [run, setRun] = useState(0)
+  // A raw file whose sample format is UNKNOWN, until the analyst chooses one.
+  const [formatNeeded, setFormatNeeded] = useState<{ item: InputInfo; candidates: string[] } | null>(null)
 
   const changeView = useCallback((next: ViewId) => {
     setView(next)
@@ -436,19 +457,55 @@ export default function App() {
     }
   })
 
-  async function openPath(path: string, alreadyOpening = false) {
+  async function openPath(path: string, alreadyOpening = false, sequence = false) {
     if (!alreadyOpening) {
       setOpening(true)
       setOpenError(null)
     }
+    let only: InputInfo | undefined
     try {
-      const info = await openRecording(path)
-      const level = info.levels[0]
-      if (!level) throw new ApiError(`${path} has no spectrogram levels to show`)
-      const grid = await fetchLevelGrid(info.id, level)
-      setRecording({ info, source: sourceFromRecording(info, level, grid) })
+      const items = await listInputs(path, sequence)
+      only = items[0]
+      if (!only) throw new ApiError(`${path} holds no recordings`)
+      if (items.length > 1) {
+        setBatch({ source: path, items })
+        return
+      }
+      await openItem(only)
     } catch (e) {
-      setOpenError(e instanceof Error ? e.message : String(e))
+      reportOpenError(e, only)
+    } finally {
+      setOpening(false)
+    }
+  }
+
+  /** A failed open is a message, except an UNKNOWN sample format, which is a question. */
+  function reportOpenError(e: unknown, item?: InputInfo) {
+    if (item && e instanceof ApiError && e.formatCandidates !== null) {
+      setFormatNeeded({ item, candidates: e.formatCandidates })
+      setOpenError(null)
+      return
+    }
+    setOpenError(e instanceof Error ? e.message : String(e))
+  }
+
+  async function openItem(item: InputInfo, datatype?: string) {
+    const info = await openRecording(item.path, item.sequence, datatype)
+    const level = info.levels[0]
+    if (!level) throw new ApiError(`${item.name} has no spectrogram levels to show`)
+    const grid = await fetchLevelGrid(info.id, level)
+    setFormatNeeded(null)
+    setRecording({ info, source: sourceFromRecording(info, level, grid) })
+  }
+
+  async function openFromBatch(item: InputInfo) {
+    setBatch(null)
+    setOpening(true)
+    setOpenError(null)
+    try {
+      await openItem(item)
+    } catch (e) {
+      reportOpenError(e, item)
     } finally {
       setOpening(false)
     }
@@ -465,16 +522,19 @@ export default function App() {
         .then((info) => setRecording((prev) => (prev && prev.info.id === info.id ? { ...prev, info } : prev)))
         .catch((e: unknown) => setOpenError(e instanceof Error ? e.message : String(e)))
     return watchAnalysis(watchedId, () => void refetch(), () => setOpenError('lost the connection to the analysis'))
-  }, [watchedId, analysing])
+  }, [watchedId, analysing, run])
 
-  // The analyst gave the sample rate the file lacked: the server restarts the analysis with it.
-  // The waterfall grid is the same; only its units (and the boxes) change.
-  async function enterSampleRate(rate: number) {
+  // The analyst entered what the file lacks (or gets wrong): the server restarts the analysis with
+  // it. The waterfall grid stays the same unless I and Q were swapped, which mirrors the spectrum
+  // and has the server tile it again; otherwise only the units (and the boxes) change.
+  async function enterAssumptions(values: AssumptionValues) {
     if (!recording) return
-    const info = await putAssumptions(recording.info.id, { sampleRate: rate })
+    const info = await putAssumptions(recording.info.id, values)
     const level = info.levels[0]
     if (!level) throw new ApiError('the server sent no spectrogram level')
-    setRecording({ info, source: sourceFromRecording(info, level, recording.source.tile) })
+    const grid = values.iqOrder ? await fetchLevelGrid(info.id, level) : recording.source.tile
+    setRecording({ info, source: sourceFromRecording(info, level, grid) })
+    setRun((n) => n + 1)
   }
 
   const mode: Mode | null = recording
@@ -493,12 +553,23 @@ export default function App() {
         openError={openError}
         view={view}
         onViewChange={changeView}
-        onOpen={(path) => void openPath(path)}
+        onOpen={(path, sequence) => void openPath(path, false, sequence)}
         onUpload={(files) => void upload(files)}
         onOpenSettings={() => setAssumptionsModalOpen(true)}
       />
+      {formatNeeded && (
+        <FormatPrompt
+          name={formatNeeded.item.name}
+          candidates={formatNeeded.candidates}
+          onChoose={(datatype) => openItem(formatNeeded.item, datatype)}
+          onDismiss={() => setFormatNeeded(null)}
+        />
+      )}
       {recording && recording.info.sampleRate === null && (
-        <SampleRatePrompt sampleRate={recording.info.assumptions.sampleRate} onSubmit={enterSampleRate} />
+        <SampleRatePrompt
+          sampleRate={recording.info.assumptions.sampleRate}
+          onSubmit={(rate) => enterAssumptions({ sampleRate: rate })}
+        />
       )}
       {mode ? (
         /* Keyed by recording (and its units - entering a sample rate changes them) so opening a different one - or switching back to the demo - remounts
@@ -506,11 +577,16 @@ export default function App() {
            recording's zoom and (numerically coincidental) selected id. Section and rail state live
            above this key, so they survive the switch. */
         <Workspace
-          key={mode.kind === 'recording' ? `${mode.info.id}:${mode.source.normalised ? 'norm' : 'hz'}` : 'demo'}
+          key={
+            mode.kind === 'recording'
+              ? `${mode.info.id}:${mode.source.normalised ? 'norm' : 'hz'}:${mode.info.assumptions.iqOrder?.value ?? ''}`
+              : 'demo'
+          }
           mode={mode}
           view={view}
           railOpen={railOpen}
           onRailOpenChange={setRailOpen}
+          onEnterAssumptions={enterAssumptions}
         />
       ) : (
         <div className="grid flex-1 place-items-center" role={error ? 'alert' : 'status'}>
@@ -521,10 +597,12 @@ export default function App() {
       {/* Settings / Assumptions Overlay Modal */}
       {assumptionsModalOpen && mode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-md border border-border-strong bg-[#121212] shadow-2xl">
-            <div className="flex items-center justify-between border-b border-border bg-[#0a0a0a] px-4 py-3">
+          <div className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-md border border-border-strong bg-surface shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border bg-surface-2 px-4 py-3">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-primary">Configuration & Assumptions</h2>
               <button 
+                type="button"
+                aria-label="Close"
                 onClick={() => setAssumptionsModalOpen(false)}
                 className="rounded-md p-1 text-muted-foreground hover:bg-surface-2 hover:text-foreground transition-colors"
               >
@@ -533,13 +611,17 @@ export default function App() {
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               {mode.kind === 'recording' ? (
-                <RecordingAssumptionsPanel assumptions={mode.info.assumptions} />
+                <RecordingAssumptionsPanel assumptions={mode.info.assumptions} onEnter={enterAssumptions} />
               ) : (
                 <p className="text-sm text-muted-foreground">No assumptions for generated demo.</p>
               )}
             </div>
           </div>
         </div>
+      )}
+
+      {batch && (
+        <BatchChooser source={batch.source} items={batch.items} onOpen={(item) => void openFromBatch(item)} onClose={() => setBatch(null)} />
       )}
 
       <StatusBar mode={mode} />

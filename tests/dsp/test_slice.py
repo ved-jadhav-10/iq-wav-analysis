@@ -35,9 +35,12 @@ def _spec(modulation: str, sps: int, esn0_db: float, **kw: Any) -> SignalSpec:
     return SignalSpec(modulation=modulation, sps=sps, power_db=power, **kw)
 
 
-def _run(spec: SignalSpec, seed: int = 7) -> tuple[Generated, DetectionReport]:
+def _run(
+    spec: SignalSpec, seed: int = 7, mirror: bool = False
+) -> tuple[Generated, DetectionReport]:
+    """`mirror` conjugates the recording: I and Q swapped, so the spectrum is mirrored."""
     g = generate(Scene(samples=1 << 18, signals=(spec,), noise_db=NOISE_DB), seed)
-    source = Memory(g.samples)
+    source = Memory(np.conj(g.samples) if mirror else g.samples)
     detections = detect(source, real=False).detections
     assert detections, "the signal must be detected"
     main = max(detections, key=lambda d: (d.stop - d.start) * (d.high - d.low))
@@ -55,13 +58,19 @@ CONV = fec.Convolutional(7, fec.K7)
 
 
 @pytest.mark.parametrize(
-    ("modulation", "sps", "offset"),
-    [("qpsk", 8, 37), ("bpsk", 16, 0), ("8psk", 8, 3), ("16qam", 8, 11)],
+    ("modulation", "sps", "offset", "esn0"),
+    [
+        ("qpsk", 8, 37, 15.0),
+        ("bpsk", 16, 0, 15.0),
+        ("8psk", 8, 3, 15.0),
+        ("16qam", 8, 11, 15.0),
+        ("64qam", 8, 11, 25.0),  # 64QAM needs the SNR its 6 bits per symbol ask for
+    ],
 )
 def test_coded_psk_decodes_to_the_transmitted_frames(
-    modulation: str, sps: int, offset: int
+    modulation: str, sps: int, offset: int, esn0: float
 ) -> None:
-    spec = _spec(modulation, sps, 15.0, inner=CONV, stream_offset=offset, offset=0.1)
+    spec = _spec(modulation, sps, esn0, inner=CONV, stream_offset=offset, offset=0.1)
     spec = replace(spec, start=10_000, duration=200_000)
     g, report = _run(spec)
     assert report.level is EvidenceLevel.VERIFIED
@@ -72,7 +81,12 @@ def test_coded_psk_decodes_to_the_transmitted_frames(
     frame_bits = 2 * FrameSpec().length
     symbols = 200_000 / sps
     expected = (
-        int(symbols * {"qpsk": 2, "bpsk": 1, "8psk": 3, "16qam": 4}[modulation] / frame_bits) - 2
+        int(
+            symbols
+            * {"qpsk": 2, "bpsk": 1, "8psk": 3, "16qam": 4, "64qam": 6}[modulation]
+            / frame_bits
+        )
+        - 2
     )
     assert len(passing) >= expected
     for f in passing:
@@ -87,19 +101,41 @@ def test_coded_psk_decodes_to_the_transmitted_frames(
     assert sum(r.outcome == "accepted" for r in report.search.rows) == 1
 
 
-def test_coded_2fsk_decodes_to_the_transmitted_frames() -> None:
-    spec = _spec("2fsk", 8, 15.0, inner=CONV, stream_offset=5, offset=0.1)
-    g, report = _run(spec)
-    assert report.kind == "fsk" and report.label == "2FSK"
+@pytest.mark.parametrize(
+    ("modulation", "sps", "esn0", "mirror"),
+    [
+        ("2fsk", 8, 15.0, False),
+        ("4fsk", 8, 15.0, False),
+        ("8fsk", 16, 22.0, False),  # 8 tones h = 1 apart span 7 symbol rates: room to breathe
+        ("4fsk", 8, 15.0, True),  # a swapped I/Q flips only each label's first bit
+        ("8fsk", 16, 22.0, True),
+    ],
+    ids=["2fsk", "4fsk", "8fsk", "4fsk-mirrored", "8fsk-mirrored"],
+)
+def test_coded_fsk_decodes_to_the_transmitted_frames(
+    modulation: str, sps: int, esn0: float, mirror: bool
+) -> None:
+    order = int(modulation[0])
+    name = modulation.upper()
+    spec = _spec(modulation, sps, esn0, inner=CONV, stream_offset=5, offset=0.1)
+    g, report = _run(spec, mirror=mirror)
+    assert report.kind == "fsk" and report.label == name
     assert report.level is EvidenceLevel.VERIFIED
     truth = _truth_bodies(g)
     passing = [f for f in report.frames if f.crc == "pass"]
-    assert len(passing) >= int((1 << 18) / 8 / (2 * FrameSpec().length)) - 2
+    bits = (1 << 18) / sps * math.log2(order)
+    assert len(passing) >= int(bits / (2 * FrameSpec().length)) - 3
+    assert all(f.payload_hex in truth for f in passing)
     indices = [truth.index(f.payload_hex) for f in passing]
     assert indices == list(range(indices[0], indices[0] + len(indices)))
     classify = next(s for s in report.stages if s.id == "classify")
+    assert classify.parameters[0].value == name
     assert classify.parameters[0].level is EvidenceLevel.VERIFIED
     assert report.search is not None and report.search.shuffled_accepts == 0
+    accepted = next(r for r in report.search.rows if r.outcome == "accepted")
+    # Only a spectrum mirrored across more than two tones needs the mirrored branch: for two
+    # tones it inverts every bit, which the sync search's inverted-sync check reads itself.
+    assert ("mirrored" in accepted.candidate) == (mirror and order > 2)
 
 
 def test_block_interleaved_frames_decode_with_the_interleaver_found() -> None:
@@ -277,8 +313,10 @@ def test_a_coded_but_unframed_stream_is_identified_yet_not_accepted() -> None:
     [
         (il.Helical(16, 36), "helical 16x36", 301),
         (il.Wifi(96, 2), "802.11 N_CBPS 96", 45),
+        (il.Qpp(40, 3, 10), "LTE QPP K=40", 21),
+        (il.Qpp(6144, 263, 480), "LTE QPP K=6144", 1001),
     ],
-    ids=["helical", "802.11"],
+    ids=["helical", "802.11", "qpp-40", "qpp-6144"],
 )
 def test_helical_and_80211_interleavers_are_found_and_decoded(
     interleaver: il.BlockInterleaver, label: str, offset: int
@@ -298,6 +336,32 @@ def test_helical_and_80211_interleavers_are_found_and_decoded(
     )
 
 
+@pytest.mark.parametrize(
+    ("branches", "step", "offset"), [(4, 3, 0), (5, 2, 7), (8, 1, 301)], ids=str
+)
+def test_convolutional_interleavers_are_found_at_their_lane_phase_and_decoded(
+    branches: int, step: int, offset: int
+) -> None:
+    spec = _spec(
+        "qpsk",
+        8,
+        15.0,
+        inner=CONV,
+        interleaver=il.Convolutional(branches, step),
+        stream_offset=offset,
+    )
+    g, report = _run(replace(spec, offset=0.1))
+    assert report.level is EvidenceLevel.VERIFIED
+    truth = _truth_bodies(g)
+    passing = [f for f in report.frames if f.crc == "pass"]
+    # The delay lines' start-up lag costs the first frames, no more.
+    assert len(passing) >= 40 and all(f.payload_hex in truth for f in passing)
+    assert report.search is not None and report.search.shuffled_accepts == 0
+    accepted = next(r for r in report.search.rows if r.outcome == "accepted")
+    assert accepted.layer == "Interleaver"
+    assert f"convolutional I={branches} M={step}" in accepted.candidate
+
+
 def _truth_for(g: Generated, spec: FrameSpec) -> list[str]:
     """Hex of each transmitted frame between its sync word and its CRC field."""
     crc = fec_crc_width(spec)
@@ -312,17 +376,17 @@ def fec_crc_width(spec: FrameSpec) -> int:
 
 
 @pytest.mark.parametrize(
-    ("frame", "inner", "offset"),
+    ("frame", "inner", "offset", "named"),
     [
-        # A sync word and CRC the catalogue has never heard of, straight off the modem.
-        (FrameSpec(sync="POCSAG", crc="CRC-32", payload_bytes=32), None, 0),
+        # A CRC the catalogue has never heard of, straight off the modem.
+        (FrameSpec(sync="POCSAG", crc="CRC-32/Q", payload_bytes=32), None, 0, False),
         # Behind the K=7 code, at an arbitrary bit alignment, with a shorter Barker sync.
-        (FrameSpec(sync="Barker-13", crc="CRC-16/XMODEM", payload_bytes=24), CONV, 5),
+        (FrameSpec(sync="Barker-13", crc="CRC-16/XMODEM", payload_bytes=24), CONV, 5, True),
     ],
-    ids=["pocsag+crc32", "conv+barker13"],
+    ids=["pocsag+crc32q", "conv+barker13"],
 )
 def test_frames_with_an_unknown_sync_word_and_crc_are_found_blind(
-    frame: FrameSpec, inner: fec.Convolutional | None, offset: int
+    frame: FrameSpec, inner: fec.Convolutional | None, offset: int, named: bool
 ) -> None:
     spec = _spec("qpsk", 8, 15.0, frame=frame, inner=inner, stream_offset=offset, offset=0.1)
     g, report = _run(replace(spec, start=10_000, duration=200_000))
@@ -330,7 +394,13 @@ def test_frames_with_an_unknown_sync_word_and_crc_are_found_blind(
     truth = _truth_for(g, frame)
     passing = [f for f in report.frames if f.crc == "pass"]
     assert len(passing) >= 60
-    assert all(f.payload_hex in truth for f in passing)
+    if named:
+        assert all(f.payload_hex in truth for f in passing)
+    else:
+        # An unnamed CRC can't fix the stream's polarity: the payload is what was sent or its
+        # complement, and the report says so (below).
+        complemented = {bytes(b ^ 0xFF for b in bytes.fromhex(h)).hex().upper() for h in truth}
+        assert all(f.payload_hex in truth or f.payload_hex in complemented for f in passing)
 
     assert report.search is not None and report.search.shuffled_accepts == 0
     accepted = next(r for r in report.search.rows if r.outcome == "accepted")
@@ -339,10 +409,15 @@ def test_frames_with_an_unknown_sync_word_and_crc_are_found_blind(
     by_id = {p.id: p for p in stage.parameters}
     assert {"sync_word", "frame_length", "crc", "header"} <= set(by_id)
     assert by_id["frame_length"].value == frame.length
-    assert by_id["crc"].value == frame.crc  # the fit matches a catalogued name
+    if named:
+        assert by_id["crc"].value == frame.crc  # the fit matches a catalogued name
+    else:
+        assert by_id["crc"].value == "CRC-32 poly 0x814141AB"
+        assert any("complemented" in w for w in by_id["sync_word"].warnings)
     assert by_id["sync_word"].level is EvidenceLevel.VERIFIED
     assert any("constant prefix" in w for w in by_id["sync_word"].warnings)
-    assert "counter 16 (+1)" in str(by_id["header"].value)
+    counter = "counter 16 (+1)" if named else "counter 16 (+65535)"  # complemented: counts down
+    assert counter in str(by_id["header"].value)
     assert by_id["header"].level is EvidenceLevel.HYPOTHESIS  # judged on its own, not by the CRC
     assert any("held-out frames pass" in e for e in by_id["crc"].evidence)
 

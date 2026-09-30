@@ -1,0 +1,1 @@
+[   49572ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8766/api/v1/recordings/4bb6bcd1-aeee-4ab3-b484-c173f6023277/events:0

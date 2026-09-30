@@ -14,7 +14,8 @@ interface Props {
   openError: string | null
   view: ViewId
   onViewChange: (view: ViewId) => void
-  onOpen: (path: string) => void
+  /** `sequence` reads numbered files (rec_000, rec_001, ...) as one recording. */
+  onOpen: (path: string, sequence: boolean) => void
   /** Files chosen from the picker (a SigMF pair arrives as two); dropped files reach App directly. */
   onUpload: (files: File[]) => void
   onOpenSettings: () => void
@@ -34,11 +35,12 @@ export function TopBar({
 }: Props) {
   const { theme, toggle } = useTheme()
   const [path, setPath] = useState('')
+  const [sequence, setSequence] = useState(false)
 
   function submit(e: FormEvent) {
     e.preventDefault()
     const trimmed = path.trim()
-    if (trimmed && !opening) onOpen(trimmed)
+    if (trimmed && !opening) onOpen(trimmed, sequence)
   }
 
   return (
@@ -112,6 +114,13 @@ export function TopBar({
           <FolderOpen className="size-3.5" aria-hidden />
           {opening ? 'Opening…' : 'Open'}
         </button>
+        <label
+          className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+          title="Read numbered files (rec_000.cu8, rec_001.cu8, ...) as one recording. A folder is opened as a list of its recordings."
+        >
+          <input type="checkbox" checked={sequence} onChange={(e) => setSequence(e.target.checked)} />
+          Join numbered files
+        </label>
         <label
           className={`flex shrink-0 items-center gap-1 rounded-md border border-border-strong px-2 py-1 text-xs font-medium text-muted-foreground focus-within:ring-2 focus-within:ring-ring ${
             opening ? 'opacity-40' : 'cursor-pointer hover:bg-surface-2 hover:text-foreground'

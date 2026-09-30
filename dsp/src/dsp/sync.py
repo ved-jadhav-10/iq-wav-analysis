@@ -12,7 +12,7 @@ From a channel centred on a detection (`dsp.channel`) and its estimated symbol r
 """
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from numpy.typing import NDArray
@@ -81,6 +81,10 @@ class Timing:
     rate: float  # symbols per channel sample, after the drift correction
     drift: float  # the timing drift followed, in symbols over the whole run
     jitter: float  # RMS scatter of the block timing estimates about their trend, in symbols
+    # What the eye diagram is drawn from: the matched-filter output at SPS samples per symbol,
+    # and the sample position of each symbol in it (one per entry of `symbols`).
+    matched: Complex = field(default_factory=lambda: np.zeros(0, np.complex128), repr=False)
+    instants: Float = field(default_factory=lambda: np.zeros(0), repr=False)
 
 
 def recover_timing(x: Complex, rate: float, rolloff: float) -> Timing:
@@ -104,7 +108,7 @@ def recover_timing(x: Complex, rate: float, rolloff: float) -> Timing:
     symbols = interpolate(y, instants[keep], anti_alias=False)
     symbols = symbols / math.sqrt(float(np.mean(np.abs(symbols) ** 2)))
     slope = float(trend[0])  # symbols of timing drift per symbol
-    return Timing(symbols, rate * (1 + slope), slope * count, jitter)
+    return Timing(symbols, rate * (1 + slope), slope * count, jitter, y, instants[keep])
 
 
 @dataclass(frozen=True)

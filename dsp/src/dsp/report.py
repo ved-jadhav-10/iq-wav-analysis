@@ -73,6 +73,24 @@ class Frame(CamelModel):
     payload_hex: str = Field(description="The frame's payload bytes (CRC excluded), no spaces.")
 
 
+class Eye(CamelModel):
+    """Eye diagram of a linear signal: the matched-filter output around each of a spread of
+    symbols, over one symbol either side, after the accepted carrier correction, scaled so the
+    samples at the symbol instants have unit RMS. Each trace has `2 * samples_per_symbol + 1`
+    points from -1 to +1 symbols."""
+
+    samples_per_symbol: int = Field(ge=1)
+    i: tuple[tuple[FiniteFloat, ...], ...]
+    q: tuple[tuple[FiniteFloat, ...], ...]
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        width = 2 * self.samples_per_symbol + 1
+        if len(self.i) != len(self.q) or any(len(t) != width for t in (*self.i, *self.q)):
+            raise ValueError(f"every eye trace has {width} points, in I and Q alike")
+        return self
+
+
 SignalKind = Literal["psk", "fsk", "cw", "analog", "unknown"]
 
 
@@ -91,6 +109,9 @@ class DetectionReport(CamelModel):
         description="Symbol-spaced (I, Q) points after sync and phase correction, unit RMS, at "
         f"most {MAX_CONSTELLATION_POINTS}. Empty when no symbols were recovered, or for a "
         "signal that isn't PSK.",
+    )
+    eye: Eye | None = Field(
+        default=None, description="Null for a signal that has no matched-filter symbols."
     )
 
     @model_validator(mode="after")

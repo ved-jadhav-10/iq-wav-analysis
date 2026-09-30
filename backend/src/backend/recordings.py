@@ -5,9 +5,8 @@ history): that is M7's scope. Here, a recording is opened once, and everything a
 in a dict - nothing is persisted across a restart. Opening returns once the tiles and the
 detections exist; the decode chain over each detection then runs in the background
 (`backend.jobs`), so the analyst sees the waterfall and the boxes long before the last report.
-`app.py` is what turns `dsp.detect.detection_parameters`'s output into API-shaped evidence; a
-`dsp.results.Signal` per detection isn't assembled here, since that belongs to the real job
-document M7 builds, not this bridge.
+`app.py` is what turns `dsp.detect.detection_parameters`'s output into API-shaped evidence; the
+results document is assembled by `backend.analysis` (used by `sanket analyse`), not here.
 """
 
 import json
@@ -16,53 +15,29 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 from threading import RLock
+from typing import Literal
 
-from dsp.analyse import analyse
-from dsp.detect import Detection, detect, detection_parameters
-from dsp.evidence import EvidenceLevel
-from dsp.ingest.dispatch import AnyRecording, NeedsDecompression, open_path
-from dsp.ingest.recording import entered
-from dsp.report import DetectionReport, StageReport
+from dsp.detect import Detection, detect
+from dsp.ingest.dispatch import AnyRecording
+from dsp.report import DetectionReport
 from dsp.results import Assumptions
 from dsp.tiles import Pyramid, build_pyramid
 
+from .analysis import Entries, analyse_detection, assumptions_with, numeric_rate
+from .inputs import RecordingError, expand, open_input
 from .jobs import AnalysisJob, run_analysis
 
 
-class RecordingError(ValueError):
-    """A recording can't be opened or its format is not yet known well enough to tile it."""
-
-
-def _failed_analysis(detection: Detection, error: str) -> DetectionReport:
-    """`dsp.analyse.analyse` raised for this detection: report it honestly rather than failing
-    the whole recording. The detect stage still stands (it's what produced the box); a second,
-    failed stage carries the error, and the top-level level stays ESTIMATED - the level of the
-    one stage that actually succeeded."""
-    detect_stage = StageReport(
-        id="detect",
-        name="Detect",
-        status="done",
-        summary="Band found by the detector",
-        level=EvidenceLevel.ESTIMATED,
-        parameters=detection_parameters(detection),
-    )
-    failed_stage = StageReport(
-        id="analyse",
-        name="Analyse",
-        status="failed",
-        summary="Analysis raised an exception",
-        error=error,
-    )
-    return DetectionReport(
-        label="Signal",
-        kind="unknown",
-        level=EvidenceLevel.ESTIMATED,
-        headline=f"Analysis failed: {error}",
-        stages=(detect_stage, failed_stage),
-        search=None,
-        no_search_reason="Analysis failed before a search could run.",
-        no_frames_reason="Analysis failed before any frames could be found.",
-    )
+def _survey(
+    source: AnyRecording, *, real: bool, swap_iq: bool
+) -> tuple[Pyramid, tuple[Detection, ...]]:
+    """The tile pyramid and the detections, each one streaming pass over the samples. Detection
+    has its own FFT sizes, independent of the pyramid's: PLAN §5 M2's "first tile <= 2 s" item
+    is still open partly because of this second pass."""
+    with source.reader(swap_iq=swap_iq) as reader:
+        pyramid = build_pyramid(reader, real=real)
+    with source.reader(swap_iq=swap_iq) as reader:
+        return pyramid, detect(reader, real=real).detections
 
 
 SYNTH_RECORDER = "sanket dsp.synth"
@@ -93,15 +68,16 @@ class Recording:
     job: AnalysisJob
     recorder: str | None = None  # what the file says wrote it (SigMF core:recorder), if it says
     # Values the analyst entered, by assumption name; each replaces the file's own entry.
-    entered: tuple[tuple[str, float], ...] = ()
+    entered: Entries = ()
+
+    @property
+    def swap_iq(self) -> bool:
+        """The analyst says Q comes first: every read of the samples swaps the two."""
+        return dict(self.entered).get("iq_order") == "QI"
 
     @property
     def assumptions(self) -> Assumptions:
-        stated = self.source.assumptions
-        fields = {name: getattr(stated, name) for name in Assumptions.model_fields}
-        for name, value in self.entered:
-            fields[name] = entered(name, value, prior=fields[name])
-        return Assumptions.model_validate(fields)
+        return assumptions_with(self.source.assumptions, self.entered)
 
     @property
     def analyses(self) -> tuple[DetectionReport | None, ...]:
@@ -134,35 +110,22 @@ class RecordingStore:
             recording.job.cancel()
         self._executor.shutdown(wait=False, cancel_futures=True)
 
-    def open(self, path: Path) -> Recording:
-        if not path.is_file():
-            raise RecordingError(f"{path} is not a file")
-        try:
-            found = open_path(path)
-        except NeedsDecompression as exc:
-            raise RecordingError(str(exc)) from exc
-        except ValueError as exc:
-            raise RecordingError(f"could not read {path.name}: {exc}") from exc
-        if len(found) != 1:
+    def open(self, path: Path, *, sequence: bool = False, datatype: str | None = None) -> Recording:
+        """Open the one recording `path` names: a file, or with `sequence` the numbered files
+        beside it as one. A folder is a batch, not a recording (`expand` lists it)."""
+        items = expand(path, sequence=sequence)
+        if len(items) != 1:
             raise RecordingError(
-                f"{path.name} holds {len(found)} recordings; opening a multi-capture archive "
-                "isn't supported yet, pick a single-capture file"
+                f"{path} holds {len(items)} recordings; open one of them (or its numbered "
+                "files as a sequence)"
             )
-        opened = found[0]
+        if sequence and len(items[0].paths) == 1:
+            raise RecordingError(f"{items[0].name} has no numbered siblings to join it to")
+        opened = open_input(items[0], datatype)
         fmt = opened.recording.sample_format
-        if fmt is None:
-            raise RecordingError(
-                f"{path.name}'s sample format is unknown; resolve it before tiling "
-                "(see the recording's Assumptions block)"
-            )
+        assert fmt is not None  # open_input raised for an UNKNOWN format
         real = not fmt.is_complex
-        with opened.recording.reader() as reader:
-            pyramid = build_pyramid(reader, real=real)
-        # A second streaming pass, at detect's own FFT sizes (independent of the pyramid's):
-        # PLAN §5 M2's own "first tile <= 2 s" item is still open partly because of this - see
-        # PLAN's M2 checklist.
-        with opened.recording.reader() as reader:
-            detections = detect(reader, real=real).detections
+        pyramid, detections = _survey(opened.recording, real=real, swap_iq=False)
         recording = Recording(
             id=str(uuid.uuid4()),
             path=path,
@@ -184,28 +147,38 @@ class RecordingStore:
         *,
         sample_rate: float | None = None,
         center_frequency: float | None = None,
+        iq_order: Literal["IQ", "QI"] | None = None,
     ) -> Recording | None:
-        """Take an analyst-entered sample rate and/or centre frequency and analyse again.
+        """Take analyst-entered values (sample rate, centre frequency, IQ order) and analyse
+        again.
 
-        The tiles and detections are in fractions of the sample rate, so they stand; what the
-        rate changes is the boxes' units and whether the decode chain can run, so the analysis
-        restarts. Returns None for an unknown id."""
+        The tiles and detections are in fractions of the sample rate, so a rate or a centre
+        frequency leaves them standing; what it changes is the boxes' units and whether the
+        decode chain can run. An IQ order that swaps I and Q mirrors the spectrum, so the tiles
+        and detections are built again. Returns None for an unknown id."""
         with self._lock:  # read, change and register as one step: overlapping calls both count
             current = self.get(recording_id)
             if current is None:
                 return None
+            if iq_order is not None and current.real:
+                raise RecordingError("IQ order applies to complex samples; this recording is real")
             current.job.cancel()
             changes = dict(current.entered)
             if sample_rate is not None:
                 changes["sample_rate"] = sample_rate
             if center_frequency is not None:
                 changes["center_frequency"] = center_frequency
-            return self._start(replace(current, entered=tuple(changes.items())))
+            if iq_order is not None:
+                changes["iq_order"] = iq_order
+            updated = replace(current, entered=tuple(changes.items()))
+            if updated.swap_iq != current.swap_iq:
+                pyramid, detections = _survey(updated.source, real=False, swap_iq=updated.swap_iq)
+                updated = replace(updated, pyramid=pyramid, detections=detections)
+            return self._start(updated)
 
     def _start(self, recording: Recording) -> Recording:
         """Register `recording` and analyse its detections in the background."""
-        rate = recording.assumptions.sample_rate.value
-        sample_rate = rate if isinstance(rate, int | float) else None
+        sample_rate = numeric_rate(recording.assumptions)
         # Boxes need a rate to be shown at all (`app.py`), so with none there is nothing to
         # analyse yet; entering one as an assumption starts it.
         detections = recording.detections
@@ -213,12 +186,12 @@ class RecordingStore:
         recording = replace(recording, job=job)
 
         def analyse_one(index: int) -> DetectionReport:
-            d = detections[index]
-            try:
-                with recording.source.reader() as reader:
-                    return analyse(reader, d, sample_rate=sample_rate)
-            except Exception as exc:  # one detection's failure mustn't sink the whole recording
-                return _failed_analysis(d, str(exc))
+            return analyse_detection(
+                recording.source,
+                detections[index],
+                sample_rate=sample_rate,
+                swap_iq=recording.swap_iq,
+            )
 
         with self._lock:
             self._recordings[recording.id] = recording

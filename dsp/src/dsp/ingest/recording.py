@@ -18,6 +18,7 @@ NAMES = {
     "data_offset": "Data offset",
     "sample_rate": "Sample rate",
     "center_frequency": "Centre frequency",
+    "iq_order": "IQ order",
     "start_time": "Start time",
 }
 UNITS = {"data_offset": "B", "sample_rate": "S/s", "center_frequency": "Hz"}
@@ -47,7 +48,7 @@ def stated(
     )
 
 
-def entered(id_: str, value: float, prior: Parameter | None = None) -> Parameter:
+def entered(id_: str, value: str | float, prior: Parameter | None = None) -> Parameter:
     """A value the analyst typed in: MEASURED as far as "entered by the analyst" goes, and
     stated as exactly that. It replaces whatever the file said or left UNKNOWN; nothing has
     checked it against the samples yet.
@@ -66,8 +67,9 @@ def entered(id_: str, value: float, prior: Parameter | None = None) -> Parameter
                 "the analyst chose it, no test did."
             )
         if prior.value is not None and prior.value != value:
+            source = "Sanket assumed" if id_ == "iq_order" else "The file gives"
             warnings = (
-                f"The file gives {prior.value}{tail} ({prior.level.value}); the analyst entered "
+                f"{source} {prior.value}{tail} ({prior.level.value}); the analyst entered "
                 f"{value}{tail}, and the entered value is used.",
             )
     return Parameter(

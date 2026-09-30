@@ -1,16 +1,21 @@
 """Opening a recording and fetching its tiles over the API (PLAN §5 M2)."""
 
 import json
+import wave
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
+from numpy.typing import NDArray
 
 from backend.app import create_app
 from dsp.ingest.formats import SampleFormat
-from dsp.synth.chain import Scene, SignalSpec, generate, write_sigmf
+
+RATE = 1e6  # the fixtures' sample rate, and the synth signal's offset from the centre
+OFFSET = 0.2
 
 
 @pytest.fixture
@@ -24,15 +29,6 @@ def dist(tmp_path: Path) -> Path:
 @pytest.fixture
 def client(dist: Path) -> TestClient:
     return TestClient(create_app(dist))
-
-
-@pytest.fixture
-def sigmf_path(tmp_path: Path) -> Path:
-    spec = SignalSpec("qpsk", sps=8.0, frame=None, offset=0.2, power_db=0.0)
-    scene = Scene(1 << 16, (spec,), noise_db=-20.0, sample_rate=1e6, center_frequency=1e8)
-    g = generate(scene, seed=1)
-    meta = write_sigmf(tmp_path / "rec", g, scene, "cf32_le")
-    return meta
 
 
 def progress_events(client: TestClient, recording_id: str) -> list[dict[str, Any]]:
@@ -292,3 +288,215 @@ def test_a_non_positive_or_non_finite_rate_is_refused(client: TestClient, sigmf_
         )
         assert response.status_code == 422
     assert client.put("/api/v1/recordings/nope/assumptions", json={}).status_code == 404
+
+
+def box_of(body: dict[str, Any]) -> tuple[float, float]:
+    (d,) = body["detections"]
+    return d["box"]["f0"], d["box"]["f1"]
+
+
+def test_the_signal_sits_where_the_synth_put_it(client: TestClient, sigmf_path: Path) -> None:
+    """Ground truth for the swap tests below: one QPSK signal at +0.2 of the sample rate."""
+    f0, f1 = box_of(open_and_finish(client, sigmf_path))
+    assert f0 < OFFSET * RATE < f1
+
+
+def test_swapping_iq_mirrors_the_spectrum_and_says_the_analyst_chose_it(
+    client: TestClient, sigmf_path: Path
+) -> None:
+    opened = open_and_finish(client, sigmf_path)
+    assert opened["assumptions"]["iqOrder"]["level"] == "HYPOTHESIS"
+    f0, f1 = box_of(opened)
+
+    body = client.put(
+        f"/api/v1/recordings/{opened['id']}/assumptions", json={"iqOrder": "QI"}
+    ).json()
+    order = body["assumptions"]["iqOrder"]
+    assert (order["value"], order["level"]) == ("QI", "MEASURED")
+    assert order["method"] == "Entered by the analyst"
+    assert any("Sanket assumed IQ" in w for w in order["warnings"])  # it overrode the assumption
+    # The tiles and the detections were built again from swapped samples: the signal is now at
+    # -0.2 of the rate, and so is the spectrum's strongest bin (anywhere in a flat-topped band).
+    m0, m1 = box_of(body)
+    assert m0 == pytest.approx(-f1, abs=RATE / body["fftSize"])
+    assert m1 == pytest.approx(-f0, abs=RATE / body["fftSize"])
+    peak = np.argmax(body["psdDb"])
+    assert m0 <= body["freqsHz"][peak] <= m1
+    events = progress_events(client, body["id"])
+    assert events[-1]["state"] == "done"
+    done = client.get(f"/api/v1/recordings/{body['id']}").json()
+    assert done["detections"][0]["analysis"] is not None
+
+    # Swapping back restores the original picture; entering the convention is no conflict.
+    back = client.put(
+        f"/api/v1/recordings/{opened['id']}/assumptions", json={"iqOrder": "IQ"}
+    ).json()
+    assert box_of(back) == pytest.approx((f0, f1))
+    assert back["assumptions"]["iqOrder"]["warnings"] == []
+
+
+def test_entering_iq_order_on_a_real_recording_is_refused(
+    client: TestClient, tmp_path: Path, samples: NDArray[np.complex128]
+) -> None:
+    path = tmp_path / "audio.wav"
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(48_000)
+        w.writeframes(SampleFormat.parse("ri16_le").encode(samples.real / np.max(samples.real)))
+    opened = client.post("/api/v1/recordings", json={"path": str(path)}).json()
+    assert opened["real"] is True and opened["assumptions"]["iqOrder"] is None
+    response = client.put(f"/api/v1/recordings/{opened['id']}/assumptions", json={"iqOrder": "QI"})
+    assert response.status_code == 422 and "complex" in response.json()["detail"]
+    assert (
+        client.put(
+            f"/api/v1/recordings/{opened['id']}/assumptions", json={"iqOrder": "XY"}
+        ).status_code
+        == 422
+    )
+
+
+def test_an_entered_centre_frequency_replaces_the_files_and_warns(
+    client: TestClient, sigmf_path: Path
+) -> None:
+    opened = client.post("/api/v1/recordings", json={"path": str(sigmf_path)}).json()
+    assert opened["assumptions"]["centerFrequency"]["value"] == 1e8
+    body = client.put(
+        f"/api/v1/recordings/{opened['id']}/assumptions", json={"centerFrequency": 433.92e6}
+    ).json()
+    centre = body["assumptions"]["centerFrequency"]
+    assert (centre["value"], centre["level"]) == (433.92e6, "MEASURED")
+    assert centre["method"] == "Entered by the analyst"
+    assert any("the file gives" in w.lower() for w in centre["warnings"])
+    assert body["assumptions"]["sampleRate"]["value"] == 1e6  # the rest is untouched
+
+
+def test_a_numbered_sequence_opens_as_one_recording_with_the_boxes_of_the_whole(
+    client: TestClient,
+    tmp_path: Path,
+    samples: NDArray[np.complex128],
+    write_wav: Callable[..., Path],
+) -> None:
+    peak = float(np.max(np.abs(samples)))
+    whole = write_wav(tmp_path / "whole.wav", samples, peak=peak)
+    for i, part in enumerate(np.array_split(samples, 4)):
+        write_wav(tmp_path / f"cap_{i}.wav", part, peak=peak)
+    truth = open_and_finish(client, whole)
+
+    opened = client.post(
+        "/api/v1/recordings", json={"path": str(tmp_path / "cap_2.wav"), "sequence": True}
+    ).json()
+    assert opened["container"] == "Numbered sequence"
+    assert opened["name"] == "cap_0.wav (+3 files)"
+    assert opened["numSamples"] == len(samples)
+    assert box_of(opened) == pytest.approx(box_of(truth))
+    assert opened["detections"][0]["box"] == truth["detections"][0]["box"]
+
+
+def test_a_sequence_without_numbered_siblings_is_a_client_error(
+    client: TestClient, sigmf_path: Path
+) -> None:
+    response = client.post("/api/v1/recordings", json={"path": str(sigmf_path), "sequence": True})
+    assert response.status_code == 422 and "numbered siblings" in response.json()["detail"]
+
+
+def test_a_folder_is_listed_as_inputs_and_is_not_itself_a_recording(
+    client: TestClient,
+    tmp_path: Path,
+    samples: NDArray[np.complex128],
+    write_wav: Callable[..., Path],
+) -> None:
+    for i in (0, 1):
+        write_wav(tmp_path / f"cap_{i}.wav", samples)
+    write_wav(tmp_path / "solo.wav", samples)
+    (tmp_path / "notes.txt").write_text("not a recording")
+    listed = client.post("/api/v1/inputs", json={"path": str(tmp_path)}).json()
+    assert [i["name"] for i in listed] == ["cap_0.wav", "cap_1.wav", "solo.wav"]
+    assert all(i["files"] == 1 and not i["sequence"] for i in listed)
+    joined = client.post("/api/v1/inputs", json={"path": str(tmp_path), "sequence": True}).json()
+    assert [(i["name"], i["files"], i["sequence"]) for i in joined] == [
+        ("cap_0.wav (+1 files)", 2, True),
+        ("solo.wav", 1, False),
+    ]
+    # Each listed input opens as the recording it names.
+    first = client.post(
+        "/api/v1/recordings", json={"path": joined[0]["path"], "sequence": joined[0]["sequence"]}
+    )
+    assert first.status_code == 200 and first.json()["numSamples"] == 2 * len(samples)
+
+    response = client.post("/api/v1/recordings", json={"path": str(tmp_path)})
+    assert response.status_code == 422 and "holds 3 recordings" in response.json()["detail"]
+    assert client.post("/api/v1/inputs", json={"path": str(tmp_path / "no")}).status_code == 422
+
+
+def test_an_unknown_format_offers_the_sniffers_candidates_and_takes_the_analysts_choice(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """All-zero bytes fit every width: the sniffer can't choose, and says which it can't."""
+    path = tmp_path / "silence.bin"
+    path.write_bytes(bytes(1 << 16))
+    refused = client.post("/api/v1/recordings", json={"path": str(path)})
+    assert refused.status_code == 422
+    assert set(refused.json()["formatCandidates"]) == {"ci32_le", "ri32_le", "ci16_le", "ri16_le"}
+    assert "unknown" in refused.json()["detail"]
+
+    complex_ = client.post(
+        "/api/v1/recordings", json={"path": str(path), "datatype": "ci16_le"}
+    ).json()
+    datatype = complex_["assumptions"]["datatype"]
+    assert (datatype["value"], datatype["level"]) == ("ci16_le", "MEASURED")
+    assert datatype["method"] == "Entered by the analyst"
+    assert any("candidates offered" in e for e in datatype["evidence"])
+    assert complex_["real"] is False and complex_["numSamples"] == (1 << 16) // 4
+    real = client.post("/api/v1/recordings", json={"path": str(path), "datatype": "ri16_le"}).json()
+    assert real["real"] is True and real["numSamples"] == (1 << 16) // 2
+
+
+def test_a_datatype_that_is_not_one_or_that_a_container_already_states_is_refused(
+    client: TestClient, tmp_path: Path, sigmf_path: Path
+) -> None:
+    path = tmp_path / "silence.bin"
+    path.write_bytes(bytes(1 << 16))
+    bad = client.post("/api/v1/recordings", json={"path": str(path), "datatype": "bogus"})
+    assert bad.status_code == 422 and "not a sample format" in bad.json()["detail"]
+    stated = client.post("/api/v1/recordings", json={"path": str(sigmf_path), "datatype": "cu8"})
+    assert stated.status_code == 422 and "state their own sample format" in stated.json()["detail"]
+
+
+def test_the_frame_table_downloads_in_every_format_and_matches_what_was_sent(
+    client: TestClient, framed_path: Path, transmitted: set[str]
+) -> None:
+    opened = open_and_finish(client, framed_path)
+    url = f"/api/v1/recordings/{opened['id']}/detections/0/frames"
+    reported = opened["detections"][0]["analysis"]["frames"]
+    passing = [f["payloadHex"] for f in reported if f["crc"] == "pass"]
+    assert len(passing) >= 30 and set(passing) <= transmitted
+
+    as_json = client.get(url, params={"format": "json"})
+    assert as_json.headers["content-type"] == "application/json"
+    assert 'filename="framed.signal_0.frames.json"' in as_json.headers["content-disposition"]
+    assert as_json.json()["frames"] == reported
+
+    as_csv = client.get(url, params={"format": "csv"})
+    assert as_csv.headers["content-type"].startswith("text/csv")
+    assert len(as_csv.text.splitlines()) == 1 + len(reported)
+
+    as_hex = client.get(url, params={"format": "hex"})
+    assert as_hex.text.split() == passing
+    assert 'frames.hex.txt"' in as_hex.headers["content-disposition"]
+    as_bits = client.get(url, params={"format": "bits"})
+    assert [int(line, 2) for line in as_bits.text.split()] == [int(h, 16) for h in passing]
+    assert client.get(url).text == as_json.text  # JSON is the default
+
+
+def test_the_frame_table_of_something_that_is_not_there_is_refused(
+    client: TestClient, sigmf_path: Path
+) -> None:
+    opened = open_and_finish(client, sigmf_path)
+    base = f"/api/v1/recordings/{opened['id']}/detections"
+    assert client.get("/api/v1/recordings/nope/detections/0/frames").status_code == 404
+    assert client.get(f"{base}/5/frames").status_code == 404
+    assert client.get(f"{base}/-1/frames").status_code == 404
+    assert client.get(f"{base}/0/frames", params={"format": "xml"}).status_code == 422
+    # This scene carries no frames: an empty table, not an error.
+    assert client.get(f"{base}/0/frames", params={"format": "hex"}).text == ""

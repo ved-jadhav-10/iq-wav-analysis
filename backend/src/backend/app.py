@@ -1,4 +1,5 @@
 import json
+import re
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from importlib.metadata import version
@@ -6,16 +7,18 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import Field
 
 from dsp.detect import Detection, detection_parameters
 from dsp.evidence import CamelModel, Parameter
+from dsp.frame_table import MEDIA_TYPES, ExportFormat, render
 from dsp.report import DetectionReport
 from dsp.results import Assumptions
 
-from .recordings import Recording, RecordingError, RecordingStore
+from .inputs import FormatUnknownError, RecordingError, expand
+from .recordings import Recording, RecordingStore
 from .uploads import DEFAULT_MAX_UPLOAD_BYTES, UploadError, UploadStore
 
 API_PREFIX = "/api/v1"
@@ -23,6 +26,32 @@ API_PREFIX = "/api/v1"
 
 class OpenRecordingRequest(CamelModel):
     path: str
+    sequence: bool = Field(
+        default=False,
+        description="Read the numbered files beside `path` (rec_000.cu8, rec_001.cu8, ...) as "
+        "one recording.",
+    )
+    datatype: str | None = Field(
+        default=None,
+        description="The sample format of a raw file, when the sniffer can't tell: a SigMF "
+        "datatype such as cu8 or cf32_le. Recorded as entered by the analyst.",
+    )
+
+
+class InputInfo(CamelModel):
+    """One recording a path names: open it with `path` and `sequence`."""
+
+    path: str = Field(
+        description="The file to open; the first of the files when there are several."
+    )
+    name: str
+    files: int = Field(ge=1)
+    sequence: bool = Field(description="Several numbered files read as one recording.")
+
+
+class InputsRequest(CamelModel):
+    path: str
+    sequence: bool = False
 
 
 class UploadedFile(CamelModel):
@@ -39,6 +68,11 @@ class AssumptionsRequest(CamelModel):
 
     sample_rate: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     center_frequency: float | None = Field(default=None, allow_inf_nan=False)
+    iq_order: Literal["IQ", "QI"] | None = Field(
+        default=None,
+        description="QI swaps the two components, which mirrors the spectrum: pick it when a "
+        "known carrier sits on the wrong side. The samples can't tell the two apart.",
+    )
 
 
 class LevelInfo(CamelModel):
@@ -230,10 +264,33 @@ def create_app(
             raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
         return UploadedFile(path=str(path), size=path.stat().st_size)
 
-    @app.post(f"{API_PREFIX}/recordings", response_model=RecordingInfo)
-    def open_recording(body: OpenRecordingRequest) -> RecordingInfo:
+    @app.post(f"{API_PREFIX}/inputs", response_model=tuple[InputInfo, ...])
+    def list_inputs(body: InputsRequest) -> tuple[InputInfo, ...]:
+        """The recordings a path names: itself, or a folder's files. Reads no samples."""
         try:
-            recording = store.open(Path(body.path))
+            items = expand(Path(body.path), sequence=body.sequence)
+        except RecordingError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return tuple(
+            InputInfo(
+                path=str(item.paths[0]),
+                name=item.name,
+                files=len(item.paths),
+                sequence=len(item.paths) > 1,
+            )
+            for item in items
+        )
+
+    @app.post(f"{API_PREFIX}/recordings", response_model=RecordingInfo | None)
+    def open_recording(body: OpenRecordingRequest) -> RecordingInfo | JSONResponse:
+        try:
+            recording = store.open(Path(body.path), sequence=body.sequence, datatype=body.datatype)
+        except FormatUnknownError as exc:
+            # The analyst can settle it: the candidates ride along for the UI to offer.
+            return JSONResponse(
+                status_code=422,
+                content={"detail": str(exc), "formatCandidates": list(exc.candidates)},
+            )
         except RecordingError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return _to_info(recording)
@@ -247,9 +304,15 @@ def create_app(
 
     @app.put(f"{API_PREFIX}/recordings/{{recording_id}}/assumptions", response_model=RecordingInfo)
     def put_assumptions(recording_id: str, body: AssumptionsRequest) -> RecordingInfo:
-        recording = store.assume(
-            recording_id, sample_rate=body.sample_rate, center_frequency=body.center_frequency
-        )
+        try:
+            recording = store.assume(
+                recording_id,
+                sample_rate=body.sample_rate,
+                center_frequency=body.center_frequency,
+                iq_order=body.iq_order,
+            )
+        except RecordingError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         if recording is None:
             raise HTTPException(status_code=404, detail="no such recording")
         return _to_info(recording)
@@ -263,6 +326,28 @@ def create_app(
             _progress_events(recording),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache"},
+        )
+
+    @app.get(f"{API_PREFIX}/recordings/{{recording_id}}/detections/{{index}}/frames")
+    def get_frames(recording_id: str, index: int, format: ExportFormat = "json") -> Response:
+        """The signal's frame table as a download: JSON and CSV carry every frame with its CRC
+        outcome, hex and bits only the frames that passed (`dsp.frame_table`)."""
+        recording = store.get(recording_id)
+        if recording is None:
+            raise HTTPException(status_code=404, detail="no such recording")
+        if not 0 <= index < len(recording.detections):
+            raise HTTPException(status_code=404, detail="no such signal")
+        report = recording.analyses[index]
+        if report is None:
+            raise HTTPException(status_code=409, detail="the analysis has not reached this signal")
+        stem = re.sub(r"[^A-Za-z0-9._-]+", "_", recording.path.stem) or "recording"
+        ext = format if format in ("json", "csv") else f"{format}.txt"
+        return Response(
+            content=render(report.frames, format),
+            media_type=MEDIA_TYPES[format],
+            headers={
+                "Content-Disposition": f'attachment; filename="{stem}.signal_{index}.frames.{ext}"'
+            },
         )
 
     @app.get(f"{API_PREFIX}/tiles/{{recording_id}}/{{level}}/{{row}}/{{col}}")

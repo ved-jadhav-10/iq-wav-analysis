@@ -4,7 +4,18 @@ dsp.synth's own encoders - RS(255,223) via galois, and the block-interleaver cat
 import numpy as np
 import pytest
 
-from dsp.deinterleave import CATALOGUE, Block, Helical, Interleaver, Wifi, deinterleave
+from dsp.deinterleave import (
+    CATALOGUE,
+    FORNEY_CATALOGUE,
+    Block,
+    Forney,
+    Helical,
+    Interleaver,
+    Qpp,
+    Wifi,
+    deinterleave,
+    deinterleave_forney,
+)
 from dsp.fec.rs import (
     CCSDS_FIELD_POLY,
     CCSDS_FIRST_ROOT,
@@ -66,12 +77,14 @@ def _synth_twin(entry: Interleaver) -> il.BlockInterleaver:
         return il.Block(entry.rows, entry.cols)
     if isinstance(entry, Helical):
         return il.Helical(entry.rows, entry.cols)
+    if isinstance(entry, Qpp):
+        return il.Qpp(entry.k, entry.f1, entry.f2)
     return il.Wifi(entry.n_cbps, entry.n_bpsc)
 
 
 def test_the_catalogue_holds_every_family_and_no_duplicates() -> None:
     kinds = {type(e) for e in CATALOGUE}
-    assert kinds == {Block, Helical, Wifi}
+    assert kinds == {Block, Helical, Wifi, Qpp}
     assert len({e.label for e in CATALOGUE}) == len(CATALOGUE)
     assert [e.n_cbps for e in CATALOGUE if isinstance(e, Wifi)] == [48, 96, 192, 288]
 
@@ -88,6 +101,35 @@ def test_catalogue_entry_inverts_synths_interleaver_exactly(entry: Interleaver) 
     recovered = deinterleave(interleaved, entry)
     assert np.array_equal(recovered, x)
     assert np.array_equal(recovered, il.deinterleave(interleaved, synth_entry))
+
+
+@pytest.mark.parametrize("entry", FORNEY_CATALOGUE, ids=lambda e: e.label)
+def test_forney_entry_inverts_synths_interleaver_after_its_lag(entry: Forney) -> None:
+    rng = np.random.default_rng(entry.branches * 100 + entry.step)
+    x = rng.integers(0, 2, 600, dtype=np.uint8)
+    interleaved = il.Convolutional(entry.branches, entry.step).interleave(x)
+    recovered = deinterleave_forney(interleaved, entry)
+    assert np.array_equal(recovered[entry.lag :], x[: len(x) - entry.lag])
+    assert not recovered[: entry.lag].any() or entry.lag == 0  # start-up filler is zeros
+    assert len({(e.branches, e.step) for e in FORNEY_CATALOGUE}) == len(FORNEY_CATALOGUE)
+
+
+def test_forney_phase_drops_leading_elements_so_the_lanes_line_up_again() -> None:
+    entry = Forney(4, 3)
+    x = np.random.default_rng(3).integers(0, 2, 400, dtype=np.uint8)
+    interleaved = il.Convolutional(4, 3).interleave(x)
+    junk = np.array([1, 0, 1], dtype=np.uint8)
+    recovered = deinterleave_forney(np.concatenate([junk, interleaved]), entry, phase=3)
+    assert np.array_equal(recovered[entry.lag :], x[: len(x) - entry.lag])
+
+
+def test_qpp_table_entries_are_permutations_with_the_documented_form() -> None:
+    from math import gcd
+
+    for e in (e for e in CATALOGUE if isinstance(e, Qpp)):
+        assert sorted(e.permutation()) == list(range(e.k))  # raises if it isn't
+        assert gcd(e.f1, e.k) == 1  # a QPP needs f1 coprime with K, and f2 built from K's primes
+    assert Qpp(40, 3, 10).permutation()[:4].tolist() == [0, 13, 46 % 40, (3 * 3 + 10 * 9) % 40]
 
 
 def test_deinterleave_drops_a_leading_alignment_and_a_trailing_partial_block() -> None:

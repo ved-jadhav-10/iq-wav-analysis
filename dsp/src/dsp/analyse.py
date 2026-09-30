@@ -31,7 +31,14 @@ from dsp.blind_framing import (
     structure_z,
 )
 from dsp.channel import Channel, channelise
-from dsp.deinterleave import CATALOGUE, Interleaver, deinterleave
+from dsp.deinterleave import (
+    CATALOGUE,
+    FORNEY_CATALOGUE,
+    Forney,
+    Interleaver,
+    deinterleave,
+    deinterleave_forney,
+)
 from dsp.demod import BITS_PER_SYMBOL, ORDERS, demap, rotate, rotations
 from dsp.detect import Detection, detection_parameters
 from dsp.estimate.params import (
@@ -43,6 +50,7 @@ from dsp.estimate.params import (
     symbol_rate,
 )
 from dsp.evidence import Alternative, EvidenceLevel, Parameter, Proof, promote
+from dsp.eye import eye_diagram
 from dsp.fec import rs
 from dsp.fec.convident import (
     DEFAULT_MAX_CONSTRAINT,
@@ -77,11 +85,15 @@ from dsp.sync import Carrier, Timing, correct_carrier, recover_timing
 
 ALPHA = 0.01
 MAX_LEDGER_ROWS = 12
+# Branches per FSK symbol-rate candidate: 2-FSK, and the 4 and 8 tone orders each with the
+# spectrum as received and mirrored.
+FSK_BRANCHES = 1 + 2 + 2
 SHUFFLED_RUNS = 3
 MIN_SYMBOLS = 512
 CODES: tuple[ConvCode | None, ...] = (K7_R12, None)
-# Interleavers (dsp.deinterleave.CATALOGUE: block, helical, 802.11) are tried after the
-# convolutional code; alignment by the code's parity syndrome, which sits near 0.5 when misaligned.
+# Interleavers (dsp.deinterleave.CATALOGUE: block, helical, 802.11, QPP; FORNEY_CATALOGUE:
+# convolutional) are tried after the convolutional code; alignment by the code's parity
+# syndrome, which sits near 0.5 when misaligned.
 SYNDROME_SCREEN = 0.25
 SCREEN_BITS = 2048  # at least this many coded bits per alignment tried
 SCREEN_CHUNK = 256  # alignments screened per batch
@@ -121,6 +133,13 @@ def analyse(
     # verdict needs the absence of a symbol-rate line in |x|² as well.
     rate = symbol_rate(x)
     analog = _analog(x, channel, detection)
+    if analog is not None and analog[0] == "fm":
+        # Noisy tones (M-FSK at moderate SNR) pull the frequency kurtosis toward FM's, so a
+        # tone-transition comb gets its chance: a CRC-verified FSK decode outranks the rule.
+        candidates = [r for r in fsk_symbol_rates(x) if r.normalised_rate * len(x) >= MIN_SYMBOLS]
+        tried = _fsk_report(detect_stage, detection, units, x, candidates)
+        if tried is not None and tried.level is E.VERIFIED:
+            return tried
     if analog is not None and (analog[0] == "fm" or rate is None):
         kind, param = analog
         return DetectionReport(
@@ -261,7 +280,13 @@ def _frequency_kurtosis(x: Any, channel: Channel, detection: Detection) -> float
 
 
 # Theoretical (|C40|, -C42) of unit-power symbols; noise shrinks both toward 0.
-CUMULANTS = {"BPSK": (2.0, 2.0), "QPSK": (1.0, 1.0), "8PSK": (0.0, 1.0), "16QAM": (0.68, 0.68)}
+CUMULANTS = {
+    "BPSK": (2.0, 2.0),
+    "QPSK": (1.0, 1.0),
+    "8PSK": (0.0, 1.0),
+    "16QAM": (0.68, 0.68),
+    "64QAM": (0.619, 0.619),
+}
 
 
 def _features(symbols: Any) -> tuple[float, float]:
@@ -314,9 +339,10 @@ class _Chain:
             code += f" · {self.descrambler.name}"
         deinterleave = f" · {self.interleaver}" if self.interleaver else ""
         outer = f" · {RS_NAME}" if self.outer else ""
-        # For FSK the branch index is which candidate symbol rate, not a carrier rotation.
+        # For FSK the branch index is 2 * the candidate symbol rate + (spectrum mirrored), not a
+        # carrier rotation.
         where = (
-            f"rate candidate {self.rotation + 1}"
+            f"rate candidate {self.rotation // 2 + 1}" + (", mirrored" if self.rotation % 2 else "")
             if self.modulation.endswith("FSK")
             else f"at {self.rotation}°"
         )
@@ -498,6 +524,49 @@ def _interleaver_cells(branch: Branch) -> list[_Chain]:
     return chains
 
 
+def _forney_cells(branch: Branch) -> list[_Chain]:
+    """Each convolutional (Forney) interleaver in front of the K=7 code, at the lane phase and
+    code phase where the parity syndrome is lowest; only one that passes the screen goes on to
+    Viterbi and framing."""
+    modulation, rotation, soft = branch
+    chains: list[_Chain] = []
+    if modulation in ("BPSK", "QPSK") and rotation >= 180:
+        return chains  # counted as tried, as for the block interleavers
+    llr = np.asarray(soft, np.float64)
+    for entry in FORNEY_CATALOGUE:
+        phase, offset, rate = _forney_alignment(llr, entry)
+        label = f"{entry.label} from bit {phase}" + (f", code phase {offset}" if offset else "")
+        if rate >= SYNDROME_SCREEN:
+            chains.append(_Chain(modulation, rotation, K7_R12, 0, None, llr, None, label, rate))
+            continue
+        stream = deinterleave_forney(llr, entry, phase)[entry.lag + offset :]
+        chains += _decode_cell(
+            modulation, rotation, K7_R12, 0, stream, interleaver=label, syndrome=rate
+        )
+    return chains
+
+
+def _forney_alignment(soft: Any, entry: Forney) -> tuple[int, int, float]:
+    """The lane phase and code phase with the lowest parity-syndrome rate, and that rate. Each
+    candidate reads SCREEN_BITS bits from past the start-up lag, so the zeros the delay lines
+    start with are never screened."""
+    n = K7_R12.n
+    need = entry.lag + entry.branches + n + SCREEN_BITS
+    if len(soft) < need:
+        return 0, 0, 0.5
+    head = np.asarray(soft)[:need]
+    rows = [
+        (deinterleave_forney(head, entry, phase)[entry.lag + offset :][:SCREEN_BITS] < 0).astype(
+            np.uint8
+        )
+        for phase in range(entry.branches)
+        for offset in range(n)
+    ]
+    rates = syndrome_rates(np.array(rows))
+    best = int(np.argmin(rates))
+    return best // n, best % n, float(rates[best])
+
+
 def _search(
     groups: Iterable[list[Branch]], branch_count: int, carriers: dict[str, Carrier]
 ) -> _Search:
@@ -511,6 +580,7 @@ def _search(
         + sum(p.kept for p in PUNCTURES)
         + BLIND_CELLS
         + sum(e.size for e in CATALOGUE)
+        + sum(e.branches * K7_R12.n for e in FORNEY_CATALOGUE)
     )
     # Each cell also with the outer RS code at every bit alignment and codeword phase.
     scrambles = 1 + len(DESCRAMBLERS)  # as decoded, and through each descrambler
@@ -551,6 +621,8 @@ def _search(
             for group in seen:
                 for branch in group:
                     chains += _interleaver_cells(branch)
+                    if not accepted():
+                        chains += _forney_cells(branch)
                 if accepted():
                     break
     chains += _outer_cells(chains, threshold)
@@ -617,13 +689,16 @@ def _shuffled_accepts(chain: _Chain, threshold: float) -> int:
 
 def _interleaver_offset(soft: Any, entry: Interleaver) -> tuple[int, float]:
     """The block alignment with the lowest parity-syndrome rate, and that rate: every offset's
-    first blocks (at least SCREEN_BITS bits) deinterleaved and screened in one batch."""
+    first blocks (at least SCREEN_BITS bits) deinterleaved and screened in one batch. A block
+    longer than SCREEN_BITS is screened on its first SCREEN_BITS deinterleaved bits alone, which
+    are a stretch of the code's own stream."""
     n = entry.size
     hard = (np.asarray(soft) < 0).astype(np.uint8)
-    blocks = min(max(2, -(-SCREEN_BITS // n)), len(hard) // n - 1)
+    take = min(n, SCREEN_BITS)
+    blocks = min(max(2, -(-SCREEN_BITS // n)) if n <= SCREEN_BITS else 1, len(hard) // n - 1)
     if blocks < 1:
         return 0, 0.5
-    inverse = np.argsort(entry.permutation())  # deinterleaved[i] = interleaved[inverse[i]]
+    inverse = np.argsort(entry.permutation())[:take]  # deinterleaved[i] = interleaved[inverse[i]]
     within = (np.arange(blocks)[:, None] * n + inverse[None, :]).ravel()
     rates = np.empty(n)
     for start in range(0, n, SCREEN_CHUNK):
@@ -905,7 +980,8 @@ def _report(
         level=E.HYPOTHESIS,
         confidence=round(dict(ranked)[modulation], 2),
         method="Nearest theoretical fourth-order cumulants (|C40|, -C42) on the carrier-locked "
-        "symbols: BPSK (2, 2), QPSK (1, 1), 8PSK (0, 1), 16QAM (0.68, 0.68); tried in rank "
+        "symbols: BPSK (2, 2), QPSK (1, 1), 8PSK (0, 1), 16QAM (0.68, 0.68), 64QAM (0.62, 0.62); "
+        "tried in rank "
         "order, the CRC decides",
         evidence=("|C40| = {:.2f}, -C42 = {:.2f}".format(*_features(timing.symbols)),),
         alternatives=tuple(
@@ -969,6 +1045,7 @@ def _report(
         else "No sync word recurred with passing CRCs under any hypothesis, so no frame "
         "boundaries are claimed.",
         constellation=tuple((round(float(p.real), 4), round(float(p.imag), 4)) for p in points),
+        eye=eye_diagram(timing, symbols),
     )
 
 
@@ -991,13 +1068,24 @@ def _fsk_report(
                 demodulated[i] = (r, fsk.demodulate(x, r.normalised_rate))
             except ValueError:
                 continue
-            yield [("2FSK", i, demodulated[i][1].llr)]
+            symbols = demodulated[i][1]
+            name = f"{symbols.order}FSK"
+            # The branch index is 2 * rate candidate + (spectrum mirrored). Mirroring a 2-FSK
+            # spectrum inverts every bit, which the sync search reads itself; for more tones it
+            # flips each label's first bit, so it is a branch of its own.
+            branches: list[Branch] = [(name, 2 * i, symbols.llr)]
+            if symbols.order > 2:
+                branches.append((name, 2 * i + 1, fsk.mirror_first_bit(symbols.llr, symbols.order)))
+            yield branches
 
-    search = _search(groups(), len(rates), {})
+    # Per rate: the tone count is chosen from the data, so every order's branches are counted.
+    search = _search(groups(), len(rates) * FSK_BRANCHES, {})
     if not demodulated:
         return None
     acc = search.accepted
-    rate, symbols = demodulated[acc.rotation if acc else min(demodulated)]
+    rate, symbols = demodulated[acc.rotation // 2 if acc else min(demodulated)]
+    name = f"{symbols.order}FSK"
+    mirrored = bool(acc and acc.rotation % 2)
     proof = _proof(acc) if acc else None
     rate_value, rate_unit, rate_scale = units.rate(rate.normalised_rate)
     to_input = 1.0 / units.channel.decimation  # cycles/channel sample -> cycles/input sample
@@ -1028,7 +1116,9 @@ def _fsk_report(
                 unit=shift_unit,
                 uncertainty=0.05 * abs(shift_value),
                 level=E.ESTIMATED,
-                method="Medians of the discriminator's two frequency clusters",
+                method="Medians of the discriminator's two frequency clusters"
+                if symbols.order == 2
+                else f"Equally spaced levels fitted to the {symbols.order} tones' frequencies",
             ),
             Parameter(
                 id="carrier",
@@ -1062,25 +1152,47 @@ def _fsk_report(
     mod_param = Parameter(
         id="modulation",
         name="Modulation",
-        value="2FSK",
+        value=name,
         level=E.HYPOTHESIS,
-        method="Constant envelope with a tone-transition comb; discrete tones, so not analog FM",
+        method="Constant envelope with a tone-transition comb; discrete tones, so not analog FM. "
+        "The tone count is the one whose equally spaced, equally likely levels fit the symbol "
+        "frequencies best",
+        evidence=(
+            "Log-likelihood of the symbol frequencies by number of tones: "
+            + ", ".join(f"{m} tones {ll:.0f}" for m, ll in symbols.fits),
+        )
+        if symbols.fits
+        else (),
     )
     classify = _stage(
         "classify",
         "Classify",
-        "2FSK, confirmed by decode" if acc else "2FSK (unconfirmed)",
+        f"{name}, confirmed by decode" if acc else f"{name} (unconfirmed)",
         E.VERIFIED if acc else E.HYPOTHESIS,
         (promote(mod_param, proof) if proof else mod_param,),
     )
     inverted = bool(acc and acc.frames and acc.frames.inverted)
+    if symbols.order == 2:
+        mapping_value = "upper tone = 0" if inverted else "lower tone = 0"
+        mapping_method = (
+            "Per-symbol tone energies over the symbol interior; the sync word's polarity "
+            "decides which tone is 0"
+        )
+    else:
+        mapping_value = (
+            "Gray labels, highest tone = 0…0" if mirrored else "Gray labels, lowest tone = 0…0"
+        )
+        mapping_method = (
+            "Per-symbol tone energies over the symbol interior; tone p carries the Gray label "
+            "p ^ (p >> 1), read from the lowest tone up or, for a mirrored spectrum, from the "
+            "highest down, which the CRC decides"
+        )
     mapping = Parameter(
         id="bit_mapping",
         name="Bit mapping",
-        value="upper tone = 0" if inverted else "lower tone = 0",
+        value=mapping_value,
         level=E.HYPOTHESIS,
-        method="Per-symbol tone energies over the symbol interior; the sync word's polarity "
-        "decides which tone is 0",
+        method=mapping_method,
     )
     demod = _stage(
         "demod",
@@ -1090,18 +1202,18 @@ def _fsk_report(
         (promote(mapping, proof) if proof else mapping,),
     )
     stages = [detect_stage, estimate, sync, classify, demod]
-    decode_stages, frames = _decode_stages(search, proof, "2FSK x both polarities")
+    decode_stages, frames = _decode_stages(search, proof, f"{name} x both polarities")
     stages += decode_stages
     if acc and acc.frames:
         code_name = _code_label(acc)
         headline = (
-            f"2FSK {_fmt_rate(rate_value, rate_unit)} → {code_name} → {acc.frames.word.name} "
+            f"{name} {_fmt_rate(rate_value, rate_unit)} → {code_name} → {acc.frames.word.name} "
             f"frames, {acc.frames.passes}/{acc.frames.complete} CRC pass"
         )
     else:
-        headline = f"2FSK? {_fmt_rate(rate_value, rate_unit)}, not decoded"
+        headline = f"{name}? {_fmt_rate(rate_value, rate_unit)}, not decoded"
     return DetectionReport(
-        label="2FSK" if acc else "2FSK?",
+        label=name if acc else f"{name}?",
         kind="fsk",
         level=E.VERIFIED if any(fr.crc == "pass" for fr in frames) else E.ESTIMATED,
         headline=headline,
@@ -1132,8 +1244,8 @@ def _decode_stages(
                 name="Interleaver",
                 value=acc.interleaver,
                 level=E.HYPOTHESIS,
-                method="Interleaver catalogue (block, helical, 802.11); alignment by the inner "
-                "code's parity syndrome, decided by the CRC",
+                method="Interleaver catalogue (block, helical, 802.11, QPP, convolutional); "
+                "alignment by the inner code's parity syndrome, decided by the CRC",
                 evidence=(f"Syndrome rate {acc.syndrome or 0:.3f} here (0.5 if wrong)",),
             )
             stages.append(

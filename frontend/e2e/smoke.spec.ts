@@ -46,6 +46,19 @@ function toneBytes(): Buffer {
   return Buffer.from(samples.buffer)
 }
 
+/** `base.sigmf-data` and `base.sigmf-meta` for the tone, stating a 1 MS/s rate and 100 MHz centre. */
+function writeSigmf(base: string) {
+  writeFileSync(`${base}.sigmf-data`, toneBytes())
+  writeFileSync(
+    `${base}.sigmf-meta`,
+    JSON.stringify({
+      global: { 'core:datatype': 'cf32_le', 'core:sample_rate': 1_000_000, 'core:version': '1.0.0' },
+      captures: [{ 'core:sample_start': 0, 'core:frequency': 100_000_000 }],
+      annotations: [],
+    }),
+  )
+}
+
 async function openByPath(page: Page, path: string) {
   await page.goto('/')
   await page.getByPlaceholder('Open a recording by path…').fill(path)
@@ -122,15 +135,7 @@ test('a real recording opens, then its analysis lands in the background', async 
   // assumption being entered.
   const base = testInfo.outputPath('tone')
   mkdirSync(testInfo.outputDir, { recursive: true })
-  writeFileSync(`${base}.sigmf-data`, toneBytes())
-  writeFileSync(
-    `${base}.sigmf-meta`,
-    JSON.stringify({
-      global: { 'core:datatype': 'cf32_le', 'core:sample_rate': 1_000_000, 'core:version': '1.0.0' },
-      captures: [{ 'core:sample_start': 0, 'core:frequency': 100_000_000 }],
-      annotations: [],
-    }),
-  )
+  writeSigmf(base)
 
   await openByPath(page, `${base}.sigmf-meta`)
 
@@ -142,4 +147,88 @@ test('a real recording opens, then its analysis lands in the background', async 
   await expect(page.getByRole('status').filter({ hasText: /^Analysing signal/ })).toHaveCount(0, {
     timeout: 60_000,
   })
+})
+
+test('a folder lists its recordings and opens the one that is picked', async ({ page }, testInfo) => {
+  test.setTimeout(120_000)
+  const folder = testInfo.outputPath('batch')
+  mkdirSync(folder, { recursive: true })
+  writeSigmf(`${folder}/first`)
+  writeSigmf(`${folder}/second`)
+  writeFileSync(`${folder}/notes.txt`, 'not a recording')
+
+  await openByPath(page, folder)
+  const dialog = page.getByRole('dialog', { name: 'Recordings in this folder' })
+  await expect(dialog.getByRole('heading', { name: '2 recordings in this folder' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'notes.txt' })).toHaveCount(0)
+  await dialog.getByRole('button', { name: 'second.sigmf-meta' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByText('second.sigmf-meta')).toBeVisible()
+  await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
+})
+
+test('the analyst can enter a centre frequency and swap I and Q', async ({ page }, testInfo) => {
+  test.setTimeout(180_000)
+  const base = testInfo.outputPath('tone')
+  mkdirSync(testInfo.outputDir, { recursive: true })
+  writeSigmf(base)
+  await openByPath(page, `${base}.sigmf-meta`)
+  await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
+
+  await page.getByRole('navigation', { name: 'Workspace section' }).getByRole('button', { name: 'Assumptions' }).click()
+  const modal = page.getByRole('heading', { name: 'Configuration & Assumptions' }).locator('xpath=ancestor::div[3]')
+  const entry = modal.getByRole('region', { name: 'Enter what you know' })
+
+  // A bad frequency is refused with a message; a good one is recorded as entered by the analyst.
+  await entry.getByLabel('Centre frequency').fill('fast')
+  await entry.getByRole('button', { name: 'Set centre frequency' }).click()
+  await expect(entry.getByRole('alert')).toBeVisible()
+  await entry.getByLabel('Centre frequency').fill('433.92M')
+  await entry.getByRole('button', { name: 'Set centre frequency' }).click()
+  await expect(modal.getByText('433,920,000')).toBeVisible()
+
+  // I and Q are swapped: the server tiles the recording again from the mirrored samples.
+  const iq = entry.getByRole('radiogroup', { name: 'IQ order' })
+  await expect(iq.getByRole('radio', { name: 'IQ' })).toBeChecked()
+  await iq.getByRole('radio', { name: 'QI' }).click()
+  await expect(iq.getByRole('radio', { name: 'QI' })).toBeChecked()
+  await expect(entry.getByText('Q comes first, so the spectrum is mirrored.')).toBeVisible()
+  await expect(entry.getByRole('alert')).toHaveCount(0)
+
+  // The page still never scrolls as a whole, in either section, with the entries in place.
+  await modal.getByRole('button', { name: 'Close' }).click()
+  for (const size of [{ width: 1918, height: 950 }, { width: 1440, height: 800 }]) {
+    await page.setViewportSize(size)
+    for (const section of ['Survey', 'Waterfall']) {
+      await page.getByRole('navigation', { name: 'Workspace section' }).getByRole('button', { name: section }).click()
+      const { scrollHeight, innerHeight } = (await page.evaluate(
+        '({ scrollHeight: document.documentElement.scrollHeight, innerHeight: window.innerHeight })',
+      )) as { scrollHeight: number; innerHeight: number }
+      expect(scrollHeight, `${section} at ${size.width}`).toBeLessThanOrEqual(innerHeight)
+    }
+  }
+})
+
+test('an unknown sample format is a question: the candidates are offered and the choice is recorded', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000)
+  mkdirSync(testInfo.outputDir, { recursive: true })
+  const path = testInfo.outputPath('silence.bin')
+  writeFileSync(path, Buffer.alloc(1 << 16)) // all zeros fit every width, so the sniffer can't choose
+
+  await openByPath(page, path)
+  const prompt = page.getByRole('region', { name: 'Sample format needed' })
+  await expect(prompt).toBeVisible()
+  await expect(page.getByText('Synthetic demo', { exact: true })).toBeVisible() // nothing was opened
+  await expect(prompt.getByRole('list', { name: 'Candidate sample formats' }).getByRole('button')).toHaveCount(4)
+
+  // A bad type is refused with a message; a candidate opens the file, which then asks for the rate.
+  await prompt.getByLabel('Sample format as a SigMF datatype').fill('bogus')
+  await prompt.getByRole('button', { name: 'Use format' }).click()
+  await expect(prompt.getByRole('alert')).toContainText('not a sample format')
+  await prompt.getByRole('button', { name: 'ci16_le' }).click()
+  await expect(prompt).toBeHidden()
+  await expect(page.getByText('Synthetic demo', { exact: true })).toBeHidden()
+  await expect(page.getByRole('region', { name: 'Sample rate needed' })).toBeVisible()
 })

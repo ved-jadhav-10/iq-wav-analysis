@@ -5,9 +5,11 @@ fixed, small catalogue: block (written by rows, read by columns) and helical (th
 column c starting c rows down) interleavers at the sizes used elsewhere in this codebase
 (`bench.presets`'s "LDPC(576) + block" and "conv 1/2 + block" chains, 24x48 and 16x36, and
 `tests/dsp/test_synth_chain.py`'s round-trip cases, 8x12 and 8x255), both orientations of each
-since a blind search can't know which axis was written first, and the IEEE 802.11 BCC
-interleaver (IEEE 802.11 §17.3.5.7) for its four standard symbol sizes. Anything outside this
-catalogue is UNKNOWN with its measured period (PLAN M5), not a guess.
+since a blind search can't know which axis was written first, the IEEE 802.11 BCC
+interleaver (IEEE 802.11 §17.3.5.7) for its four standard symbol sizes, and the LTE turbo QPP
+interleaver at the table entries listed in `QPP_TABLE`. Convolutional (Forney) interleavers have
+no block boundary and are a separate grid (`FORNEY_CATALOGUE`, `deinterleave_forney`). Anything
+outside these is UNKNOWN with its measured period (PLAN M5), not a guess.
 
 The permutations and `deinterleave`'s indexing are copied from
 `dsp/src/dsp/synth/interleave.py` (with this comment as the attribution), so a synth-generated
@@ -92,7 +94,50 @@ class Wifi:
         return f"802.11 N_CBPS {self.n_cbps}"
 
 
-Interleaver = Block | Helical | Wifi
+@dataclass(frozen=True)
+class Qpp:
+    """The LTE turbo code's quadratic permutation polynomial interleaver of length `k`,
+    pi(i) = (f1 i + f2 i^2) mod k (3GPP TS 36.212 §5.1.3.2.3; matches
+    `dsp.synth.interleave.Qpp`)."""
+
+    k: int
+    f1: int
+    f2: int
+
+    @property
+    def size(self) -> int:
+        return self.k
+
+    def permutation(self) -> NDArray[np.int64]:
+        """out[j] = in[permutation[j]]."""
+        i = np.arange(self.k, dtype=np.int64)
+        p = (self.f1 * i + self.f2 * i * i) % self.k
+        if len(np.unique(p)) != self.k:
+            raise ValueError(f"QPP ({self.f1}, {self.f2}) isn't a permutation of {self.k}")
+        return p
+
+    @property
+    def label(self) -> str:
+        return f"LTE QPP K={self.k}"
+
+
+Interleaver = Block | Helical | Wifi | Qpp
+
+
+# 3GPP TS 36.212 Table 5.1.3-3, the entries this catalogue carries: the eight shortest block
+# sizes and the longest. The rest of the table is not entered from memory; each is added with its
+# source when checked against the specification.
+QPP_TABLE = (
+    (40, 3, 10),
+    (48, 7, 12),
+    (56, 19, 42),
+    (64, 7, 16),
+    (72, 7, 18),
+    (80, 11, 20),
+    (88, 5, 22),
+    (96, 11, 24),
+    (6144, 263, 480),
+)
 
 
 def _catalogue() -> tuple[Interleaver, ...]:
@@ -105,6 +150,7 @@ def _catalogue() -> tuple[Interleaver, ...]:
                 out.append(shape(cols, rows))
     # IEEE 802.11 §17.3.5.7: BPSK, QPSK, 16-QAM, 64-QAM at 48 data subcarriers.
     out += [Wifi(48, 1), Wifi(96, 2), Wifi(192, 4), Wifi(288, 6)]
+    out += [Qpp(*row) for row in QPP_TABLE]
     return tuple(out)
 
 
@@ -131,3 +177,44 @@ def deinterleave(x: NDArray[Any], entry: Interleaver, alignment: int = 0) -> NDA
     out = np.empty_like(body.reshape(-1, entry.size))
     out[:, entry.permutation()] = body.reshape(-1, entry.size)
     return out.ravel()
+
+
+@dataclass(frozen=True)
+class Forney:
+    """A convolutional (Forney) interleaver of `branches` (I) lanes with delay step `step` (M):
+    element t goes to lane t mod I, which delays it by (t mod I) * M lane elements (matches
+    `dsp.synth.interleave.Convolutional`). It has no block boundary, only a lane phase, and its
+    inverse (lane b delayed by (I - 1 - b) * M) lags the input by `lag` elements, the first of
+    which are the delay lines' start-up zeros."""
+
+    branches: int
+    step: int
+
+    @property
+    def lag(self) -> int:
+        return (self.branches - 1) * self.branches * self.step
+
+    @property
+    def label(self) -> str:
+        return f"convolutional I={self.branches} M={self.step}"
+
+
+# A small generic grid: every lane count and step a bit-level interleaver in front of a short
+# code is likely to use. The byte-level ones of DVB (12, 17) and J.83 sit after the inner decoder
+# and are scored by the outer code instead.
+FORNEY_CATALOGUE: tuple[Forney, ...] = tuple(
+    Forney(i, m) for i in (2, 3, 4, 5, 6, 8) for m in (1, 2, 3, 4, 6, 8)
+)
+
+
+def deinterleave_forney(x: NDArray[Any], entry: Forney, phase: int = 0) -> NDArray[Any]:
+    """Undo `entry` on `x` after dropping `phase` leading elements (which lane comes first is not
+    known blind). The first `entry.lag` elements of the result are start-up filler (zeros, which
+    are erasures for soft bits) and belong to no transmitted element; the caller drops them."""
+    x = np.asarray(x)[phase:]
+    out = np.zeros_like(x)
+    for b in range(entry.branches):
+        lane = x[b :: entry.branches]
+        d = (entry.branches - 1 - b) * entry.step
+        out[b :: entry.branches] = np.concatenate([np.zeros(d, x.dtype), lane])[: len(lane)]
+    return out

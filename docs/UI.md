@@ -52,11 +52,11 @@ Before a file is opened, the workspace runs on a synthetic capture generated in 
 - **Waterfall:** one box per detection, placed in time and frequency. Frequency is relative to the capture centre when the centre frequency is unknown; levels are relative, not calibrated.
 - **Detections list:** each detection's overall level as glyph + word, never colour alone.
 - **Pipeline rail:** one evidence level per stage. Sync, Classify, FEC and Frame read VERIFIED only because a CRC passed on this recording. An analog (FM) detection stops after Classify, and says why.
-- **Constellation:** the real symbols after timing, carrier and phase recovery. It is empty for FSK, which is decided by tone energy, and for analog signals.
+- **Constellation:** the real symbols after timing, carrier and phase recovery. It is empty for FSK, which is decided by tone energy, and for analog signals. For a linear signal a toggle beside its title switches to the **eye diagram**: I and Q traces overlaid over one symbol either side of the symbol instant, with the ideal levels dashed.
 - **Evidence cards:** each value with its level, method, evidence, alternatives and warnings; UNKNOWN cards say why and what would settle it (e.g. how many FEC hypotheses were tried).
 - **Hypotheses tab (ledger):** *Tried* counts every cell of the search grid (modulation × rotation × code × alignment, interleaver × alignment, RS grid × sync word × CRC), including cells never run. The threshold is corrected for that count, and the accepted chain is re-run on shuffled bits.
-- **Frames tab:** start bit, sync word, CRC result, header and payload hex.
-- **Assumptions (modal):** container, datatype, sample rate, centre frequency, IQ order and everything else taken as given, each with its level.
+- **Frames tab:** start bit, sync word, CRC result, header and payload hex; for a real recording, download links for the table as JSON, CSV, hex and bits.
+- **Assumptions (modal):** container, datatype, sample rate, centre frequency, IQ order and everything else taken as given, each with its level; above them, entry fields for the centre frequency and the IQ order (a swap has the server tile the recording again). Opening a folder lists its recordings in a dialog to pick from; a raw file whose sample format is UNKNOWN opens a prompt strip with the sniffer's candidates; "Join numbered files" beside the path reads `rec_000`, `rec_001`, … as one recording.
 
 ## The Signal overlay
 
