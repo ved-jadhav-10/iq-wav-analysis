@@ -10,7 +10,8 @@ from jsonschema import Draft202012Validator
 from numpy.typing import NDArray
 
 from backend import cli
-from dsp.results import SCHEMA_PATH
+from dsp.report import DetectionReport
+from dsp.results import SCHEMA_PATH, SCHEMA_VERSION, Results
 
 
 @pytest.fixture
@@ -238,3 +239,61 @@ def test_analyse_writes_each_signals_frame_table_in_the_formats_asked_for(
     assert len(hexed) >= 30 and set(hexed) <= transmitted
     frames = json.loads((out / "framed.signal_0.frames.json").read_text())["frames"]
     assert [f["payloadHex"] for f in frames if f["crc"] == "pass"] == hexed
+
+
+def test_analyse_results_carry_each_signals_headline_ledger_and_frames(
+    tmp_path: Path,
+    framed_path: Path,
+    transmitted: set[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reports: list[DetectionReport] = []
+    analyse_recording = cli.analyse_recording
+
+    def capture(*args: Any, **kwargs: Any) -> Any:
+        results, found = analyse_recording(*args, **kwargs)
+        reports[:] = found
+        return results, found
+
+    monkeypatch.setattr(cli, "analyse_recording", capture)
+    for name in ("a", "b"):
+        args = ["analyse", str(framed_path), "--out", str(tmp_path / name), "--frames", "json"]
+        assert cli.main(args) == 0
+    # The same input gives the same bytes: the ledger's p-values and the frames included.
+    names = ["framed.results.json", "framed.signal_0.frames.json"]
+    for file in names:
+        assert (tmp_path / "a" / file).read_bytes() == (tmp_path / "b" / file).read_bytes()
+
+    data = load(tmp_path / "a" / "framed.results.json")
+    assert data["schemaVersion"] == SCHEMA_VERSION
+    (report,) = reports
+    (signal,) = data["signals"]
+    # What the document holds is what the report concluded.
+    assert (signal["label"], signal["kind"]) == (report.label, report.kind)
+    assert (signal["level"], signal["headline"]) == (report.level.value, report.headline)
+    assert signal["level"] == "VERIFIED"
+    assert report.search is not None and signal["noSearchReason"] is None
+    assert signal["search"] == report.search.model_dump(mode="json", by_alias=True)
+    assert signal["search"]["tried"] > 0 and signal["search"]["rows"]
+    assert any(row["outcome"] == "accepted" for row in signal["search"]["rows"])
+    assert signal["noFramesReason"] is None
+    assert signal["frames"] == [f.model_dump(mode="json", by_alias=True) for f in report.frames]
+    passing = [f["payloadHex"] for f in signal["frames"] if f["crc"] == "pass"]
+    assert len(passing) >= 30 and set(passing) <= transmitted
+    assert [f["crc"] for f in signal["frames"]] == [f.crc for f in report.frames]
+    # The frame-table export is the same table.
+    table = json.loads((tmp_path / "a" / "framed.signal_0.frames.json").read_text())
+    assert table["frames"] == signal["frames"]
+    # And the document reads back as the model, and writes the same bytes.
+    text = (tmp_path / "a" / "framed.results.json").read_text(encoding="utf-8")
+    assert Results.model_validate_json(text).to_json() == text
+
+
+def test_analyse_states_why_a_signal_has_no_frames_or_search(
+    tmp_path: Path, sigmf_path: Path
+) -> None:
+    assert cli.main(["analyse", str(sigmf_path), "--out", str(tmp_path)]) == 0
+    (signal,) = load(tmp_path / "rec.results.json")["signals"]
+    assert signal["frames"] == [] and signal["noFramesReason"]
+    assert (signal["search"] is None) == bool(signal["noSearchReason"])
+    assert signal["level"] != "VERIFIED"  # nothing was decoded, so nothing is proven

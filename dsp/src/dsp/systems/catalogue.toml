@@ -1,0 +1,68 @@
+# The known-system catalogue (PLAN M6). Versioned: the version is recorded in every results
+# document that ran Match. An entry is data about a public specification; the check that verifies
+# it is code in this package (`check` names it) and must pass on the recording itself. No entry
+# holds samples, and none is copied from another project's source.
+version = "0.1.0"
+
+[[system]]
+id = "ccsds-tm"
+name = "CCSDS telemetry coding"
+specification = "CCSDS 131.0-B-5 (TM synchronization and channel coding); CCSDS 132.0-B-3 (TM space data link protocol)"
+licence = "Public CCSDS Blue Books; parameters restated, no code copied"
+check = "ccsds-tm"
+modulations = ["BPSK", "QPSK"]
+symbol_rates = []                    # any: set by the mission
+# Exactly the codes the chain names: K=7 (171,133) at rate 1/2 or punctured to 2/3, 3/4, 5/6, 7/8
+# (a K=7 code with other generators, or another rate, is not CCSDS).
+codes = [
+  "Uncoded",
+  "Conv K=7 r½ (171,133)",
+  "Conv K=7 r2/3 punctured (171,133)",
+  "Conv K=7 r3/4 punctured (171,133)",
+  "Conv K=7 r5/6 punctured (171,133)",
+  "Conv K=7 r7/8 punctured (171,133)",
+]
+outer_codes = ["RS(255,223) CCSDS"]
+sync = "CCSDS ASM"
+descramblers = ["CCSDS pseudo-randomiser"]
+frame_check = "CRC-16/CCITT-FALSE"   # the frame error control field
+header_bytes = 6                     # the primary header, which the frame table splits off
+
+[[system]]
+id = "pocsag"
+name = "POCSAG paging"
+specification = "ITU-R M.584-2 (POCSAG code); tone deviation as in common VHF/UHF use"
+licence = "Public ITU-R Recommendation; parameters restated, no code copied"
+check = "pocsag"
+modulations = ["2FSK"]
+symbol_rates = [512.0, 1200.0, 2400.0]
+tone_spacing_hz = 9000.0             # ±4.5 kHz; reported when it differs, not a condition
+codes = ["Uncoded"]                  # BCH(31,21) is the system's own check, not a blind FEC
+sync = "POCSAG"
+frame_check = "BCH(31,21) + parity"
+
+[[system]]
+id = "navtex"
+name = "NAVTEX (SITOR-B)"
+specification = "ITU-R M.540-2 (NAVTEX), M.476-5 and M.625-4 (SITOR-B, CCIR 476 code)"
+licence = "Public ITU-R Recommendations; the code table from the ITA2/CCIR 476 tabulations, no code copied"
+check = "navtex"
+modulations = ["2FSK"]
+symbol_rates = [100.0]
+tone_spacing_hz = 170.0
+codes = ["Uncoded"]                  # the four-of-seven code and time diversity are the system's own check
+sync = "phasing signals"
+frame_check = "four-of-seven characters repeated five slots later"
+
+[[system]]
+id = "dsc"
+name = "MF/HF DSC"
+specification = "ITU-R M.493-16 Annex 1 (digital selective calling), tone shift and modulation rate of section 1.3.1"
+licence = "Public ITU-R Recommendation; parameters restated from its text, no code copied"
+check = "dsc"
+modulations = ["2FSK"]
+symbol_rates = [100.0]
+tone_spacing_hz = 170.0
+codes = ["Uncoded"]                  # the ten-bit error-detecting code and time diversity are the check
+sync = "phasing sequence"
+frame_check = "ten-bit characters repeated five slots later; error-check character"

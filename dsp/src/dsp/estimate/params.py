@@ -15,7 +15,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from dsp import _scipy
-from dsp.estimate.lines import find_lines
+from dsp.estimate.lines import Line, find_lines
 from dsp.spectrum import welch, welch_dof, welch_freqs
 
 Complex = NDArray[np.complex128]
@@ -182,23 +182,104 @@ def fsk_symbol_rate(x: Complex, low: float = 0.01, high: float = 0.5) -> SymbolR
     return SymbolRate(line.frequency, line.uncertainty, line.ratio)
 
 
+# Averaging lengths, in samples, of the multi-scale discriminator. A scale L is only trusted for
+# fundamentals of at least SCALE_MIN_PERIOD * L samples (a symbol several scales long); the lines
+# of a scale are found over the whole band, so that a fundamental's harmonics are not cut off.
+DISCRIMINATOR_SCALES = (1, 2, 4, 8)
+SCALE_MIN_PERIOD = 3
+HARMONICS = 4  # the comb a candidate is scored on: its lines at f, 2f, 3f and 4f
+HARMONIC_TOLERANCE = 0.002  # relative, for "the nearest line is at k times f"
+MAX_EDGE_LINES = 24
+
+
+def _edge_energy(x: Complex, scale: int) -> Float | None:
+    """The tone-transition energy at one discriminator scale: the phase advance over `scale`
+    samples (a frequency averaged over them, which takes the noise down by about `scale` in
+    amplitude where the per-sample discriminator drowns at high oversampling), and the energy of
+    its change from one window to the next."""
+    if len(x) <= 2 * scale + 16:
+        return None
+    advance = x[scale:] * np.conj(x[:-scale])
+    frequency = np.angle(advance) / (2 * np.pi * scale)
+    return np.abs(frequency[scale:] - frequency[:-scale]) ** 2
+
+
+def _comb_candidates(lines: list[Line], scale: int) -> list[tuple[float, Line]]:
+    """(comb strength, line) for each line of a scale that could be a symbol rate: long enough for
+    the scale, and with at least one more of its first HARMONICS multiples among the lines. The
+    strength is the summed line ratios at those multiples: a transition comb has them all, so its
+    fundamental outscores its own harmonics and a stray line."""
+    out: list[tuple[float, Line]] = []
+    for line in lines:
+        if line.frequency > 1.0 / (SCALE_MIN_PERIOD * scale):
+            continue
+        strength, found = line.ratio, 1  # the line itself is the first harmonic
+        for k in range(2, HARMONICS + 1):
+            target = k * line.frequency
+            nearest = min(lines, key=lambda other: abs(other.frequency - target))
+            if abs(nearest.frequency - target) <= HARMONIC_TOLERANCE * target:
+                strength += nearest.ratio
+                found += 1
+        if found >= 2:
+            out.append((strength, line))
+    return out
+
+
 def fsk_symbol_rates(
     x: Complex, low: float = 0.01, high: float = 0.5, count: int = 3
 ) -> list[SymbolRate]:
-    """Up to `count` candidate FSK symbol rates for a search to settle: the lowest significant
-    edge-energy line (`fsk_symbol_rate`'s pick), then the strongest, then the next lowest. A
-    filtered or noisy channel can put a spurious line below the true rate."""
-    phase = np.unwrap(np.angle(x))
-    frequency = np.diff(phase) / (2 * np.pi)
-    edges = np.abs(np.diff(frequency)) ** 2
-    lines = find_lines(edges.astype(np.complex128), low, high).lines
-    by_frequency = sorted(lines, key=lambda ln: ln.frequency)
-    ordered = [*by_frequency[:1], *lines[:1], *by_frequency[1:]]
+    """Up to `count` candidate FSK symbol rates for a search to settle, strongest transition comb
+    first.
+
+    The edge energy is taken at several discriminator scales (`DISCRIMINATOR_SCALES`): the
+    per-sample discriminator's noise grows with the oversampling, so above about 8 samples per
+    symbol at moderate SNR it shows no line at all, where a frequency averaged over a few samples
+    still does. A candidate is a line with harmonics (`_comb_candidates`); comb strength, not
+    frequency, orders them, since a structured payload (a 7-bit character period, a frame period)
+    has combs of its own and the lowest line is then not the symbol rate. Only when no scale has
+    a candidate, as on a signal with too few transitions for a comb, are the per-sample scale's
+    lines used as they are, lowest first, as before."""
+    per_sample = list(find_lines(_per_sample_edges(x).astype(np.complex128), low, high).lines)
+    scored: list[tuple[float, Line]] = []
+    for scale in DISCRIMINATOR_SCALES:
+        if scale == 1:
+            lines = list(
+                find_lines(
+                    _per_sample_edges(x).astype(np.complex128),
+                    low,
+                    high,
+                    max_lines=MAX_EDGE_LINES,
+                ).lines
+            )
+        else:
+            energy = _edge_energy(x, scale)
+            lines = (
+                []
+                if energy is None
+                else list(
+                    find_lines(
+                        energy.astype(np.complex128), low, high, max_lines=MAX_EDGE_LINES
+                    ).lines
+                )
+            )
+        scored += _comb_candidates(lines, scale)
+    if scored:
+        scored.sort(key=lambda item: -item[0])
+        ordered = [line for _, line in scored]
+    else:
+        by_frequency = sorted(per_sample, key=lambda ln: ln.frequency)
+        ordered = [*by_frequency[:1], *per_sample[:1], *by_frequency[1:]]
     out: list[SymbolRate] = []
     for line in ordered:
         if all(abs(line.frequency - r.normalised_rate) > 1e-3 * line.frequency for r in out):
             out.append(SymbolRate(line.frequency, line.uncertainty, line.ratio))
     return out[:count]
+
+
+def _per_sample_edges(x: Complex) -> Float:
+    phase = np.unwrap(np.angle(x))
+    frequency = np.diff(phase) / (2 * np.pi)
+    return np.abs(np.diff(frequency)) ** 2
 
 
 @dataclass(frozen=True)

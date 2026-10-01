@@ -93,6 +93,216 @@
       "title": "EvidenceLevel",
       "type": "string"
     },
+    "Frame": {
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "minimum": 1,
+          "title": "Index",
+          "type": "integer"
+        },
+        "startBit": {
+          "description": "Offset of the sync word in the decoded bit stream.",
+          "minimum": 0,
+          "title": "Startbit",
+          "type": "integer"
+        },
+        "syncWord": {
+          "minLength": 1,
+          "title": "Syncword",
+          "type": "string"
+        },
+        "lengthBits": {
+          "minimum": 0,
+          "title": "Lengthbits",
+          "type": "integer"
+        },
+        "crc": {
+          "enum": [
+            "pass",
+            "fail",
+            "truncated"
+          ],
+          "title": "Crc",
+          "type": "string"
+        },
+        "headerHex": {
+          "description": "The first bytes after the sync word, space-separated.",
+          "title": "Headerhex",
+          "type": "string"
+        },
+        "payloadHex": {
+          "description": "The frame's payload bytes (CRC excluded), no spaces.",
+          "title": "Payloadhex",
+          "type": "string"
+        }
+      },
+      "required": [
+        "index",
+        "startBit",
+        "syncWord",
+        "lengthBits",
+        "crc",
+        "headerHex",
+        "payloadHex"
+      ],
+      "title": "Frame",
+      "type": "object"
+    },
+    "Hypothesis": {
+      "additionalProperties": false,
+      "description": "One row of the ledger: a candidate the search tried, and what decided it.",
+      "properties": {
+        "layer": {
+          "enum": [
+            "Demod",
+            "Interleaver",
+            "FEC",
+            "Framing",
+            "Match"
+          ],
+          "title": "Layer",
+          "type": "string"
+        },
+        "candidate": {
+          "minLength": 1,
+          "title": "Candidate",
+          "type": "string"
+        },
+        "statistic": {
+          "minLength": 1,
+          "title": "Statistic",
+          "type": "string"
+        },
+        "pValue": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Chance of the statistic under the no-structure null; null when not computed.",
+          "title": "Pvalue"
+        },
+        "threshold": {
+          "description": "The corrected acceptance threshold on p_value.",
+          "title": "Threshold",
+          "type": "number"
+        },
+        "outcome": {
+          "enum": [
+            "accepted",
+            "rejected"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "layer",
+        "candidate",
+        "statistic",
+        "pValue",
+        "threshold",
+        "outcome",
+        "reason"
+      ],
+      "title": "Hypothesis",
+      "type": "object"
+    },
+    "HypothesisSearch": {
+      "additionalProperties": false,
+      "description": "The blind search's ledger. `tried` counts every hypothesis, including ones not listed in\n`rows`; thresholds are corrected for that count.",
+      "properties": {
+        "tried": {
+          "minimum": 0,
+          "title": "Tried",
+          "type": "integer"
+        },
+        "alpha": {
+          "title": "Alpha",
+          "type": "number"
+        },
+        "correction": {
+          "minLength": 1,
+          "title": "Correction",
+          "type": "string"
+        },
+        "smallestThreshold": {
+          "title": "Smallestthreshold",
+          "type": "number"
+        },
+        "shuffledRuns": {
+          "description": "Runs on shuffled bits of the chains that passed the threshold, best first (up to three of them, each run several times).",
+          "minimum": 0,
+          "title": "Shuffledruns",
+          "type": "integer"
+        },
+        "shuffledAccepts": {
+          "description": "How many of those runs passed; should be 0.",
+          "minimum": 0,
+          "title": "Shuffledaccepts",
+          "type": "integer"
+        },
+        "shuffledBlocked": {
+          "default": 0,
+          "description": "Chains that passed the threshold but also passed on shuffled bits, and so were not accepted.",
+          "minimum": 0,
+          "title": "Shuffledblocked",
+          "type": "integer"
+        },
+        "blindSearched": {
+          "default": 0,
+          "description": "Branches the blind rate-1/n convolutional search ran on.",
+          "minimum": 0,
+          "title": "Blindsearched",
+          "type": "integer"
+        },
+        "blindIdentified": {
+          "default": 0,
+          "description": "Of those, branches where it named a code (which then still had to frame).",
+          "minimum": 0,
+          "title": "Blindidentified",
+          "type": "integer"
+        },
+        "matchTried": {
+          "default": 0,
+          "description": "Known-system checks the Match stage ran, each one hypothesis in its own Holm correction (rows with layer Match), separate from `tried`.",
+          "minimum": 0,
+          "title": "Matchtried",
+          "type": "integer"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/Hypothesis"
+          },
+          "title": "Rows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "tried",
+        "alpha",
+        "correction",
+        "smallestThreshold",
+        "shuffledRuns",
+        "shuffledAccepts",
+        "shuffledBlocked",
+        "blindSearched",
+        "blindIdentified",
+        "matchTried",
+        "rows"
+      ],
+      "title": "HypothesisSearch",
+      "type": "object"
+    },
     "Parameter": {
       "additionalProperties": false,
       "allOf": [
@@ -440,8 +650,80 @@
     },
     "Signal": {
       "additionalProperties": false,
-      "description": "One detected signal (PLAN §3): its own stage results, kept apart from the\nwhole-recording stages above (`Results.stages`) because a recording can hold several.\nDetect is the first stage every signal has; later stages (estimate, sync, ... M3+) append\nhere once they exist.",
+      "description": "One detected signal (PLAN §3): its own stage results, kept apart from the\nwhole-recording stages above (`Results.stages`) because a recording can hold several,\nand what they add up to: the label, the headline and its level, the hypothesis ledger and the\nframe table (`SignalFindings`). The constellation and the eye are for the live views and are\nnot part of the document.",
       "properties": {
+        "label": {
+          "description": "Short label for the signal, e.g. 'QPSK'.",
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Picks the symbol view: constellation, frequency, none.",
+          "enum": [
+            "psk",
+            "fsk",
+            "cw",
+            "analog",
+            "unknown"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "level": {
+          "$ref": "#/$defs/EvidenceLevel",
+          "description": "The level of the signal's headline finding."
+        },
+        "headline": {
+          "minLength": 1,
+          "title": "Headline",
+          "type": "string"
+        },
+        "search": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HypothesisSearch"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The hypothesis ledger; null when no search ran, and `noSearchReason` says why."
+        },
+        "noSearchReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nosearchreason"
+        },
+        "frames": {
+          "default": [],
+          "description": "The frame table, limited to the first 500 frames.",
+          "items": {
+            "$ref": "#/$defs/Frame"
+          },
+          "maxItems": 500,
+          "title": "Frames",
+          "type": "array"
+        },
+        "noFramesReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Noframesreason"
+        },
         "id": {
           "minLength": 1,
           "title": "Id",
@@ -456,6 +738,14 @@
         }
       },
       "required": [
+        "label",
+        "kind",
+        "level",
+        "headline",
+        "search",
+        "noSearchReason",
+        "frames",
+        "noFramesReason",
         "id",
         "stages"
       ],
@@ -537,8 +827,8 @@
   "description": "The results of analysing one recording.\n\n`needsReview` is derived from the parameters, never set by hand: it lists every value taken\non a convention, so one field tells a reader or a script whether anything rests on a guess.",
   "properties": {
     "schemaVersion": {
-      "const": "0.4.0",
-      "default": "0.4.0",
+      "const": "0.5.0",
+      "default": "0.5.0",
       "title": "Schemaversion",
       "type": "string"
     },

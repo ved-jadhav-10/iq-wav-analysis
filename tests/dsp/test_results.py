@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from bench.sniffer import COMPLEX_SIGNALS
 from dsp.evidence import EvidenceLevel, Parameter, Proof, promote
+from dsp.findings import Frame, Hypothesis, HypothesisSearch
 from dsp.ingest.formats import SampleFormat
 from dsp.ingest.raw import read_raw
 from dsp.ingest.sigmf import read_sigmf
@@ -49,6 +50,23 @@ def results(tmp_path: Path) -> Results:
         id="detect", name="Detect", status="failed", summary="Detection failed", error="boom"
     )
     return Results(sanket_version="0.1.0", assumptions=assumptions, stages=(ingest, detect))
+
+
+def a_signal(stages: tuple[StageResult, ...] = (), **changes: Any) -> Signal:
+    """A signal with no search and no frames, each stating why, unless `changes` say otherwise."""
+    fields: dict[str, Any] = {
+        "id": "signal_0",
+        "label": "QPSK",
+        "kind": "psk",
+        "level": EvidenceLevel.ESTIMATED,
+        "headline": "QPSK, no frames",
+        "stages": stages,
+        "search": None,
+        "no_search_reason": "No search ran.",
+        "frames": (),
+        "no_frames_reason": "No frames found.",
+    }
+    return Signal.model_validate(fields | changes)
 
 
 def test_committed_schema_is_current() -> None:
@@ -267,11 +285,11 @@ def test_a_needs_review_list_that_disagrees_with_the_parameters_is_rejected(
 def test_signal_stage_ids_must_be_unique() -> None:
     detect = StageResult(id="detect", name="Detect", status="done", summary="Found", parameters=())
     with pytest.raises(ValidationError, match="unique"):
-        Signal(id="signal_0", stages=(detect, detect))
+        a_signal((detect, detect))
 
 
 def test_results_signal_ids_must_be_unique(results: Results) -> None:
-    signal = Signal(id="signal_0", stages=())
+    signal = a_signal()
     with pytest.raises(ValidationError, match="signal ids must be unique"):
         Results.model_validate(results.model_dump() | {"signals": (signal, signal)})
 
@@ -289,7 +307,7 @@ def test_needs_review_includes_signal_parameters(results: Results) -> None:
     detect = StageResult(
         id="detect", name="Detect", status="done", summary="s", parameters=(guess,)
     )
-    signal = Signal(id="signal_0", stages=(detect,))
+    signal = a_signal((detect,))
     edited = results.model_dump(exclude={"needs_review"}) | {"signals": (signal,)}
     updated = Results.model_validate(edited)
     assert [(i.signal, i.stage, i.parameter, i.value) for i in updated.needs_review] == [
@@ -308,3 +326,122 @@ def test_promotion_clears_the_convention_and_records_it() -> None:
     verified = promote(guess, Proof(kind="crc", detail="CRC-16 passed on 12 of 12 frames"))
     assert verified.convention is None
     assert "taken on a convention: I first" in verified.evidence[-1]
+
+
+def frame(index: int, crc: str) -> Frame:
+    return Frame.model_validate(
+        {
+            "index": index,
+            "start_bit": 64 * index,
+            "sync_word": "1ACFFC1D",
+            "length_bits": 64,
+            "crc": crc,
+            "header_hex": "00 01",
+            "payload_hex": "CAFE",
+        }
+    )
+
+
+def ledger() -> HypothesisSearch:
+    def row(layer: str, candidate: str, outcome: str) -> Hypothesis:
+        return Hypothesis.model_validate(
+            {
+                "layer": layer,
+                "candidate": candidate,
+                "statistic": "CRC passes 12 of 12",
+                "p_value": 1e-30 if outcome == "accepted" else None,
+                "threshold": 1e-6,
+                "outcome": outcome,
+                "reason": "Check passed" if outcome == "accepted" else "Not tried",
+            }
+        )
+
+    return HypothesisSearch(
+        tried=3,
+        alpha=0.01,
+        correction="Holm",
+        smallest_threshold=0.0033,
+        shuffled_runs=3,
+        shuffled_accepts=0,
+        match_tried=1,
+        rows=(row("Framing", "ASM", "accepted"), row("Match", "POCSAG", "rejected")),
+    )
+
+
+def test_a_signal_carries_its_headline_ledger_and_frames_through_the_schema(
+    results: Results,
+) -> None:
+    one = a_signal(
+        level=EvidenceLevel.VERIFIED,
+        headline="QPSK, 2 frames, 1 CRC pass",
+        search=ledger(),
+        no_search_reason=None,
+        frames=(frame(1, "pass"), frame(2, "fail")),
+        no_frames_reason=None,
+    )
+    full = Results.model_validate(
+        results.model_dump(exclude={"needs_review"}) | {"signals": (one,)}
+    )
+    text = full.to_json()
+    data = json.loads(text)
+    VALIDATOR.validate(data)
+    (written,) = data["signals"]
+    assert (written["label"], written["kind"], written["level"]) == ("QPSK", "psk", "VERIFIED")
+    assert written["headline"] == "QPSK, 2 frames, 1 CRC pass"
+    assert [f["crc"] for f in written["frames"]] == ["pass", "fail"]
+    assert written["search"]["matchTried"] == 1
+    assert [(r["layer"], r["outcome"]) for r in written["search"]["rows"]] == [
+        ("Framing", "accepted"),
+        ("Match", "rejected"),
+    ]
+    assert written["noSearchReason"] is None and written["noFramesReason"] is None
+    assert Results.model_validate_json(text) == full
+    assert Results.model_validate_json(text).to_json() == text
+
+
+def test_a_signal_without_findings_is_rejected_by_the_model_and_the_schema(
+    results: Results,
+) -> None:
+    data = json.loads(
+        Results.model_validate(
+            results.model_dump(exclude={"needs_review"}) | {"signals": (a_signal(),)}
+        ).to_json()
+    )
+    VALIDATOR.validate(data)
+    for field in ("label", "kind", "level", "headline", "search", "frames"):
+        broken = json.loads(json.dumps(data))
+        del broken["signals"][0][field]
+        assert not VALIDATOR.is_valid(broken), field
+        if field != "frames":  # the model defaults an absent frame table to none
+            with pytest.raises(ValidationError):
+                Results.model_validate(broken)
+
+
+def test_a_signals_findings_keep_their_honesty_rules() -> None:
+    many = tuple(frame(i + 1, "pass") for i in range(501))
+    with pytest.raises(ValidationError, match="a VERIFIED signal needs"):
+        a_signal(level=EvidenceLevel.VERIFIED)
+    with pytest.raises(ValidationError, match="a VERIFIED signal needs"):
+        a_signal(level=EvidenceLevel.VERIFIED, frames=(frame(1, "fail"),), no_frames_reason=None)
+    with pytest.raises(ValidationError, match="no frames states why"):
+        a_signal(no_frames_reason=None)
+    with pytest.raises(ValidationError, match="no frames states why"):
+        a_signal(frames=(frame(1, "pass"),))
+    with pytest.raises(ValidationError, match="a missing search states why"):
+        a_signal(no_search_reason=None)
+    with pytest.raises(ValidationError, match="a missing search states why"):
+        a_signal(search=ledger())
+    with pytest.raises(ValidationError, match="at most 500"):
+        a_signal(frames=many, no_frames_reason=None)
+
+
+def test_the_schema_bounds_the_frame_table(results: Results) -> None:
+    one = a_signal(frames=(frame(1, "pass"),), no_frames_reason=None)
+    data = json.loads(
+        Results.model_validate(
+            results.model_dump(exclude={"needs_review"}) | {"signals": (one,)}
+        ).to_json()
+    )
+    VALIDATOR.validate(data)
+    data["signals"][0]["frames"] = data["signals"][0]["frames"] * 501
+    assert not VALIDATOR.is_valid(data)

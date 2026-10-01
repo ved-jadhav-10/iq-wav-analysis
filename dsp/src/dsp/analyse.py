@@ -15,7 +15,7 @@ skips the digital chain.
 """
 
 import math
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -84,6 +84,15 @@ from dsp.report import (
 from dsp.scramble import DESCRAMBLERS, Descrambler
 from dsp.spectrum import welch, welch_freqs
 from dsp.sync import Carrier, Timing, correct_carrier, recover_timing
+from dsp.systems.match import (
+    MATCH_ALPHA,
+    Accepted,
+    Candidate,
+    Findings,
+    MatchResult,
+    match,
+    relayout,
+)
 
 ALPHA = 0.01
 MAX_LEDGER_ROWS = 12
@@ -95,6 +104,7 @@ SHUFFLED_RUNS = 3
 MAX_SHUFFLE_CANDIDATES = 3
 MIN_SYMBOLS = 512
 MIN_ENVELOPE_VARIATION = 0.01  # std / mean of |x|² below which a symbol-rate line isn't real
+WEAK_ENVELOPE_LINE = 50.0  # |x|² line ratio below which the line doesn't rule out FSK
 CODES: tuple[ConvCode | None, ...] = (K7_R12, None)
 # Interleavers (dsp.deinterleave.CATALOGUE: block, helical, 802.11, QPP; FORNEY_CATALOGUE:
 # convolutional) are tried after the convolutional code; alignment by the code's parity
@@ -168,7 +178,11 @@ def analyse(
             no_frames_reason="An analog signal carries no bits.",
         )
 
-    if rate is None or _frequency_kurtosis(x, channel, detection) < FSK_KURTOSIS:
+    # A line in |x|^2 that is weak is noise (at high oversampling a noisy FSK signal shows one of
+    # ratio ~20, where a linear modulation's is in the hundreds to thousands): it is no reason to
+    # skip the FSK trial. The PSK path still uses `rate` if the trial decodes nothing.
+    weak_line = rate is not None and rate.ratio < WEAK_ENVELOPE_LINE
+    if rate is None or weak_line or _frequency_kurtosis(x, channel, detection) < FSK_KURTOSIS:
         # Constant envelope and not analog, or discrete tones (a bimodal instantaneous
         # frequency; PSK's is spiky, well above 0) even where the channel filter has trimmed
         # the tones' skirts into envelope ripple: try 2-FSK, whose rate is in the transitions.
@@ -333,6 +347,9 @@ def _rank_modulations(symbols: Any) -> tuple[tuple[str, float], ...]:
     return tuple(sorted(((m, v / total) for m, v in scores.items()), key=lambda m: -m[1]))
 
 
+Branch = tuple[str, int, Any]  # modulation, carrier rotation in degrees, soft bits
+
+
 @dataclass(frozen=True)
 class _Chain:
     modulation: str
@@ -396,9 +413,7 @@ class _Search:
     blind: _BlindStats
     blocked: tuple[_Chain, ...] = ()  # significant, but the same chain also passed on shuffled bits
     shuffled_checked: int = 0  # chains run on shuffled bits (up to MAX_SHUFFLE_CANDIDATES)
-
-
-Branch = tuple[str, int, Any]  # modulation, carrier rotation in degrees, soft bits
+    branches: tuple[Branch, ...] = ()  # every branch the walk demodulated, for Match
 
 
 def _psk_branches(
@@ -639,7 +654,10 @@ def _forney_alignment(soft: Any, entry: Forney) -> tuple[int, int, float]:
 
 
 def _search(
-    groups: Iterable[list[Branch]], branch_count: int, carriers: dict[str, Carrier]
+    groups: Iterable[list[Branch]],
+    branch_count: int,
+    carriers: dict[str, Carrier],
+    settled: Callable[[], bool] = lambda: False,
 ) -> _Search:
     """Every branch x (inner code x alignment, or block interleaver x alignment with the
     convolutional code) x sync word x CRC, Bonferroni-corrected over the whole grid
@@ -647,7 +665,9 @@ def _search(
     with an accepted chain; the threshold covers the cells never reached, so it stays honest.
     Interleaver cells rejected by the syndrome screen count as tried. The shuffled-bit control
     runs after the walk, on the best significant chains: one it blocks is rejected, but the walk
-    had already stopped at it, so cells beyond are not tried (lost recall, not a false accept)."""
+    had already stopped at it, so cells beyond are not tried (lost recall, not a false accept).
+    `settled` says a known system's own check has passed on a group, which ends the walk the same
+    way an accepted chain does (the blind searches beyond would only re-decode what is proven)."""
     per_branch = (
         sum(2 if c else 1 for c in CODES)
         + sum(p.kept for p in PUNCTURES)
@@ -674,6 +694,7 @@ def _search(
     chains: list[_Chain] = []
     seen: list[list[Branch]] = []
     blind = _BlindStats()
+    stopped = False  # the walk ended on an accepted chain
     for group in groups:
         seen.append(group)
         for modulation, rotation, soft in group:
@@ -682,8 +703,11 @@ def _search(
                     chains += _decode_cell(modulation, rotation, code, alignment, soft[alignment:])
             chains += _punctured_cells((modulation, rotation, soft))
         if accepted():
+            stopped = True
             break
-    else:
+    # `settled` turns true while the generator is resumed for the next group, and it then ends
+    # the walk by running out, not by `break`: so it is tested here, not in the loop.
+    if not stopped and not settled():
         # No catalogued code fits: look for a rate-1/n convolutional code blind, then for a
         # catalogued interleaver in front of the K=7 code.
         for group in seen:
@@ -702,7 +726,7 @@ def _search(
                 if accepted():
                     break
     chains += _outer_cells(chains, threshold)
-    if not accepted():
+    if not accepted() and not settled():
         chains += _blind_frame_cells(chains, threshold)
     significant = sorted(
         (c for c in chains if c.significant(threshold)),
@@ -722,7 +746,16 @@ def _search(
             break
         blocked.append(candidate)
     return _Search(
-        tuple(chains), tried, threshold, best, carriers, shuffled, blind, tuple(blocked), checked
+        tuple(chains),
+        tried,
+        threshold,
+        best,
+        carriers,
+        shuffled,
+        blind,
+        tuple(blocked),
+        checked,
+        tuple(b for g in seen for b in g),
     )
 
 
@@ -1145,8 +1178,18 @@ def _report(
         search, proof, f"{'/'.join(m for m, _ in ranked)} x rotation"
     )
     stages += decode_stages
+    findings = Findings(
+        modulation=modulation,
+        symbol_rate=rate_value if rate_unit == "Bd" else None,
+        rate_uncertainty=estimate_params[0].uncertainty if rate_unit == "Bd" else None,
+    )
+    matched = _run_match([Candidate(modulation, findings, _hard_bits(soft.llr))], search, findings)
+    stages.append(matched.stage)
+    frames = frames or matched.frames
+    if matched.verified:
+        frames = relayout(frames, matched.verified)
 
-    ledger = _ledger(search)
+    ledger = _ledger(search, matched)
     label = modulation if acc else f"{modulation}?"
     if acc and acc.frames:
         code_name = _code_label(acc)
@@ -1157,6 +1200,7 @@ def _report(
         )
     else:
         headline = f"{modulation}? {_fmt_rate(rate_value, rate_unit)}, not decoded"
+    headline = _with_system(headline, matched, bool(acc and acc.frames))
     points = symbols[:MAX_CONSTELLATION_POINTS]
     return DetectionReport(
         label=label,
@@ -1187,8 +1231,10 @@ def _fsk_report(
     if not rates:
         return None
     demodulated: dict[int, tuple[SymbolRate, fsk.FskSymbols]] = {}
+    settled = False  # a known system's own check passed on a candidate
 
     def groups() -> Iterator[list[Branch]]:
+        nonlocal settled
         for i, r in enumerate(rates):
             try:
                 demodulated[i] = (r, fsk.demodulate(x, r.normalised_rate))
@@ -1203,16 +1249,33 @@ def _fsk_report(
             if symbols.order > 2:
                 branches.append((name, 2 * i + 1, fsk.mirror_first_bit(symbols.llr, symbols.order)))
             yield branches
+            # Control is back here only when the walk found no accepted chain in this group. A
+            # system whose own check passes on the raw bits ends the search: the blind stages
+            # beyond could only re-decode what its proof already covers (the Match stage below
+            # reruns the check with every candidate counted).
+            # Alpha is split over every candidate that could still be checked, so this stop
+            # rule is never looser than the final Holm correction over all of them.
+            if match(
+                [_fsk_candidate(i, r, symbols, units)], None, MATCH_ALPHA / len(rates)
+            ).verified:
+                settled = True
+                return
 
     # Per rate: the tone count is chosen from the data, so every order's branches are counted.
-    search = _search(groups(), len(rates) * FSK_BRANCHES, {})
+    search = _search(groups(), len(rates) * FSK_BRANCHES, {}, lambda: settled)
     if not demodulated:
         return None
     acc = search.accepted
-    rate, symbols = demodulated[acc.rotation // 2 if acc else min(demodulated)]
+    candidates = [_fsk_candidate(i, r, s, units) for i, (r, s) in sorted(demodulated.items())]
+    index = acc.rotation // 2 if acc else min(demodulated)
+    own = next(c for c in candidates if c.key == index)
+    matched = _run_match(candidates, search, own.findings)
+    if not acc and matched.verified:
+        index = matched.key  # the demodulation the system's check passed on
+    rate, symbols = demodulated[index]
     name = f"{symbols.order}FSK"
     mirrored = bool(acc and acc.rotation % 2)
-    proof = _proof(acc) if acc else None
+    proof = _proof(acc) if acc else matched.proof
     rate_value, rate_unit, rate_scale = units.rate(rate.normalised_rate)
     to_input = 1.0 / units.channel.decimation  # cycles/channel sample -> cycles/input sample
     shift_value, shift_unit, _ = units.frequency(symbols.shift * to_input)
@@ -1293,11 +1356,11 @@ def _fsk_report(
     classify = _stage(
         "classify",
         "Classify",
-        f"{name}, confirmed by decode" if acc else f"{name} (unconfirmed)",
-        E.VERIFIED if acc else E.HYPOTHESIS,
+        f"{name}, confirmed by decode" if proof else f"{name} (unconfirmed)",
+        E.VERIFIED if proof else E.HYPOTHESIS,
         (promote(mod_param, proof) if proof else mod_param,),
     )
-    inverted = bool(acc and acc.frames and acc.frames.inverted)
+    inverted = bool(acc and acc.frames and acc.frames.inverted) or (not acc and matched.inverted)
     if symbols.order == 2:
         mapping_value = "upper tone = 0" if inverted else "lower tone = 0"
         mapping_method = (
@@ -1330,6 +1393,10 @@ def _fsk_report(
     stages = [detect_stage, estimate, sync, classify, demod]
     decode_stages, frames = _decode_stages(search, proof, f"{name} x both polarities")
     stages += decode_stages
+    stages.append(matched.stage)
+    frames = frames or matched.frames
+    if matched.verified:
+        frames = relayout(frames, matched.verified)
     if acc and acc.frames:
         code_name = _code_label(acc)
         headline = (
@@ -1338,13 +1405,14 @@ def _fsk_report(
         )
     else:
         headline = f"{name}? {_fmt_rate(rate_value, rate_unit)}, not decoded"
+    headline = _with_system(headline, matched, bool(acc and acc.frames))
     return DetectionReport(
-        label=name if acc else f"{name}?",
+        label=name if acc or matched.verified else f"{name}?",
         kind="fsk",
         level=E.VERIFIED if any(fr.crc == "pass" for fr in frames) else E.ESTIMATED,
         headline=headline,
         stages=tuple(stages),
-        search=_ledger(search),
+        search=_ledger(search, matched),
         frames=frames,
         no_frames_reason=None
         if frames
@@ -1728,7 +1796,7 @@ def _proof(chain: _Chain) -> Proof:
     )
 
 
-def _ledger(search: _Search) -> HypothesisSearch:
+def _ledger(search: _Search, matched: MatchResult | None = None) -> HypothesisSearch:
     def row(c: _Chain) -> Hypothesis:
         f = c.frames
         ok = c is search.accepted
@@ -1783,5 +1851,68 @@ def _ledger(search: _Search) -> HypothesisSearch:
         shuffled_accepts=search.shuffled_accepts,
         blind_searched=search.blind.searched,
         blind_identified=search.blind.identified,
-        rows=tuple(row(c) for c in ordered[:MAX_LEDGER_ROWS]),
+        match_tried=matched.tried if matched else 0,
+        rows=(
+            *(row(c) for c in ordered[:MAX_LEDGER_ROWS]),
+            *(matched.rows[:MAX_LEDGER_ROWS] if matched else ()),
+        ),
+    )
+
+
+def _run_match(candidates: list[Candidate], search: _Search, findings: Findings) -> MatchResult:
+    """The known-system catalogue against this signal: the blind findings and demodulated bits
+    in, a `system` parameter and the ledger rows of every check out."""
+    acc = search.accepted
+    accepted = None
+    if acc is not None and acc.frames is not None and acc.frames.crc is not None:
+        accepted = Accepted(
+            acc.frames,
+            replace(
+                findings,
+                code=acc.code.name if acc.code else "Uncoded",
+                interleaver=acc.interleaver,
+                descrambler=acc.descrambler.name if acc.descrambler else None,
+                outer=RS_NAME if acc.outer else None,
+            ),
+            acc.p_value if acc.p_value is not None else 1.0,
+        )
+    return match(candidates, accepted, MATCH_ALPHA)
+
+
+def _hard_bits(llr: Any) -> Any:
+    return (np.asarray(llr) < 0).astype(np.uint8)
+
+
+def _fsk_candidate(
+    index: int, rate: SymbolRate, symbols: fsk.FskSymbols, units: _Units
+) -> Candidate:
+    """One symbol-rate candidate's demodulation, for the Match stage."""
+    value, unit, scale = units.rate(rate.normalised_rate)
+    shift, shift_unit, _ = units.frequency(symbols.shift / units.channel.decimation)
+    known = unit == "Bd"
+    return Candidate(
+        f"rate candidate {index + 1}",
+        Findings(
+            modulation=f"{symbols.order}FSK",
+            symbol_rate=value if known else None,
+            rate_uncertainty=rate.uncertainty * scale if known else None,
+            tone_spacing=abs(shift) if shift_unit == "Hz" else None,
+        ),
+        _hard_bits(symbols.llr),
+        key=index,
+    )
+
+
+def _with_system(headline: str, matched: MatchResult, chain_decoded: bool) -> str:
+    """The headline with the verified known system named: beside a chain that decoded, or in
+    place of "not decoded" when only the system's own check passed."""
+    system = matched.verified
+    if system is None:
+        return headline
+    if chain_decoded:
+        return f"{headline} · {system.name}"
+    good = sum(1 for f in matched.frames if f.crc == "pass")
+    return (
+        headline.replace("? ", " ", 1).replace(", not decoded", "")
+        + f" → {system.name}: {good}/{len(matched.frames)} frames pass its check"
     )

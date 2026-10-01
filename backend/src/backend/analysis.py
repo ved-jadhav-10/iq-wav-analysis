@@ -2,9 +2,9 @@
 analyst's entries applied to the file's Assumptions, one detection's chain run with its failure
 contained, and the results document assembled from the reports.
 
-The results document holds the per-stage conclusions only (PLAN §3). The frame table, the
-hypothesis ledger and the constellation of a `DetectionReport` have no place in schema 0.4.0
-yet; they arrive with the exports (PLAN §5 M7), and the server still shows them.
+The results document holds each signal's conclusions (PLAN §3): its stage results, its label,
+headline and level, the hypothesis ledger and the frame table of its `DetectionReport`. The
+constellation and the eye are for the live views and stay out of it.
 """
 
 from collections.abc import Callable, Sequence
@@ -189,7 +189,8 @@ def analyse_detection(
 
 
 def signal_of(index: int, report: DetectionReport) -> Signal:
-    """A report's stages as a results `Signal`, ids matching the API's (`signal_0`, ...)."""
+    """A report's conclusions as a results `Signal`, ids matching the API's (`signal_0`, ...):
+    the stages, the headline with its level, the ledger and the frames, as the report has them."""
     stages = tuple(
         StageResult(
             id=s.id,
@@ -202,7 +203,18 @@ def signal_of(index: int, report: DetectionReport) -> Signal:
         )
         for s in report.stages
     )
-    return Signal(id=f"signal_{index}", stages=stages)
+    return Signal(
+        id=f"signal_{index}",
+        label=report.label,
+        kind=report.kind,
+        level=report.level,
+        headline=report.headline,
+        stages=stages,
+        search=report.search,
+        no_search_reason=report.no_search_reason,
+        frames=report.frames,
+        no_frames_reason=report.no_frames_reason,
+    )
 
 
 def analyse_recording(

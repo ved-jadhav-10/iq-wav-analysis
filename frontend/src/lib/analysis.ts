@@ -5,7 +5,7 @@
 import type { EvidenceLevel, StageResult } from './evidence'
 
 export interface Hypothesis {
-  layer: 'Demod' | 'Interleaver' | 'FEC' | 'Framing'
+  layer: 'Demod' | 'Interleaver' | 'FEC' | 'Framing' | 'Match'
   candidate: string
   statistic: string
   /** Chance of the statistic under the no-structure null; null when not computed. */
@@ -29,6 +29,8 @@ export interface HypothesisSearch {
   /** Branches the blind rate-1/n convolutional search ran on, and on how many it named a code. */
   blindSearched?: number
   blindIdentified?: number
+  /** Known-system checks the Match stage ran (rows with layer 'Match'), corrected among themselves. */
+  matchTried?: number
   rows: Hypothesis[]
 }
 

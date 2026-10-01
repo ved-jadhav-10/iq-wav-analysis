@@ -98,7 +98,8 @@ def test_coded_psk_decodes_to_the_transmitted_frames(
     assert classify.parameters[0].level is EvidenceLevel.VERIFIED
     assert report.search is not None
     assert report.search.shuffled_runs > 0 and report.search.shuffled_accepts == 0
-    assert sum(r.outcome == "accepted" for r in report.search.rows) == 1
+    blind = [r for r in report.search.rows if r.layer != "Match"]  # Match has its own rows
+    assert sum(r.outcome == "accepted" for r in blind) == 1
 
 
 def test_a_chain_that_also_passes_on_shuffled_bits_is_blocked(
@@ -135,7 +136,8 @@ def test_a_blocked_chain_hands_acceptance_to_the_next_one_that_passes_the_contro
     assert report.search.shuffled_blocked == 1
     assert report.search.shuffled_accepts == 1  # the blocked chain's run, none for the accepted one
     assert report.search.shuffled_runs == 3 * len(calls)
-    assert sum(r.outcome == "accepted" for r in report.search.rows) == 1
+    blind = [r for r in report.search.rows if r.layer != "Match"]  # Match has its own rows
+    assert sum(r.outcome == "accepted" for r in blind) == 1
     assert report.level is EvidenceLevel.VERIFIED
 
 

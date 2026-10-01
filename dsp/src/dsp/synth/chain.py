@@ -42,6 +42,7 @@ from dsp.synth.bits import (
 from dsp.synth.impair import Impairments, apply, awgn
 from dsp.synth.modulate import BITS_PER_SYMBOL, LINEAR, am, audio, fm, fsk, map_bits, pulse_shape
 from dsp.synth.modulate import resample as resample_
+from dsp.synth.systems import Dsc, Navtex, Pocsag
 
 Complex = NDArray[np.complex128]
 GENERATOR_VERSION = "0.1.0"
@@ -75,6 +76,9 @@ class SignalSpec:
     # discrete-tone signature the other two stages read off the same trajectory.
     fsk_bt: float = 0.0
     frame: FrameSpec | None = field(default_factory=FrameSpec)
+    # A known system's own transmission in place of the frame/code chain below (which then
+    # does not apply): its bits are the coded stream.
+    system: Pocsag | Navtex | Dsc | None = None
     scrambler: str | None = None
     outer: fec_.ReedSolomon | None = None
     byte_interleaver: il.Convolutional | None = None
@@ -196,7 +200,7 @@ def _signal(
         "bitsPerSymbol": width,
         "streamOffsetBits": spec.stream_offset,
         "fill": None if spec.fill is None else f"0x{spec.fill:02X}",
-        "frame": spec.frame.truth() if spec.frame else None,
+        "frame": spec.frame.truth() if spec.frame and spec.system is None else None,
         "scrambler": spec.scrambler,
         "outerCode": spec.outer.truth() if spec.outer else None,
         "byteInterleaver": spec.byte_interleaver.truth() if spec.byte_interleaver else None,
@@ -204,6 +208,8 @@ def _signal(
         "interleaver": spec.interleaver.truth() if spec.interleaver else None,
         "impairments": spec.impairments.truth(),
     }
+    if spec.system:  # only when set, so every other signal's truth is unchanged
+        truth["system"] = spec.system.truth()
     return _normalise(x, spec.power_db), SignalBits(payloads, framed, coded, symbols), truth
 
 
@@ -211,6 +217,8 @@ def _bitstream(
     spec: SignalSpec, needed: int, rng: np.random.Generator
 ) -> tuple[NDArray[np.uint8], Bits, Bits]:
     """Payloads, framed bits and the coded stream, with at least `needed` coded bits."""
+    if spec.system is not None:
+        return spec.system.stream(needed, rng)
     frame = spec.frame
     payload_bytes = frame.payload_bytes if frame else 64
     count = 8

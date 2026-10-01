@@ -2,6 +2,11 @@
 
 Every results JSON carries `schemaVersion` and an `Assumptions` block that states what the analysis
 took as given about the recording. A breaking change to the schema is a major version bump.
+
+Schema history: 0.4.0 held each signal's stage results only; 0.5.0 adds each signal's label, kind,
+headline, level, hypothesis ledger and frame table (`SignalFindings`). A 0.4.0 document does not
+validate against 0.5.0 (the new fields are always written, so they are required): results are
+regenerated from the recording, never migrated, and a reader checks `schemaVersion` first.
 """
 
 import json
@@ -11,10 +16,11 @@ from typing import Any, Literal, Self, cast
 from pydantic import Field, ModelWrapValidatorHandler, computed_field, model_validator
 
 from dsp.evidence import CamelModel, Parameter, Value
+from dsp.findings import SignalFindings
 from dsp.ingest.formats import SampleFormat
 
-SchemaVersion = Literal["0.4.0"]
-SCHEMA_VERSION: SchemaVersion = "0.4.0"
+SchemaVersion = Literal["0.5.0"]
+SCHEMA_VERSION: SchemaVersion = "0.5.0"
 SCHEMA_PATH = Path(__file__).with_name("results.schema.json")
 
 
@@ -91,11 +97,12 @@ class ReviewItem(CamelModel):
     convention: str
 
 
-class Signal(CamelModel):
+class Signal(SignalFindings):
     """One detected signal (PLAN §3): its own stage results, kept apart from the
-    whole-recording stages above (`Results.stages`) because a recording can hold several.
-    Detect is the first stage every signal has; later stages (estimate, sync, ... M3+) append
-    here once they exist.
+    whole-recording stages above (`Results.stages`) because a recording can hold several,
+    and what they add up to: the label, the headline and its level, the hypothesis ledger and the
+    frame table (`SignalFindings`). The constellation and the eye are for the live views and are
+    not part of the document.
     """
 
     id: str = Field(min_length=1)

@@ -99,6 +99,7 @@ def score_file(meta_path: Path, bench: BenchSet, seed: int) -> dict[str, Any]:
         **score_raw(rec.data_path, draw.datatype, scene.sample_rate),
         "verified": sum(p.level is EvidenceLevel.VERIFIED for p in a.parameters()),
         "acceptedDecodes": 0,
+        "acceptedSystems": 0,
     }
 
 
@@ -116,12 +117,13 @@ def score_chain(meta_path: Path) -> dict[str, Any]:
     started = time.perf_counter()
     with rec.reader() as reader:
         detections = detect(reader, real=not fmt.is_complex).detections
-    accepted = verified = searched = identified = 0
+    accepted = systems = verified = searched = identified = 0
     for d in detections:
         with rec.reader() as reader:
             report = analyse(reader, d, sample_rate=sample_rate)
         rows = report.search.rows if report.search else ()
-        accepted += any(r.outcome == "accepted" for r in rows)
+        accepted += any(r.outcome == "accepted" and r.layer != "Match" for r in rows)
+        systems += any(r.outcome == "accepted" and r.layer == "Match" for r in rows)
         verified += sum(
             p.level is EvidenceLevel.VERIFIED for stage in report.stages for p in stage.parameters
         )
@@ -131,6 +133,7 @@ def score_chain(meta_path: Path) -> dict[str, Any]:
     return {
         "detections": len(detections),
         "acceptedDecodes": accepted,
+        "acceptedSystems": systems,
         "verifiedParameters": verified,
         "blindSearched": searched,
         "blindIdentified": identified,
@@ -175,6 +178,7 @@ def score_torchsig(meta_path: Path, entry: dict[str, Any], sample_rate: float) -
         **score_raw(meta_path.with_suffix(".sigmf-data"), entry["datatype"], sample_rate),
         "verified": sum(p.level is EvidenceLevel.VERIFIED for p in a.parameters()),
         "acceptedDecodes": 0,
+        "acceptedSystems": 0,
     }
 
 
@@ -208,6 +212,7 @@ def run_set(bench: BenchSet | None, data: Path) -> dict[str, Any]:
         "trueRateMedianRank": float(np.median(ranks)) if ranks else None,
         "verifiedValues": sum(r["verified"] for r in rows),
         "acceptedDecodes": sum(r["acceptedDecodes"] for r in rows),
+        "acceptedSystems": sum(r.get("acceptedSystems", 0) for r in rows),
         "decodingStages": ["analyse: sync, demod, FEC (catalogue and blind), framing"]
         if bench and bench.chain
         else [],
@@ -261,6 +266,11 @@ def markdown(results: dict[str, Any]) -> str:
             else "(decode chain not run on this set)"
         )
         + " |",
+        *(
+            [f"| Known-system matches (Match stage) | {s['acceptedSystems']} |"]
+            if s["decodingStages"]
+            else []
+        ),
         *(
             [
                 "| Blind convolutional-code search | "

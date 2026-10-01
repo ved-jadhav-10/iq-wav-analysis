@@ -31,7 +31,8 @@ function Stat({ label, value, note }: { label: string; value: string; note?: str
 function Hypotheses({ detection }: { detection: Detection }) {
   const s = detection.search
   if (!s) return <Empty>{detection.noSearchReason ?? 'No search ran.'}</Empty>
-  const accepted = s.rows.filter((r) => r.outcome === 'accepted').length
+  const accepted = s.rows.filter((r) => r.outcome === 'accepted' && r.layer !== 'Match').length
+  const systems = s.rows.filter((r) => r.outcome === 'accepted' && r.layer === 'Match').length
   return (
     <div>
       <div className="grid grid-cols-2 gap-x-6 gap-y-2 border-b px-3 py-2 sm:grid-cols-5">
@@ -57,7 +58,17 @@ function Hypotheses({ detection }: { detection: Detection }) {
                 : undefined
           }
         />
-        <Stat label="Accepted" value={String(accepted)} note={accepted === 0 ? 'nothing claimed' : undefined} />
+        <Stat
+          label="Accepted"
+          value={String(accepted)}
+          note={
+            systems > 0
+              ? `plus ${systems} known system${systems > 1 ? 's' : ''} from ${s.matchTried ?? 0} Match checks`
+              : accepted === 0
+                ? 'nothing claimed'
+                : undefined
+          }
+        />
       </div>
       <table className="w-full text-xs">
         <caption className="sr-only">
