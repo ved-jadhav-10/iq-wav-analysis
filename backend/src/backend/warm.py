@@ -12,7 +12,7 @@ import time
 
 import numpy as np
 
-from dsp.fec import rs, viterbi
+from dsp.fec import ldpc, rs, viterbi
 from dsp.framing import CRCS
 from dsp.gf2 import eliminate, matrix
 
@@ -31,6 +31,11 @@ def warm() -> float:
 
     # Soft-decision Viterbi, K=7 rate 1/2 (dsp.fec.viterbi).
     viterbi.decode(rng.standard_normal(2 * 24))
+
+    # LDPC min-sum decoder and the alignment scan's syndrome kernel (dsp.fec.ldpc).
+    code = ldpc.CATALOGUE[0]
+    ldpc.decode(rng.standard_normal(code.transmitted), code, max_iter=2)
+    ldpc.find_alignment(rng.standard_normal(2 * code.transmitted), code, codewords=1)
 
     # Every catalogued CRC, one frame (dsp.framing); the kernel is shared, the types are not.
     CRCS[0].compute_many(rng.integers(0, 2, (2, 32), dtype=np.uint8))

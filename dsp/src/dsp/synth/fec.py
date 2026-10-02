@@ -8,7 +8,9 @@ Puncturing keeps the bits where the pattern holds 1, reading the
 pattern column by column (one column per input bit, one row per output branch), as in DVB-S
 and CCSDS. Reed-Solomon uses `galois`; the field polynomial, first consecutive root and the
 generator root's power are parameters, so CCSDS and DVB codes are both expressible. LDPC
-encoding derives a generator matrix from any parity-check matrix H through `galois`.
+encoding derives a generator matrix from any parity-check matrix H through `galois`; the
+catalogued standard codes (`dsp.fec.ldpc`) encode systematically through `galois` too, by
+solving for the parity columns, a path that shares nothing with the decoder side's `dsp.gf2`.
 """
 
 from dataclasses import dataclass
@@ -19,6 +21,7 @@ import galois  # pyright: ignore[reportMissingTypeStubs]
 import numpy as np
 from numpy.typing import NDArray
 
+from dsp.fec.ldpc import LdpcCode
 from dsp.synth.bits import Bits, to_bits, to_bytes
 
 
@@ -157,6 +160,71 @@ class Ldpc:
 def _generator(h: bytes, shape: tuple[int, int]) -> NDArray[np.uint8]:
     matrix = galois.GF2(np.frombuffer(h, np.uint8).reshape(shape))
     return np.asarray(matrix.null_space(), dtype=np.uint8)
+
+
+@dataclass(frozen=True, eq=False)
+class StandardLdpc(Ldpc):
+    """A catalogued standard code (`dsp.fec.ldpc.CATALOGUE`), encoded systematically.
+
+    The message is the first k bits of the code word and the output is what the standard
+    transmits: the last `punctured` columns (CCSDS TM) are dropped, so `n` is the transmitted
+    length. `h` is the full parity-check matrix, punctured columns included."""
+
+    code: LdpcCode | None = None
+
+    @property
+    def _code(self) -> LdpcCode:
+        if self.code is None:
+            raise ValueError("StandardLdpc needs its catalogue code; build it with standard_ldpc")
+        return self.code
+
+    @property
+    def k(self) -> int:
+        return self._code.k
+
+    @property
+    def n(self) -> int:
+        return self._code.transmitted
+
+    @property
+    def generator(self) -> NDArray[np.uint8]:
+        raise NotImplementedError("a standard code encodes through its parity map, not a G")
+
+    def encode(self, bits: NDArray[Any]) -> Bits:
+        code = self._code
+        u = np.asarray(bits, dtype=np.uint8)
+        if len(u) % code.k:
+            raise ValueError(f"{len(u)} bits aren't whole {code.k}-bit LDPC messages")
+        messages = u.reshape(-1, code.k)
+        t = _parity_map(self.h.tobytes(), self.h.shape, code.k)
+        parity = (messages.astype(np.float32) @ t % 2).astype(np.uint8)  # exact: sums <= k
+        word = np.hstack([messages, parity])
+        return word[:, : code.transmitted].ravel()
+
+    def truth(self) -> dict[str, Any]:
+        code = self._code
+        return {
+            "code": "ldpc",
+            "name": self.name,
+            "n": self.n,
+            "k": self.k,
+            "standard": code.family,
+            "source": code.source,
+            "punctured": code.punctured,
+        }
+
+
+@cache
+def _parity_map(h: bytes, shape: tuple[int, int], k: int) -> NDArray[np.float32]:
+    """T with parity = message T (mod 2): H = [A | B], B (the last n - k columns) invertible."""
+    matrix = galois.GF2(np.frombuffer(h, np.uint8).reshape(shape))
+    a, b = matrix[:, :k], matrix[:, k:]
+    return np.asarray(np.linalg.inv(b) @ a, dtype=np.float32).T
+
+
+def standard_ldpc(code: LdpcCode) -> StandardLdpc:
+    """The ground-truth encoder for a catalogue code."""
+    return StandardLdpc(code.name, code.dense(), code)
 
 
 def regular_ldpc(n: int, column_weight: int, row_weight: int, seed: int) -> Ldpc:

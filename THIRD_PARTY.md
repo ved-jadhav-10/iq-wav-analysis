@@ -90,3 +90,10 @@ do not edit by hand. Lists only what ships in Sanket, not development tools.
 | Opus | soundfile | BSD-3-Clause |
 | mpg123 | soundfile | LGPL-2.1 |
 | LAME | soundfile | LGPL-2.0 |
+
+## Reference data bundled in Sanket
+
+| Data | Cross-checked against | Licence |
+|---|---|---|
+| IEEE 802.11n n=648 LDPC base matrices (dsp/fec/ldpc_data.py) | yairmz/ldpc, Copyright (c) 2021 Yair M | MIT |
+| CCSDS TC and TM LDPC parity-check tables (dsp/fec/ldpc_data.py) | labrador-ldpc, Copyright 2017 Adam Greig | MIT |

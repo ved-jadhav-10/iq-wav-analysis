@@ -76,6 +76,22 @@ BUNDLED: dict[str, tuple[tuple[str, str], ...]] = {
     ),
 }
 
+# Reference data shipped inside Sanket's own source (no package): (data, where it came from,
+# licence). The numbers are the standards' own; each was cross-checked against the MIT-licensed
+# implementation named, whose licence text sits beside the data in dsp/src/dsp/fec/ldpc_codes/.
+BUNDLED_DATA: tuple[tuple[str, str, str], ...] = (
+    (
+        "IEEE 802.11n n=648 LDPC base matrices (dsp/fec/ldpc_data.py)",
+        "yairmz/ldpc, Copyright (c) 2021 Yair M",
+        "MIT",
+    ),
+    (
+        "CCSDS TC and TM LDPC parity-check tables (dsp/fec/ldpc_data.py)",
+        "labrador-ldpc, Copyright 2017 Adam Greig",
+        "MIT",
+    ),
+)
+
 # The desktop-window extra (`uv sync --extra window`) is optional and platform-conditional, so a
 # given machine may not have it installed. Its licences are fixed here, from each package's own
 # metadata, so THIRD_PARTY.md comes out the same everywhere; the same policy checks them.
@@ -188,6 +204,9 @@ def render(
     lines += ["", "## Native libraries bundled in Python wheels", ""]
     lines += ["| Library | Shipped in | Licence |", "|---|---|---|"]
     lines += [f"| {library} | {package} | {licence} |" for library, package, licence in native]
+    lines += ["", "## Reference data bundled in Sanket", ""]
+    lines += ["| Data | Cross-checked against | Licence |", "|---|---|---|"]
+    lines += [f"| {data} | {source} | {licence} |" for data, source, licence in BUNDLED_DATA]
     return "\n".join(lines) + "\n"
 
 
@@ -200,7 +219,7 @@ def main() -> int:
     native = bundled(python)
     problems = [
         f"{name} {version}: {classify(licence)} licence {licence!r}"
-        for name, version, licence in python + npm + native
+        for name, version, licence in python + npm + native + list(BUNDLED_DATA)
         if classify(licence) != "allowed"
     ]
     for problem in problems:

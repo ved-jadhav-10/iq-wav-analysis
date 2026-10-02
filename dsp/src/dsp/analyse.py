@@ -65,6 +65,7 @@ from dsp.estimate.params import (
 )
 from dsp.evidence import Alternative, EvidenceLevel, Parameter, Proof, promote
 from dsp.eye import eye_diagram
+from dsp.fec import ldpc as ldpc_codes
 from dsp.fec import rs
 from dsp.fec.convident import (
     DEFAULT_MAX_CONSTRAINT,
@@ -73,6 +74,7 @@ from dsp.fec.convident import (
     ConvIdentification,
     identify_convolutional,
 )
+from dsp.fec.ldpc import LdpcCode
 from dsp.fec.puncture import PUNCTURES, depuncture
 from dsp.fec.viterbi import K7_R12, ConvCode, decode, encode, syndrome_rates
 from dsp.framing import (
@@ -146,6 +148,9 @@ MIN_BLIND_BITS = 3000
 # One data-chosen code per branch enters the grid; the search's own ledger corrects for how it
 # was chosen (`identify_convolutional`).
 BLIND_CELLS = 1
+# The catalogue LDPC codes the walk tries: those with every column transmitted, whose parity
+# checks screen an alignment cheaply (the punctured CCSDS TM codes need decoding to screen).
+LDPC_CODES = tuple(c for c in ldpc_codes.CATALOGUE if c.punctured == 0)
 
 E = EvidenceLevel
 
@@ -571,6 +576,7 @@ class _Chain:
     blind_frames: BlindFrames | None = None  # set when sync and CRC were found blind
     threshold: float | None = None  # this chain's own acceptance threshold, when not the grid's
     blind_block: BlindBlock | None = None  # set when the block interleaver was found blind
+    ldpc: LdpcCode | None = None  # a catalogue LDPC code, in place of `code`
 
     def significant(self, threshold: float) -> bool:
         limit = self.threshold if self.threshold is not None else threshold
@@ -578,7 +584,10 @@ class _Chain:
 
     @property
     def candidate(self) -> str:
-        code = f"{self.code.name}, alignment {self.alignment}" if self.code else "uncoded"
+        if self.ldpc:
+            code = f"{self.ldpc.name}, alignment {self.alignment}"
+        else:
+            code = f"{self.code.name}, alignment {self.alignment}" if self.code else "uncoded"
         if self.blind:
             code += " (blind search)"
         if self.blind_frames:
@@ -684,7 +693,31 @@ def _decode_cell(
     llr: Any,
     **extra: Any,
 ) -> list[_Chain]:
-    bits = decode(llr, code) if code else (llr < 0).astype(np.uint8)
+    return _framed_cells(modulation, rotation, code, alignment, llr, _coded_bits(llr, code), extra)
+
+
+def _coded_bits(llr: Any, code: ConvCode | None, standard: LdpcCode | None = None) -> Any:
+    """The decoded bits of a soft stream: the message bits of each whole LDPC block, the Viterbi
+    output of a convolutional code, or (uncoded) the hard decisions."""
+    if standard is not None:
+        blocks = len(llr) // standard.transmitted
+        if blocks == 0:
+            return np.zeros(0, np.uint8)
+        soft = np.asarray(llr, np.float64)[: blocks * standard.transmitted]
+        hard, _, _, _ = ldpc_codes.decode_many(soft.reshape(blocks, -1), standard)
+        return hard[:, : standard.k].ravel()
+    return decode(llr, code) if code else (llr < 0).astype(np.uint8)
+
+
+def _framed_cells(
+    modulation: str,
+    rotation: int,
+    code: ConvCode | None,
+    alignment: int,
+    llr: Any,
+    bits: Any,
+    extra: dict[str, Any],
+) -> list[_Chain]:
     chains: list[_Chain] = []
     for word in SYNC_WORDS:
         chains += _descrambled_cells(modulation, rotation, code, alignment, llr, bits, word, extra)
@@ -758,6 +791,48 @@ def _blind_conv_cells(branch: Branch, stats: _BlindStats) -> list[_Chain]:
     aligned = -llr[found.offset :] if found.inverted else llr[found.offset :]
     aligned = aligned[: len(aligned) // found.n * found.n]
     return _decode_cell(modulation, rotation, found.code, found.offset, aligned, blind=found)
+
+
+def _ldpc_cells(branch: Branch) -> list[_Chain]:
+    """Each unpunctured catalogue LDPC code at the block alignment where its parity checks hold
+    (`ldpc.find_alignment`, corrected for the offsets it scans); only an alignment that passes
+    goes on to the decoder and the frame search, the others are counted as tried. Every rotation
+    is tried as it is: a complemented stream is not a code word of an odd-weight code, so the
+    inverted branches are not equivalent here as they are for the K=7 code."""
+    modulation, rotation, soft = branch
+    llr = np.asarray(soft, np.float64)
+    chains: list[_Chain] = []
+    for code in LDPC_CODES:
+        if len(llr) < 2 * code.transmitted:
+            continue
+        found = ldpc_codes.find_alignment(llr, code)
+        if not found.found:
+            chains.append(
+                _Chain(
+                    modulation,
+                    rotation,
+                    None,
+                    found.offset,
+                    None,
+                    llr,
+                    None,
+                    ldpc=code,
+                    syndrome=found.rate,
+                )
+            )
+            continue
+        aligned = llr[found.offset :]
+        aligned = aligned[: len(aligned) // code.transmitted * code.transmitted]
+        chains += _framed_cells(
+            modulation,
+            rotation,
+            None,
+            found.offset,
+            aligned,
+            _coded_bits(aligned, None, code),
+            {"ldpc": code, "syndrome": found.rate},
+        )
+    return chains
 
 
 def _interleaver_cells(branch: Branch) -> list[_Chain]:
@@ -889,6 +964,7 @@ def _search(
         + sum(e.size for e in CATALOGUE)
         + sum(e.branches * K7_R12.n for e in FORNEY_CATALOGUE)
         + MAX_CANDIDATE_CELLS  # block interleavers found blind: every alignment of every candidate
+        + sum(c.n for c in LDPC_CODES)  # catalogue LDPC codes: every block alignment
     )
     # Each cell also with the outer RS code at every bit alignment and codeword phase.
     scrambles = 1 + len(DESCRAMBLERS)  # as decoded, and through each descrambler
@@ -922,13 +998,19 @@ def _search(
     # `settled` turns true while the generator is resumed for the next group, and it then ends
     # the walk by running out, not by `break`: so it is tested here, not in the loop.
     if not stopped and not settled():
-        # No catalogued code fits: look for a rate-1/n convolutional code blind, then for a
-        # catalogued interleaver in front of the K=7 code.
+        # No catalogued convolutional code fits: try the catalogued LDPC codes, then look for a
+        # rate-1/n convolutional code blind, then for a catalogued interleaver in front of the
+        # K=7 code.
         for group in seen:
             for branch in group:
-                chains += _blind_conv_cells(branch, blind)
+                chains += _ldpc_cells(branch)
             if accepted():
                 break
+        for group in seen:
+            if accepted():
+                break
+            for branch in group:
+                chains += _blind_conv_cells(branch, blind)
         if not accepted():
             for group in seen:
                 for branch in group:
@@ -993,7 +1075,7 @@ def _shuffled_accepts(chain: _Chain, threshold: float) -> int:
     accepts = 0
     for _ in range(SHUFFLED_RUNS):
         llr = np.asarray(rng.permutation(chain.llr), np.float64)
-        bits = decode(llr, chain.code) if chain.code else (llr < 0).astype(np.uint8)
+        bits = _coded_bits(llr, chain.code, chain.ldpc)
         if chain.blind_frames:  # the blind framing must not fire on shuffled bits either
             again = analyse_stream(bits) if structure_z(bits) >= Z_MIN else None
             accepts += int(
@@ -1197,7 +1279,7 @@ def _outer_cells(chains: list[_Chain], threshold: float) -> list[_Chain]:
     f = base.frames
     if ok and f is not None and f.passes >= 0.9 * f.complete:
         return []
-    bits = decode(base.llr, base.code) if base.code else (base.llr < 0).astype(np.uint8)
+    bits = _coded_bits(base.llr, base.code, base.ldpc)
     outer = rs.decode_stream(bits)
     if outer is None:
         return []
@@ -1762,8 +1844,8 @@ def _decode_stages(
     frames: tuple[Frame, ...] = ()
     if acc and acc.frames and proof:
         f = acc.frames
-        code_value = acc.code.name if acc.code else "Uncoded"
-        summary = _code_label(acc) if acc.code else "Uncoded"
+        code_value = _code_name(acc)
+        summary = _code_label(acc) if acc.code or acc.ldpc else "Uncoded"
         if acc.interleaver:
             param = Parameter(
                 id="interleaver",
@@ -1803,7 +1885,12 @@ def _decode_stages(
                         "Blind convolutional-code search (GF(2) rank scan and parity checks), "
                         "soft Viterbi, decided by the CRC"
                         if acc.blind
-                        else "Catalogue search (soft Viterbi), decided by the CRC"
+                        else (
+                            "Catalogue search (parity-check alignment scan, layered min-sum "
+                            "decoder), decided by the CRC"
+                            if acc.ldpc
+                            else "Catalogue search (soft Viterbi), decided by the CRC"
+                        )
                     ),
                     evidence=_blind_evidence(acc.blind) if acc.blind else (),
                     warnings=_BLIND_WARNING if acc.blind else (),
@@ -2062,8 +2149,16 @@ _BLIND_WARNING = (
 )
 
 
+def _code_name(chain: _Chain) -> str:
+    if chain.ldpc:
+        return chain.ldpc.name
+    return chain.code.name if chain.code else "Uncoded"
+
+
 def _code_label(chain: _Chain) -> str:
     """The code's name for headlines and summaries, saying when it was found blind."""
+    if chain.ldpc:
+        return chain.ldpc.name
     if chain.code is None:
         return "uncoded"
     return f"{chain.code.name} (found blind)" if chain.blind else chain.code.name
@@ -2138,6 +2233,11 @@ def _ledger(search: _Search, matched: MatchResult | None = None) -> HypothesisSe
         elif c.interleaver and c.syndrome is not None and c.syndrome >= SYNDROME_SCREEN:
             statistic = f"Code syndrome {c.syndrome:.2f} at the best alignment (0.5 if absent)"
             reason = f"Syndrome not below {SYNDROME_SCREEN} at any alignment; not decoded"
+        elif c.ldpc and f is None and c.syndrome is not None:
+            statistic = (
+                f"Parity checks fail at rate {c.syndrome:.2f} at the best alignment (0.5 if absent)"
+            )
+            reason = "Not below the corrected screen threshold at any alignment; not decoded"
         elif f is None:
             statistic, reason = "Sync word does not recur", "No frame boundaries"
         else:
@@ -2160,7 +2260,7 @@ def _ledger(search: _Search, matched: MatchResult | None = None) -> HypothesisSe
                     else "Held-out CRC passes not significant after correction"
                 )
         return Hypothesis(
-            layer="Interleaver" if c.interleaver else ("FEC" if c.code else "Framing"),
+            layer="Interleaver" if c.interleaver else ("FEC" if c.code or c.ldpc else "Framing"),
             candidate=c.candidate,
             statistic=statistic,
             p_value=c.p_value,
@@ -2201,7 +2301,7 @@ def _run_match(candidates: list[Candidate], search: _Search, findings: Findings)
             acc.frames,
             replace(
                 findings,
-                code=acc.code.name if acc.code else "Uncoded",
+                code=_code_name(acc),
                 interleaver=acc.interleaver,
                 descrambler=acc.descrambler.name if acc.descrambler else None,
                 outer=RS_NAME if acc.outer else None,
