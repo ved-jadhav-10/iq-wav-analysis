@@ -22,7 +22,7 @@ from typing import Any, cast
 import numpy as np
 
 from dsp import _scipy, fsk
-from dsp.analog import analog_detect
+from dsp.analog import AnalogMeasurements, analog_detect, measure_analog
 from dsp.blind_framing import (
     MAX_CANDIDATES,
     Z_MIN,
@@ -213,7 +213,7 @@ def analyse(
         if offered is not None:
             return offered
     if analog is not None and (analog[0] == "fm" or rate is None):
-        kind, param = analog
+        kind, param, measured = analog
         return DetectionReport(
             label=kind.upper(),
             kind="analog",
@@ -221,6 +221,7 @@ def analyse(
             headline=f"Analog {kind.upper()}: not sent to the digital chain",
             stages=(
                 detect_stage,
+                _analog_estimate(units, detection, kind, measured),
                 _stage("classify", "Classify", f"Analog {kind.upper()}", E.ESTIMATED, (param,)),
             ),
             search=None,
@@ -303,6 +304,90 @@ def analyse(
     )
 
 
+def _analog_estimate(
+    units: "_Units", detection: Detection, kind: str, m: AnalogMeasurements
+) -> StageReport:
+    """The carrier, bandwidth and message measurements of an analog signal as a stage. Each
+    uncertainty is a statistical one from the sample count; the depth and deviation are RMS
+    figures (a peak would need the message's crest factor, which is not known)."""
+    to_input = 1.0 / units.channel.decimation
+    carrier_value, carrier_unit, carrier_scale = units.frequency(
+        units.channel.centre + m.carrier_offset * to_input
+    )
+    bw_value, bw_unit, bw_scale = units.frequency(detection.bandwidth)
+    root_n = math.sqrt(max(m.message_samples, 1))
+    params = [
+        Parameter(
+            id="carrier",
+            name="Carrier frequency",
+            value=carrier_value,
+            unit=carrier_unit,
+            uncertainty=(0.5 / detection.nfft + 1.0 / root_n * 1e-3) * carrier_scale,
+            level=E.ESTIMATED,
+            method="Detection centre plus the power-weighted mean frequency (lag-one phase)",
+            evidence=("Relative to the capture centre.",),
+        ),
+        Parameter(
+            id="bandwidth",
+            name="Occupied bandwidth",
+            value=bw_value,
+            unit=bw_unit,
+            uncertainty=bw_scale / detection.nfft,
+            level=E.ESTIMATED,
+            method="Detection band edges (dsp.detect)",
+        ),
+    ]
+    if m.am_depth_rms is not None:
+        params.append(
+            Parameter(
+                id="am_depth",
+                name="AM modulation depth (RMS)",
+                value=round(m.am_depth_rms, 4),
+                uncertainty=round(max(0.02 * m.am_depth_rms, 1.0 / root_n), 4),
+                level=E.ESTIMATED,
+                method="Envelope coefficient of variation less the AWGN floor's, in quadrature: "
+                "RMS message amplitude over carrier amplitude",
+                evidence=("A peak depth would need the message's crest factor, which is unknown.",),
+            )
+        )
+    if m.audio_bandwidth is not None:
+        audio_value, audio_unit, audio_scale = units.frequency(m.audio_bandwidth * to_input)
+        params.append(
+            Parameter(
+                id="audio_bandwidth",
+                name="Audio bandwidth",
+                value=audio_value,
+                unit=audio_unit,
+                uncertainty=0.1 * audio_value + audio_scale / 1024,
+                level=E.ESTIMATED,
+                method="99 % of the envelope's power above its noise floor",
+            )
+        )
+    if m.fm_deviation_rms is not None:
+        dev_value, dev_unit, dev_scale = units.frequency(m.fm_deviation_rms * to_input)
+        params.append(
+            Parameter(
+                id="fm_deviation",
+                name="FM deviation (RMS)",
+                value=dev_value,
+                unit=dev_unit,
+                uncertainty=max(0.05 * dev_value, dev_scale / 1000),
+                level=E.ESTIMATED,
+                method="Instantaneous-frequency spread less the AWGN floor's, in quadrature",
+                evidence=(
+                    "A peak deviation would need the message's crest factor, which is unknown.",
+                ),
+            )
+        )
+    return _stage(
+        "estimate",
+        "Estimate",
+        f"Analog {kind.upper()} carrier, bandwidth and message measurements",
+        E.ESTIMATED,
+        tuple(params),
+    )
+
+
 def _fsk_candidates(x: Any) -> list[SymbolRate]:
     """The symbol rates a 2-FSK trial should try: the tone-transition comb's, and, when the pair
     of lines in x² that MSK and GMSK make is not already explained by one of them, that pair's
@@ -376,7 +461,9 @@ def measure_symbol_rate(source: Any, detection: Detection) -> tuple[float, float
 # --- analog ---------------------------------------------------------------------------------
 
 
-def _analog(x: Any, channel: Channel, detection: Detection) -> tuple[str, Parameter] | None:
+def _analog(
+    x: Any, channel: Channel, detection: Detection
+) -> tuple[str, Parameter, AnalogMeasurements] | None:
     try:
         noise = snr_psd(x).noise_density
     except ValueError:
@@ -403,13 +490,17 @@ def _analog(x: Any, channel: Channel, detection: Detection) -> tuple[str, Parame
         f"Frequency spread {m.frequency_std:.4f} vs floor {m.frequency_floor:.4f} cycles/sample",
         f"Frequency excess kurtosis {m.frequency_kurtosis:.2f} (FSK tones sit below -0.75)",
     )
-    return result.kind, Parameter(
-        id="modulation",
-        name="Modulation",
-        value=f"Analog {result.kind.upper()}",
-        level=E.ESTIMATED,
-        method="Envelope and instantaneous-frequency spread vs their AWGN floors (dsp.analog)",
-        evidence=evidence,
+    return (
+        result.kind,
+        Parameter(
+            id="modulation",
+            name="Modulation",
+            value=f"Analog {result.kind.upper()}",
+            level=E.ESTIMATED,
+            method="Envelope and instantaneous-frequency spread vs their AWGN floors (dsp.analog)",
+            evidence=evidence,
+        ),
+        measure_analog(x, result),
     )
 
 

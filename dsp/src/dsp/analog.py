@@ -19,6 +19,16 @@ candidate is also checked for a Gaussian-like frequency distribution (`FSK_KURTO
 FSK's tones give it a well below-Gaussian (negative excess) kurtosis that a continuous message
 does not.
 
+Measurements (`measure_analog`): the carrier's offset from the channel centre (the power-weighted
+mean frequency, the phase of the lag-one autocorrelation); for AM the RMS modulation depth (RMS of
+the message over the carrier amplitude, from the envelope's coefficient of variation less the
+noise floor's, in quadrature) and the audio bandwidth (99 % of the message's power above its
+noise floor, `occupied_bandwidth`); for FM the RMS frequency deviation (the frequency spread less
+the floor's, in quadrature). A peak depth or peak deviation would need the message's crest
+factor, which speech and noise do not share, so none is claimed; FM's audio bandwidth is not
+measured, since the discriminator's noise rises with frequency and has no flat floor to read it
+against.
+
 Limits: MARGIN=2 needs the modulation to clearly dominate the noise floor, which for a modest
 index (as commonly used here) needs on the order of 15-20 dB SNR for AM and more for FM, whose
 deviation-driven frequency spread is usually smaller relative to its floor than AM's
@@ -80,6 +90,46 @@ def analog_metrics(x: Complex, noise_power: float) -> AnalogMetrics:
         carrier_power=carrier_power,
         noise_power=noise_power,
     )
+
+
+@dataclass(frozen=True)
+class AnalogMeasurements:
+    carrier_offset: float  # cycles/sample from the channel centre
+    am_depth_rms: float | None  # RMS message amplitude / carrier amplitude
+    fm_deviation_rms: float | None  # RMS of the instantaneous frequency, cycles/sample
+    audio_bandwidth: float | None  # AM only, cycles/sample
+    message_samples: int
+
+
+def measure_analog(x: Complex, result: AnalogResult) -> AnalogMeasurements:
+    """What an AM or FM signal's carrier and message measure (see the module docstring), from the
+    same channel `analog_detect` decided on."""
+    m = result.metrics
+    lag_one = complex(np.mean(x[1:] * np.conj(x[:-1])))
+    offset = math.atan2(lag_one.imag, lag_one.real) / (2 * math.pi)
+    if result.kind == "am":
+        envelope = np.abs(x)
+        cv2 = max((m.envelope_cv**2) - (m.envelope_floor**2), 0.0)
+        message = envelope / max(float(np.mean(envelope)), MIN_FLOOR) - 1.0
+        bandwidth = _message_bandwidth(message)
+        return AnalogMeasurements(offset, math.sqrt(cv2), None, bandwidth, len(x))
+    spread2 = max(m.frequency_std**2 - m.frequency_floor**2, 0.0)
+    return AnalogMeasurements(offset, None, math.sqrt(spread2), None, len(x))
+
+
+def _message_bandwidth(message: NDArray[np.float64]) -> float | None:
+    """The one-sided bandwidth holding 99 % of a real message's power above its noise floor, or
+    None when it is too short to measure."""
+    from dsp.estimate.params import occupied_bandwidth
+    from dsp.spectrum import welch, welch_dof, welch_freqs
+
+    nfft = 1024
+    if len(message) < 4 * nfft:
+        return None
+    psd = welch(message, nfft)
+    freqs = welch_freqs(len(message), nfft, True)
+    band = occupied_bandwidth(psd, freqs, dof=welch_dof(len(message), nfft))
+    return float(band.high)
 
 
 def analog_detect(x: Complex, noise_power: float, margin: float = MARGIN) -> AnalogResult | None:
