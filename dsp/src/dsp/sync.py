@@ -24,6 +24,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from dsp import _scipy
+from dsp.parallel import pmap
 
 Complex = NDArray[np.complex128]
 Float = NDArray[np.float64]
@@ -32,6 +33,7 @@ SPS = 4  # samples per symbol the matched filter and timing run at
 TIMING_BLOCK = 256  # symbols per Oerder-Meyr timing estimate
 PHASE_BLOCK = 128  # symbols per carrier-phase estimate
 RRC_SPAN = 16  # symbols
+INTERPOLATE_CHUNK_ELEMENTS = 1 << 19  # values per matrix in one chunk of `interpolate`
 
 
 def interpolate(
@@ -47,17 +49,24 @@ def interpolate(
     width = int(np.ceil(half_width / cutoff))
     offsets = np.arange(-width + 1, width + 1)
     window_beta = 8.0
-    for start in range(0, len(times), 1 << 14):
-        t = times[start : start + (1 << 14)]
+    norm = float(_scipy.i0(np.array(window_beta)))
+    # Rows of the kernel matrix are independent, so chunks of them run side by side; a chunk is
+    # at most INTERPOLATE_CHUNK_ELEMENTS values per matrix, which bounds each thread's memory.
+    rows = int(np.clip(INTERPOLATE_CHUNK_ELEMENTS // len(offsets), 64, 1 << 14))
+
+    def chunk(start: int) -> None:
+        t = times[start : start + rows]
         base = np.floor(t).astype(np.int64)
         index = base[:, None] + offsets[None, :]
         frac = t[:, None] - index
         inside = np.clip(1 - (frac / width) ** 2, 0, None)
         kernel = cutoff * np.sinc(cutoff * frac) * _scipy.i0(window_beta * np.sqrt(inside))
-        kernel /= float(_scipy.i0(np.array(window_beta)))
+        kernel /= norm
         valid = (index >= 0) & (index < len(x))
         samples = np.where(valid, x[np.clip(index, 0, len(x) - 1)], 0)
         out[start : start + len(t)] = np.sum(kernel * samples, axis=1)
+
+    pmap(chunk, range(0, len(times), rows))
     return out
 
 

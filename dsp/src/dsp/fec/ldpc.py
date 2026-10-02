@@ -264,7 +264,7 @@ def encode(code: LdpcCode, bits: ArrayLike, *, full: bool = False) -> Bits:
 # -- decoding ------------------------------------------------------------------------------------
 
 
-@numba.njit(cache=True)  # pyright: ignore[reportUntypedFunctionDecorator]
+@numba.njit(cache=True, nogil=True)  # pyright: ignore[reportUntypedFunctionDecorator]
 def _unsatisfied(
     hard: Bits, pointers: Index, variables: Index
 ) -> int:  # pragma: no cover - compiled
@@ -332,7 +332,7 @@ def _min_sum(
     return iterations, unsat
 
 
-@numba.njit(cache=True)  # pyright: ignore[reportUntypedFunctionDecorator]
+@numba.njit(cache=True, nogil=True)  # pyright: ignore[reportUntypedFunctionDecorator]
 def _decode_rows(
     llr: Float,
     pointers: Index,
@@ -437,7 +437,7 @@ def syndrome_rate(hard_bits: ArrayLike, code: LdpcCode) -> float:
     return bad / (code.checks * len(hard))
 
 
-@numba.njit(cache=True)  # pyright: ignore[reportUntypedFunctionDecorator]
+@numba.njit(cache=True, nogil=True)  # pyright: ignore[reportUntypedFunctionDecorator]
 def _soft_syndrome(
     t: Float,
     pointers: Index,
@@ -467,7 +467,7 @@ def _soft_syndrome(
     return out
 
 
-@numba.njit(cache=True)  # pyright: ignore[reportUntypedFunctionDecorator]
+@numba.njit(cache=True, nogil=True)  # pyright: ignore[reportUntypedFunctionDecorator]
 def _periodicity(hard: Bits, max_period: int) -> float:  # pragma: no cover - compiled
     """The largest fraction of bits that equal the bit `p` places on, over p = 1 .. max_period:
     about 0.5 for a random stream, 1 for a constant or repeating one."""
@@ -480,7 +480,7 @@ def _periodicity(hard: Bits, max_period: int) -> float:  # pragma: no cover - co
     return best
 
 
-@numba.njit(cache=True)  # pyright: ignore[reportUntypedFunctionDecorator]
+@numba.njit(cache=True, nogil=True)  # pyright: ignore[reportUntypedFunctionDecorator]
 def _scan_decode(
     llr: Float,
     pointers: Index,

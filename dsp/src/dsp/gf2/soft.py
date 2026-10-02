@@ -33,6 +33,13 @@ def reliable_window_matrix(
     if keep > available:
         raise ValueError(f"asked for {keep} windows but the stream holds {available}")
     windows = sliding_window_view(x[offset:], width)[::stride]
-    weakest: NDArray[np.float64] = np.abs(windows).min(axis=1)
+    # The weakest bit of every window as a running minimum of shifted copies of |x| (the same
+    # values as the minimum over each window's row, without building the |windows| matrix).
+    magnitude = np.abs(x[offset:])
+    count = len(magnitude) - width + 1
+    running = magnitude[:count].copy()
+    for shift in range(1, width):
+        np.minimum(running, magnitude[shift : shift + count], out=running)
+    weakest: NDArray[np.float64] = running[::stride]
     order = np.argsort(-weakest, kind="stable")[:keep]
     return np.ascontiguousarray((windows[order] < 0).astype(np.uint8))

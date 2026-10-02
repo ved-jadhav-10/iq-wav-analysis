@@ -129,9 +129,12 @@ def _autocorrelation_peaks(s: Bits) -> list[tuple[float, int]]:
     z = r[lags] / np.sqrt(n - lags)
     above = np.flatnonzero(z >= Z_MIN)  # noise has almost none: the sort and the scan are for those
     peaks: list[tuple[float, int]] = []
+    taken = np.zeros(int(lags[-1]) + 3, bool)  # lags within 2 of a peak already kept
     for i in above[np.argsort(-z[above], kind="stable")]:
-        if all(abs(int(lags[i]) - lag) > 2 for _, lag in peaks):
-            peaks.append((float(z[i]), int(lags[i])))
+        lag = int(lags[i])
+        if not taken[lag]:
+            peaks.append((float(z[i]), lag))
+            taken[max(0, lag - 2) : lag + 3] = True
     return peaks
 
 

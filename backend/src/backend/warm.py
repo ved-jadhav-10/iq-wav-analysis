@@ -1,4 +1,4 @@
-"""Compile the Numba kernels (and galois's Reed-Solomon ones) on tiny inputs, once.
+"""Compile the Numba kernels on tiny inputs, once.
 
 The kernels are `@numba.njit(cache=True)`: the first run on a machine compiles them (several
 seconds each) and writes the cache; later runs load it. `warm()` calls each through its public
@@ -13,7 +13,7 @@ import time
 import numpy as np
 
 from dsp.fec import ldpc, rs, viterbi
-from dsp.framing import CRCS
+from dsp.framing import CRCS, SYNC_WORDS, sync_hits
 from dsp.gf2 import eliminate, matrix
 
 
@@ -29,8 +29,9 @@ def warm() -> float:
     matrix.parity_counts(packed, packed[:2])
     eliminate.rref(packed, 70)
 
-    # Soft-decision Viterbi, K=7 rate 1/2 (dsp.fec.viterbi).
+    # Soft-decision Viterbi, K=7 rate 1/2, and the parity-syndrome screen (dsp.fec.viterbi).
     viterbi.decode(rng.standard_normal(2 * 24))
+    viterbi.syndrome_rates(rng.integers(0, 2, (2, 64), dtype=np.uint8))
 
     # LDPC min-sum decoder and the alignment screen's kernels (dsp.fec.ldpc): a clean stream of
     # a small code runs the soft-syndrome scan, the degenerate-window test and the decoder.
@@ -38,13 +39,16 @@ def warm() -> float:
     words = ldpc.encode(code, rng.integers(0, 2, (3, code.k), dtype=np.uint8)).ravel()
     ldpc.find_alignment(4.0 * (1.0 - 2.0 * words), code, codewords=2)
 
-    # Every catalogued CRC, one frame (dsp.framing); the kernel is shared, the types are not.
+    # Every catalogued CRC, one frame, and the sync-word scan (dsp.framing); the CRC kernel is
+    # shared, the types are not.
     CRCS[0].compute_many(rng.integers(0, 2, (2, 32), dtype=np.uint8))
+    sync_hits(rng.integers(0, 2, 64, dtype=np.uint8), SYNC_WORDS[0])
 
-    # galois's own JIT-compiled field arithmetic, through the CCSDS RS(255, 223) decode path.
+    # The Reed-Solomon decoder, through the CCSDS RS(255, 223) decode and detect paths.
     word = bytearray(rs.N_FULL)
     word[3] ^= 0x5A
     rs.decode_block(bytes(word))
+    rs.detect(np.frombuffer(bytes(word), np.uint8)[None, :])
     return time.perf_counter() - began
 
 

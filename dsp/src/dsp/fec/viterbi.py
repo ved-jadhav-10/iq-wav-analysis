@@ -9,6 +9,7 @@ taken, so a recording that starts inside a coded stream decodes after a few cons
 """
 
 from dataclasses import dataclass
+from functools import cache
 
 import numba  # pyright: ignore[reportMissingTypeStubs]
 import numpy as np
@@ -33,8 +34,10 @@ class ConvCode:
 K7_R12 = ConvCode("Conv K=7 r½ (171,133)₈", 7, (0o171, 0o133))
 
 
+@cache
 def _outputs(code: ConvCode) -> NDArray[np.int64]:
-    """For each register value (newest bit at the top), the n output bits packed per branch."""
+    """For each register value (newest bit at the top), the n output bits packed per branch.
+    Cached, so read-only: callers share the table."""
     k = code.constraint
     table = np.zeros((1 << k, code.n), np.int64)
     for reg in range(1 << k):
@@ -43,7 +46,7 @@ def _outputs(code: ConvCode) -> NDArray[np.int64]:
     return table
 
 
-@numba.njit(cache=True)  # pyright: ignore[reportUntypedFunctionDecorator]
+@numba.njit(cache=True, nogil=True)  # pyright: ignore[reportUntypedFunctionDecorator]
 def _viterbi(
     llr: Float, outputs: NDArray[np.int64], k: int
 ) -> tuple[Bits, float]:  # pragma: no cover - compiled
@@ -132,10 +135,95 @@ def syndrome_bits(hard: NDArray[np.uint8], code: ConvCode = K7_R12) -> NDArray[n
     return s
 
 
+def _tap_masks(code: ConvCode) -> tuple[int, int]:
+    """Bit i of each mask is the tap on the register's i-th newest bit (c0 and c1 registers of
+    `syndrome_bits`: the syndrome adds g1's taps on c0 and g0's taps on c1)."""
+    k = code.constraint
+    m0 = sum(((code.generators[1] >> (k - 1 - i)) & 1) << i for i in range(k))
+    m1 = sum(((code.generators[0] >> (k - 1 - i)) & 1) << i for i in range(k))
+    return m0, m1
+
+
+@numba.njit(cache=True)  # pyright: ignore[reportUntypedFunctionDecorator]
+def _parity(x: int) -> int:  # pragma: no cover - compiled
+    x ^= x >> 32
+    x ^= x >> 16
+    x ^= x >> 8
+    x ^= x >> 4
+    x ^= x >> 2
+    x ^= x >> 1
+    return x & 1
+
+
+@numba.njit(cache=True)  # pyright: ignore[reportUntypedFunctionDecorator]
+def _syndrome_ones(
+    hard: NDArray[np.uint8],
+    offsets: NDArray[np.int64],
+    within: NDArray[np.int64],
+    k: int,
+    m0: int,
+    m1: int,
+) -> NDArray[np.int64]:  # pragma: no cover - compiled
+    """Per offset, the ones among the parity checks of the bits `hard[offset + within]` read as
+    code pairs (the checks of `syndrome_bits`, one per step after the first k - 1)."""
+    steps = len(within) // 2
+    out = np.zeros(len(offsets), np.int64)
+    keep = (1 << k) - 1
+    for r in range(len(offsets)):
+        base = offsets[r]
+        r0 = 0
+        r1 = 0
+        ones = 0
+        for t in range(steps):
+            r0 = ((r0 << 1) | int(hard[base + within[2 * t]])) & keep
+            r1 = ((r1 << 1) | int(hard[base + within[2 * t + 1]])) & keep
+            if t >= k - 1:
+                ones += _parity(r0 & m0) ^ _parity(r1 & m1)
+        out[r] = ones
+    return out
+
+
 def syndrome_rates(hard: NDArray[np.uint8], code: ConvCode = K7_R12) -> Float:
     """`syndrome_rate` for each row of `hard` (rows x bits) at once."""
-    s = syndrome_bits(hard, code)
-    return s.mean(axis=1) if s.shape[1] else np.full(len(hard), 0.5)
+    width = hard.shape[1]
+    return syndrome_rates_at(
+        np.ascontiguousarray(hard, np.uint8).ravel(),
+        width,
+        code,
+        np.arange(len(hard), dtype=np.int64) * width,
+    )
+
+
+def syndrome_rates_at(
+    flat: NDArray[np.uint8],
+    width: int,
+    code: ConvCode = K7_R12,
+    offsets: NDArray[np.int64] | None = None,
+    within: NDArray[np.int64] | None = None,
+) -> Float:
+    """The syndrome rate of rows read out of `flat`: row r is `flat[offsets[r] + within]`
+    (`within` defaults to 0 .. width - 1 and `offsets` to the start of each `width`-bit row),
+    without building the rows. The same rates as `syndrome_rates` of those rows."""
+    if code.n != 2:
+        raise ValueError("the parity syndrome is only defined here for rate 1/2")
+    if within is None:
+        within = np.arange(width, dtype=np.int64)
+    if offsets is None:
+        offsets = np.arange(0, len(flat) - width + 1, width, dtype=np.int64)
+    steps = len(within) // 2
+    if steps <= code.constraint:
+        return np.full(len(offsets), 0.5)
+    windows = steps - code.constraint + 1
+    m0, m1 = _tap_masks(code)
+    ones = _syndrome_ones(
+        np.ascontiguousarray(flat, np.uint8),
+        np.asarray(offsets, np.int64),
+        np.asarray(within, np.int64),
+        code.constraint,
+        m0,
+        m1,
+    )
+    return ones / windows
 
 
 def encode(bits: NDArray[np.uint8], code: ConvCode = K7_R12) -> Bits:

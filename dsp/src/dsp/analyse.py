@@ -17,6 +17,7 @@ skips the digital chain.
 import math
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
+from functools import partial
 from typing import Any, cast
 
 import numpy as np
@@ -75,8 +76,8 @@ from dsp.fec.convident import (
     identify_convolutional,
 )
 from dsp.fec.ldpc import Alignment, LdpcCode
-from dsp.fec.puncture import PUNCTURES, depuncture
-from dsp.fec.viterbi import K7_R12, ConvCode, decode, encode, syndrome_rates
+from dsp.fec.puncture import PUNCTURES, Puncture, depuncture
+from dsp.fec.viterbi import K7_R12, ConvCode, decode, encode, syndrome_rates, syndrome_rates_at
 from dsp.framing import (
     CRCS,
     SYNC_WORDS,
@@ -87,6 +88,7 @@ from dsp.framing import (
     binomial_tail,
     find_frames,
 )
+from dsp.parallel import pmap
 from dsp.report import (
     MAX_CONSTELLATION_POINTS,
     DetectionReport,
@@ -302,10 +304,29 @@ def analyse(
     timing = recover_timing(x, rate.normalised_rate, rolloff)
     ranked = _rank_modulations(timing.symbols)
     carriers: dict[str, Carrier] = {}
+    settled = False  # a known system's own check passed on the best-ranked modulation's bits
+
+    def psk_groups() -> Iterator[list[Branch]]:
+        nonlocal settled
+        for group in _psk_branches(timing.symbols, ranked, carriers):
+            yield group
+            # Control is back here only when no blind chain was accepted in this group. As for
+            # FSK, a system whose own check passes ends the walk (the blind searches beyond could
+            # only re-decode what its proof covers); only the modulation `_report` shows and
+            # Match checks is tried, so the proof is on the bits that are reported.
+            modulation, _, llr = group[0]
+            if modulation == ranked[0][0]:
+                shown = _shown(modulation)
+                candidate = Candidate(shown, Findings(modulation=shown), _hard_bits(llr), llr=llr)
+                if match([candidate], None, MATCH_ALPHA).verified:
+                    settled = True
+                    return
+
     search = _search(
-        _psk_branches(timing.symbols, ranked, carriers),
+        psk_groups(),
         sum(len(rotations(m)) for m, _ in ranked),
         carriers,
+        lambda: settled,
     )
     return _report(
         detect_stage,
@@ -772,23 +793,33 @@ def _framed_cells(
     return chains
 
 
-def _punctured_cells(branch: Branch) -> list[_Chain]:
-    """The K=7 code at each DVB-S punctured rate and each phase the stream can start at. Only a
-    cell whose Viterbi output re-encodes close to the received bits goes on to the frame search;
-    the others are counted as tried."""
+def _punctured_tasks(branch: Branch) -> list[Callable[[], list[_Chain]]]:
+    """The K=7 code at each DVB-S punctured rate and each phase the stream can start at, as one
+    task per cell, in the order the walk visits them. A task goes on to the frame search only
+    when its Viterbi output re-encodes close to the received bits; the others are counted as
+    tried."""
     modulation, rotation, soft = branch
-    chains: list[_Chain] = []
     if base_modulation(modulation) in INVERTING and rotation >= 180:
-        return chains  # the K=7 code's odd-weight generators make an inverted stream equivalent
-    for puncture in PUNCTURES:
-        code = puncture.code()
-        for phase in range(puncture.kept):
-            llr = depuncture(soft, puncture, phase)
-            if _reencode_mismatch(llr, code) >= REENCODE_SCREEN:
-                chains.append(_Chain(modulation, rotation, code, phase, None, llr, None))
-                continue
-            chains += _decode_cell(modulation, rotation, code, phase, llr)
-    return chains
+        return []  # the K=7 code's odd-weight generators make an inverted stream equivalent
+    return [
+        partial(_punctured_cell, modulation, rotation, soft, puncture, phase)
+        for puncture in PUNCTURES
+        for phase in range(puncture.kept)
+    ]
+
+
+def _run_cell(task: Callable[[], list[_Chain]]) -> list[_Chain]:
+    return task()
+
+
+def _punctured_cell(
+    modulation: str, rotation: int, soft: Any, puncture: Puncture, phase: int
+) -> list[_Chain]:
+    code = puncture.code()
+    llr = depuncture(soft, puncture, phase)
+    if _reencode_mismatch(llr, code) >= REENCODE_SCREEN:
+        return [_Chain(modulation, rotation, code, phase, None, llr, None)]
+    return _decode_cell(modulation, rotation, code, phase, llr)
 
 
 def _reencode_mismatch(llr: Any, code: ConvCode) -> float:
@@ -828,52 +859,60 @@ def _blind_conv_cells(branch: Branch, stats: _BlindStats) -> list[_Chain]:
 
 
 def _ldpc_cells(branch: Branch) -> list[_Chain]:
+    """The LDPC cells of one branch (`_ldpc_tasks`), run side by side."""
+    return [chain for cells in pmap(_run_cell, _ldpc_tasks(branch)) for chain in cells]
+
+
+def _ldpc_tasks(branch: Branch) -> list[Callable[[], list[_Chain]]]:
     """Each unpunctured catalogue LDPC code at the block alignment where it decodes
     (`ldpc.find_alignment`: a soft-syndrome ranking of every offset in a few windows of the
     stream, then the decoder on the best, every scanned block having to converge); only an
     alignment that passes goes on to the frame search, the others are counted as tried. Every
     rotation is tried as it is: a complemented stream is not a code word of an odd-weight code, so
     the inverted branches are not equivalent here as they are for the K=7 code. The cell is one
-    code at one alignment (offset modulo the block length), however many windows were scanned."""
+    code at one alignment (offset modulo the block length), however many windows were scanned.
+    One task per code, in the catalogue's order."""
     modulation, rotation, soft = branch
     llr = np.asarray(soft, np.float64)
-    chains: list[_Chain] = []
-    for code in LDPC_CODES:
-        if len(llr) < 2 * code.transmitted:
-            continue
-        found = ldpc_codes.find_alignment(llr, code)
-        if not found.found:
-            chains.append(
-                _Chain(
-                    modulation,
-                    rotation,
-                    None,
-                    found.offset,
-                    None,
-                    llr,
-                    None,
-                    ldpc=code,
-                    syndrome=found.rate,
-                    ldpc_run=_LdpcRun(found),
-                )
+    return [
+        partial(_ldpc_cell, modulation, rotation, llr, code)
+        for code in LDPC_CODES
+        if len(llr) >= 2 * code.transmitted
+    ]
+
+
+def _ldpc_cell(modulation: str, rotation: int, llr: Any, code: LdpcCode) -> list[_Chain]:
+    found = ldpc_codes.find_alignment(llr, code)
+    if not found.found:
+        return [
+            _Chain(
+                modulation,
+                rotation,
+                None,
+                found.offset,
+                None,
+                llr,
+                None,
+                ldpc=code,
+                syndrome=found.rate,
+                ldpc_run=_LdpcRun(found),
             )
-            continue
-        aligned = llr[found.offset :]
-        blocks = len(aligned) // code.transmitted
-        tail = len(aligned) - blocks * code.transmitted
-        aligned = aligned[: blocks * code.transmitted]
-        bits, _, converged = _ldpc_decode(aligned, code)
-        run = _LdpcRun(found, blocks, converged, found.offset, tail)
-        chains += _framed_cells(
-            modulation,
-            rotation,
-            None,
-            found.offset,
-            aligned,
-            bits,
-            {"ldpc": code, "syndrome": found.rate, "ldpc_run": run},
-        )
-    return chains
+        ]
+    aligned = llr[found.offset :]
+    blocks = len(aligned) // code.transmitted
+    tail = len(aligned) - blocks * code.transmitted
+    aligned = aligned[: blocks * code.transmitted]
+    bits, _, converged = _ldpc_decode(aligned, code)
+    run = _LdpcRun(found, blocks, converged, found.offset, tail)
+    return _framed_cells(
+        modulation,
+        rotation,
+        None,
+        found.offset,
+        aligned,
+        bits,
+        {"ldpc": code, "syndrome": found.rate, "ldpc_run": run},
+    )
 
 
 def _interleaver_cells(branch: Branch) -> list[_Chain]:
@@ -1028,11 +1067,18 @@ def _search(
     stopped = False  # the walk ended on an accepted chain
     for group in groups:
         seen.append(group)
+        tasks: list[Callable[[], list[_Chain]]] = []
         for modulation, rotation, soft in group:
             for code in CODES:
                 for alignment in range(2 if code else 1):
-                    chains += _decode_cell(modulation, rotation, code, alignment, soft[alignment:])
-            chains += _punctured_cells((modulation, rotation, soft))
+                    tasks.append(
+                        partial(
+                            _decode_cell, modulation, rotation, code, alignment, soft[alignment:]
+                        )
+                    )
+            tasks += _punctured_tasks((modulation, rotation, soft))
+        for cells in pmap(_run_cell, tasks):  # the cells of a group are independent
+            chains += cells
         if accepted():
             stopped = True
             break
@@ -1192,11 +1238,7 @@ def _interleaver_offset(soft: Any, entry: Interleaver) -> tuple[int, int, float]
 
 def _screen(hard: Any, offsets: Any, within: Any) -> Any:
     """The parity-syndrome rate of `hard` read at `within` from each of `offsets`, in batches."""
-    rates = np.empty(len(offsets))
-    for start in range(0, len(offsets), SCREEN_CHUNK):
-        chunk = offsets[start : start + SCREEN_CHUNK]
-        rates[start : start + len(chunk)] = syndrome_rates(hard[chunk[:, None] + within[None, :]])
-    return rates
+    return syndrome_rates_at(hard, 0, K7_R12, offsets, within)
 
 
 # --- blind framing --------------------------------------------------------------------------
@@ -1214,12 +1256,16 @@ def _blind_frame_cells(chains: list[_Chain], threshold: float) -> list[_Chain]:
     the catalogue grid's)."""
     analysed: list[tuple[_Chain, BlindFrames]] = []
     seen: set[int] = set()
-    tested = 0
+    streams: list[_Chain] = []
     for chain in chains:
         if chain.bits is None or chain.descrambler is not None or id(chain.bits) in seen:
             continue  # descrambled streams were framed already; the rest are searched once each
         seen.add(id(chain.bits))
-        if structure_z(chain.bits) < Z_MIN:
+        streams.append(chain)
+    tested = 0
+    # The screen of each stream is independent of the others (and the bulk of this stage).
+    for chain, z in zip(streams, pmap(lambda c: structure_z(c.bits), streams), strict=True):
+        if z < Z_MIN:
             continue
         tested += 1  # every stream that passes the screen is tried, not only those that frame
         found = analyse_stream(chain.bits)
@@ -1619,7 +1665,9 @@ def _report(
         symbol_rate=rate_value if rate_unit == "Bd" else None,
         rate_uncertainty=estimate_params[0].uncertainty if rate_unit == "Bd" else None,
     )
-    matched = _run_match([Candidate(shown, findings, _hard_bits(soft.llr))], search, findings)
+    matched = _run_match(
+        [Candidate(shown, findings, _hard_bits(soft.llr), llr=soft.llr)], search, findings
+    )
     stages.append(matched.stage)
     frames = frames or matched.frames
     if matched.verified:

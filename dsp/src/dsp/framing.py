@@ -170,6 +170,31 @@ def _hex(bits: Bits, sep: str = "") -> str:
     return sep.join(f"{b:02X}" for b in np.packbits(bits[:usable]).tolist())
 
 
+@numba.njit(cache=True)  # pyright: ignore[reportUntypedFunctionDecorator]
+def _mismatches(
+    bits: NDArray[np.uint8], word: np.uint64, width: int
+) -> NDArray[np.uint8]:  # pragma: no cover - compiled
+    """Bit errors between the `width`-bit `word` and every window of `bits` (all 0 or 1): a rolling
+    window register against the word, the ones of their XOR counted (width <= 64)."""
+    count = len(bits) - width + 1
+    out = np.empty(count, np.uint8)
+    mask = np.uint64(0xFFFFFFFFFFFFFFFF) if width == 64 else np.uint64((1 << width) - 1)
+    target = word
+    register = np.uint64(0)
+    for i in range(width - 1):
+        register = (register << np.uint64(1)) | np.uint64(bits[i])
+    for i in range(count):
+        register = ((register << np.uint64(1)) | np.uint64(bits[i + width - 1])) & mask
+        x = register ^ target
+        x = x - ((x >> np.uint64(1)) & np.uint64(0x5555555555555555))
+        x = (x & np.uint64(0x3333333333333333)) + (
+            (x >> np.uint64(2)) & np.uint64(0x3333333333333333)
+        )
+        x = (x + (x >> np.uint64(4))) & np.uint64(0x0F0F0F0F0F0F0F0F)
+        out[i] = (x * np.uint64(0x0101010101010101)) >> np.uint64(56)
+    return out
+
+
 def sync_hits(
     bits: Bits, word: SyncWord, max_errors: int = MAX_SYNC_ERRORS
 ) -> tuple[NDArray[np.int64], NDArray[np.int64]]:
@@ -177,6 +202,15 @@ def sync_hits(
     if len(bits) < word.width:
         empty = np.zeros(0, np.int64)
         return empty, empty
+    if word.width <= 64 and bits.dtype == np.uint8 and bits.max(initial=0) <= 1:
+        errors = _mismatches(
+            np.ascontiguousarray(bits),
+            np.uint64(word.value & ((1 << word.width) - 1)),
+            word.width,
+        )
+        return np.flatnonzero(errors <= max_errors), np.flatnonzero(
+            errors >= word.width - max_errors
+        )
     pm = 1.0 - 2.0 * bits.astype(np.float64)
     ref = 1.0 - 2.0 * word.bits().astype(np.float64)
     c = np.correlate(pm, ref, mode="valid")
