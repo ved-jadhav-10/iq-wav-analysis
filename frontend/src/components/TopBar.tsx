@@ -62,13 +62,13 @@ export function TopBar({
         <Logo className="size-7" />
         <div className="flex items-baseline gap-2">
           <span className="text-[15px] font-semibold tracking-tight">{BRAND.name}</span>
-          <span lang="hi" className="font-deva text-xs text-subtle-foreground max-sm:hidden">
+          <span lang="hi" className="font-deva text-xs text-subtle-foreground max-xl:hidden">
             {BRAND.nativeName}
           </span>
         </div>
       </div>
 
-      <div className="h-5 w-px bg-border max-sm:hidden" aria-hidden />
+      <div className="h-5 w-px bg-border max-xl:hidden" aria-hidden />
 
       <nav aria-label="Workspace section" className="flex shrink-0 items-center gap-0.5 max-md:hidden">
         {VIEWS.map((v) => {
@@ -97,17 +97,17 @@ export function TopBar({
         })}
       </nav>
 
-      <div className="h-5 w-px bg-border max-sm:hidden" aria-hidden />
+      <div className="h-5 w-px bg-border max-xl:hidden" aria-hidden />
 
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         <FileAudio className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <span className="num truncate text-xs">{fileName}</span>
+        <span className="num max-w-28 truncate text-xs xl:max-w-64" title={fileName}>{fileName}</span>
         <span className="shrink-0 rounded-[3px] border border-dashed border-border-strong px-1.5 text-2xs font-medium text-muted-foreground uppercase">
           {isDemo ? 'Synthetic demo' : synthetic ? 'Synthetic recording' : 'Real recording'}
         </span>
       </div>
 
-      <form onSubmit={submit} className="flex min-w-0 items-center gap-1.5 max-lg:hidden">
+      <form onSubmit={submit} className="flex shrink-0 items-center gap-1.5 max-lg:hidden">
         <label htmlFor="open-path" className="sr-only">
           Open a recording by path
         </label>
@@ -117,7 +117,7 @@ export function TopBar({
           value={path}
           onChange={(e) => setPath(e.target.value)}
           placeholder="Open a recording by path…"
-          className="w-56 rounded-md border border-border-strong bg-surface px-2 py-1 text-xs text-foreground placeholder:text-subtle-foreground"
+          className="w-32 rounded-md border border-border-strong bg-surface px-2 xl:w-56 py-1 text-xs text-foreground placeholder:text-subtle-foreground"
         />
         <button
           type="submit"
@@ -132,7 +132,8 @@ export function TopBar({
           title="Read numbered files (rec_000.cu8, rec_001.cu8, ...) as one recording. A folder is opened as a list of its recordings."
         >
           <input type="checkbox" checked={sequence} onChange={(e) => setSequence(e.target.checked)} />
-          Join numbered files
+          <span className="xl:hidden">Join</span>
+          <span className="max-xl:hidden">Join numbered files</span>
         </label>
         <label
           className={`flex shrink-0 items-center gap-1 rounded-md border border-border-strong px-2 py-1 text-xs font-medium text-muted-foreground focus-within:ring-2 focus-within:ring-ring ${
@@ -171,11 +172,11 @@ export function TopBar({
           />
         )}
         <span
-          className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs font-medium text-muted-foreground max-md:hidden"
+          className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs font-medium text-muted-foreground max-xl:hidden"
           title="This build loads nothing from the network: fonts, code and data are all bundled."
         >
           <WifiOff className="size-3" aria-hidden />
-          Offline build
+          <span className="max-2xl:sr-only">Offline build</span>
         </span>
         <button
           type="button"

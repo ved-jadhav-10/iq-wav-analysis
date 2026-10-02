@@ -275,3 +275,150 @@ test('the Assumptions modal shows the capture quality, and the page still never 
     await page.getByRole('button', { name: /^Switch to (light|dark) theme$/ }).click()
   }
 })
+
+
+/** The top bar's measurements (a string, not a function: the e2e project has no DOM types): its
+ * height, whether its content overflows it or the page, which of its controls overlap another,
+ * and where the open menu or message ends. */
+async function barMetrics(page: Page) {
+  return (await page.evaluate(`(() => {
+    const bar = document.querySelector('header')
+    const controls = Array.from(bar.querySelectorAll('a, button, input[type=text], label'))
+      .filter((e) => e.getClientRects().length > 0 && !e.closest('[role=status], [role=alert], #results-menu'))
+      .map((e) => ({ e, r: e.getBoundingClientRect() }))
+    const overlaps = []
+    for (let i = 0; i < controls.length; i++) {
+      for (let j = i + 1; j < controls.length; j++) {
+        const a = controls[i], b = controls[j]
+        if (a.e.contains(b.e) || b.e.contains(a.e)) continue
+        const w = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left)
+        const h = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top)
+        if (w > 1 && h > 1) overlaps.push((a.e.textContent || a.e.id).trim().slice(0, 18) + ' x ' + (b.e.textContent || b.e.id).trim().slice(0, 18))
+      }
+    }
+    const wide = Array.from(document.querySelectorAll('body *')).filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1 && e.getClientRects().length > 0)
+      .slice(0, 3).map((e) => e.tagName + '.' + String(e.className).slice(0, 40) + ':' + (e.textContent || '').trim().slice(0, 20))
+    const open = document.querySelector('#results-menu, [role=status], [role=alert]')
+    const o = open && open.getBoundingClientRect()
+    return {
+      barHeight: bar.getBoundingClientRect().height,
+      barOverflow: bar.scrollWidth - bar.clientWidth,
+      pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      scrollHeight: document.documentElement.scrollHeight,
+      innerHeight: window.innerHeight,
+      overlaps,
+      wide,
+      popupLeft: o ? o.left : 0,
+      popupRight: o ? o.right : 0,
+      popupBottom: o ? o.bottom : 0,
+      innerWidth: window.innerWidth,
+    }
+  })()`)) as {
+    barHeight: number
+    barOverflow: number
+    pageOverflow: number
+    scrollHeight: number
+    innerHeight: number
+    overlaps: string[]
+    wide: string[]
+    popupLeft: number
+    popupRight: number
+    popupBottom: number
+    innerWidth: number
+  }
+}
+
+test('the results exports follow the recording: SigMF links for SigMF, Save as SigMF for raw, none for the demo', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(180_000)
+  mkdirSync(testInfo.outputDir, { recursive: true })
+  const bar = page.getByRole('banner')
+  // Wide enough that the downloads sit in the bar itself; narrower ones fold into a Results menu.
+  await page.setViewportSize({ width: 1918, height: 950 })
+
+  // The synthetic demo has no recording behind it: no downloads at all.
+  await page.goto('/')
+  await expect(page.getByText('Synthetic demo', { exact: true })).toBeVisible()
+  await expect(bar.getByRole('link', { name: 'Run record' })).toHaveCount(0)
+  await expect(bar.getByRole('button', { name: /^Results/ })).toHaveCount(0)
+  await expect(bar.getByRole('button', { name: 'Save as SigMF' })).toHaveCount(0)
+
+  // A SigMF recording: every download, the run record and the annotated metadata, but no save.
+  const base = testInfo.outputPath('tone')
+  writeSigmf(base)
+  await openByPath(page, `${base}.sigmf-meta`)
+  const runLink = bar.getByRole('link', { name: 'Run record' })
+  await expect(runLink).toBeVisible({ timeout: 60_000 })
+  await expect(runLink).toHaveAttribute('href', /\/results\?format=run$/)
+  await expect(runLink).toHaveAttribute('title', /time per phase/)
+  const sigmfLink = bar.getByRole('link', { name: 'SigMF' })
+  await expect(sigmfLink).toHaveAttribute('href', /\/results\?format=sigmf$/)
+  await expect(bar.getByRole('button', { name: 'Save as SigMF' })).toHaveCount(0)
+  const sigmf = await page.request.get((await sigmfLink.getAttribute('href'))!)
+  expect(sigmf.status()).toBe(200)
+  expect(((await sigmf.json()) as { global: Record<string, unknown> }).global['core:datatype']).toBe('cf32_le')
+
+  // A raw file: the same links and a Save button; saving writes the file and says where, and
+  // saving again is refused with the server's reason.
+  const raw = testInfo.outputPath('capture.bin')
+  writeFileSync(raw, toneBytes())
+  await openByPath(page, raw)
+  const save = bar.getByRole('button', { name: 'Save as SigMF' })
+  await expect(save).toBeVisible({ timeout: 60_000 })
+  await expect(save).toHaveAttribute('title', /next to the original.*never touched/)
+  await expect(bar.getByRole('link', { name: 'SigMF' })).toBeVisible()
+  await save.click()
+  const saved = page.getByRole('status').filter({ hasText: /^Saved / })
+  await expect(saved).toContainText('capture.sigmf-meta')
+  await saved.getByRole('button', { name: 'Dismiss message' }).click()
+  await expect(saved).toHaveCount(0)
+  await save.click()
+  await expect(page.getByRole('alert').filter({ hasText: 'Not saved' })).toContainText('already exists')
+  await page.getByRole('button', { name: 'Dismiss message' }).click()
+
+  // At every width, in both themes: the page never scrolls as a whole, and the top bar stays one
+  // 48 px row with nothing overflowing or overlapping. Below 1536 the downloads are a menu, which
+  // is opened (and closed again with Escape) so its own box is measured too, as is the message.
+  for (let pass = 0; pass < 2; pass++) {
+    for (const size of [
+      { width: 1918, height: 950 },
+      { width: 1440, height: 800 },
+      { width: 1100, height: 800 },
+    ]) {
+      await page.setViewportSize(size)
+      const folded = size.width < 1536
+      const menu = bar.getByRole('button', { name: /^Results/ })
+      // The bar switches between the inline links and the menu a moment after the resize.
+      await expect(folded ? menu : bar.getByRole('link', { name: 'Run record' })).toBeVisible()
+      const states = folded ? ['closed', 'menu', 'message'] : ['closed', 'message']
+      for (const state of states) {
+        if (state === 'menu') await menu.click()
+        if (state === 'message') {
+          if (folded) await menu.click()
+          await bar.getByRole('button', { name: 'Save as SigMF' }).click()
+          await expect(page.getByRole('alert')).toContainText('already exists')
+        }
+        const m = await barMetrics(page)
+        const where = `${size.width} wide, ${state}, pass ${pass}: ${JSON.stringify(m)}`
+        expect(m.scrollHeight, where).toBeLessThanOrEqual(m.innerHeight)
+        expect(m.pageOverflow, where).toBeLessThanOrEqual(0)
+        expect(m.barHeight, where).toBe(48)
+        expect(m.barOverflow, where).toBeLessThanOrEqual(0)
+        expect(m.overlaps, where).toEqual([])
+        if (state !== 'closed') {
+          expect(m.popupLeft, where).toBeGreaterThanOrEqual(0)
+          expect(m.popupRight, where).toBeLessThanOrEqual(m.innerWidth)
+          expect(m.popupBottom, where).toBeLessThanOrEqual(m.innerHeight)
+        }
+        if (state === 'menu') {
+          await expect(bar.getByRole('link', { name: 'Run record' })).toBeVisible()
+          await page.keyboard.press('Escape')
+          await expect(bar.getByRole('link', { name: 'Run record' })).toHaveCount(0)
+        }
+        if (state === 'message') await page.getByRole('button', { name: 'Dismiss message' }).click()
+      }
+    }
+    await page.getByRole('button', { name: /^Switch to (light|dark) theme$/ }).click()
+  }
+})
