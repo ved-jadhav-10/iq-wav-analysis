@@ -16,8 +16,9 @@ from dsp.evidence import CamelModel, Parameter
 from dsp.frame_table import MEDIA_TYPES, ExportFormat, render
 from dsp.report import DetectionReport
 from dsp.report_pdf import render_pdf
-from dsp.results import Assumptions
+from dsp.results import Assumptions, Results
 from dsp.results_table import render_csv
+from dsp.sigmf_out import render_meta
 from dsp.summary import render_summary
 
 from .analysis import results_of
@@ -25,6 +26,7 @@ from .identity import recording_identity
 from .inputs import FormatUnknownError, RecordingError, expand
 from .recordings import Recording, RecordingStore
 from .runrecord import Phase, run_record
+from .sigmf_export import NotDescribable, annotated_meta, save_beside
 from .uploads import DEFAULT_MAX_UPLOAD_BYTES, UploadError, UploadStore
 
 API_PREFIX = "/api/v1"
@@ -118,6 +120,10 @@ class AnalysisProgress(CamelModel):
     state: Literal["running", "done", "cancelled"]
     done: int
     total: int
+
+
+class SavedSigmf(CamelModel):
+    path: str  # where the metadata file was written, beside the raw file
 
 
 class RecordingInfo(CamelModel):
@@ -346,14 +352,8 @@ def create_app(
             headers={"Cache-Control": "no-cache"},
         )
 
-    @app.get(f"{API_PREFIX}/recordings/{{recording_id}}/results")
-    def get_results(
-        recording_id: str, format: Literal["json", "csv", "txt", "pdf", "run"] = "json"
-    ) -> Response:
-        """The results document as a download: JSON is the schema-versioned document `sanket
-        analyse` writes, CSV one row per reported value (`dsp.results_table`), text a
-        plain-language summary (`dsp.summary`). Held back while
-        the decode chain is still running, so a download is never a partial analysis."""
+    def _finished_results(recording_id: str) -> tuple[Recording, Results]:
+        """The recording and its results document, once the analysis has finished."""
         recording = store.get(recording_id)
         if recording is None:
             raise HTTPException(status_code=404, detail="no such recording")
@@ -369,12 +369,28 @@ def create_app(
             [report for report in reports if report is not None],
             recording.quality,
         )
+        return recording, results
+
+    @app.get(f"{API_PREFIX}/recordings/{{recording_id}}/results")
+    def get_results(
+        recording_id: str, format: Literal["json", "csv", "txt", "pdf", "run", "sigmf"] = "json"
+    ) -> Response:
+        """The results document as a download: JSON is the schema-versioned document `sanket
+        analyse` writes, CSV one row per reported value (`dsp.results_table`), text a
+        plain-language summary (`dsp.summary`). Held back while
+        the decode chain is still running, so a download is never a partial analysis."""
+        recording, results = _finished_results(recording_id)
         stem = re.sub(r"[^A-Za-z0-9._-]+", "_", recording.path.stem) or "recording"
         content, media_type, name = {
             "json": (results.to_json, "application/json", f"{stem}.results.json"),
             "csv": (lambda: render_csv(results), "text/csv", f"{stem}.results.csv"),
             "txt": (lambda: render_summary(results), "text/plain", f"{stem}.summary.txt"),
             "pdf": (lambda: render_pdf(results), "application/pdf", f"{stem}.report.pdf"),
+            "sigmf": (
+                lambda: render_meta(annotated_meta(results, recording.files, recording.source)),
+                "application/json",
+                f"{stem}.sanket.sigmf-meta",
+            ),
             "run": (
                 lambda: run_record(
                     results, results.sanket_version, _phases_of(recording)
@@ -383,11 +399,30 @@ def create_app(
                 f"{stem}.run.json",
             ),
         }[format]
+        try:
+            body = content()
+        except NotDescribable as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return Response(
-            content=content(),
+            content=body,
             media_type=media_type,
             headers={"Content-Disposition": f'attachment; filename="{name}"'},
         )
+
+    @app.post(f"{API_PREFIX}/recordings/{{recording_id}}/sigmf", response_model=SavedSigmf)
+    def save_as_sigmf(recording_id: str) -> SavedSigmf:
+        """Save as SigMF: for a raw file, write `<name>.sigmf-meta` beside it, naming it as the
+        dataset (the samples are not copied). The analyst asks for this on a recording whose
+        sample format they have confirmed; what the results can't stand behind (a rate that is
+        only a hypothesis) stays out of the standard fields (`dsp.sigmf_out`)."""
+        recording, results = _finished_results(recording_id)
+        try:
+            saved = save_beside(results, recording.source)
+        except NotDescribable as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except RecordingError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return SavedSigmf(path=str(saved))
 
     @app.get(f"{API_PREFIX}/recordings/{{recording_id}}/detections/{{index}}/frames")
     def get_frames(recording_id: str, index: int, format: ExportFormat = "json") -> Response:

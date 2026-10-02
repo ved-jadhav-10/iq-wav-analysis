@@ -11,9 +11,11 @@ from backend.analysis import Entries, analyse_recording
 from backend.app import create_app, default_workspace
 from backend.inputs import FormatUnknownError, Input, RecordingError, expand, open_input
 from backend.runrecord import PhaseTimer, run_record
+from backend.sigmf_export import NotDescribable, annotated_meta, save_beside
 from dsp.frame_table import FORMATS, render
 from dsp.report_pdf import render_pdf
 from dsp.results_table import render_csv
+from dsp.sigmf_out import render_meta
 from dsp.summary import render_summary
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -58,6 +60,16 @@ def main(argv: list[str] | None = None) -> int:
         "--csv",
         action="store_true",
         help="also write each recording's values as a CSV table, one row per value",
+    )
+    analyse.add_argument(
+        "--sigmf",
+        action="store_true",
+        help="also write each recording's findings as SigMF annotations (<name>.sanket.sigmf-meta)",
+    )
+    analyse.add_argument(
+        "--save-sigmf",
+        action="store_true",
+        help="for a raw file, write <name>.sigmf-meta beside it, naming it as the dataset",
     )
     analyse.add_argument(
         "--no-run-record",
@@ -169,6 +181,8 @@ def _analyse(args: argparse.Namespace) -> int:
                 args.summary,
                 args.pdf,
                 not args.no_run_record,
+                args.sigmf,
+                args.save_sigmf,
             )
         except FormatUnknownError as exc:
             print(f"sanket: {exc}: {', '.join(exc.candidates)} (pass --datatype)", file=sys.stderr)
@@ -190,6 +204,8 @@ def _analyse_one(
     summary: bool = False,
     pdf: bool = False,
     run_record_file: bool = True,
+    sigmf: bool = False,
+    save_sigmf: bool = False,
 ) -> None:
     opened = open_input(item, datatype)
     fmt = opened.recording.sample_format
@@ -218,6 +234,16 @@ def _analyse_one(
         name = target.name.removesuffix(".results.json") + ".run.json"
         record = run_record(results, results.sanket_version, timer.phases)
         _write(target.with_name(name), record.to_json())
+    if sigmf:
+        name = target.name.removesuffix(".results.json") + ".sanket.sigmf-meta"
+        try:
+            meta = annotated_meta(results, item.paths, opened.recording)
+            _write(target.with_name(name), render_meta(meta))
+        except NotDescribable as exc:
+            print(f"  no SigMF annotations: {exc}", file=sys.stderr)
+    if save_sigmf:
+        saved = save_beside(results, opened.recording)
+        print(f"  SigMF description written: {saved}")
     if pdf:
         name = target.name.removesuffix(".results.json") + ".report.pdf"
         target.with_name(name).write_bytes(render_pdf(results))
