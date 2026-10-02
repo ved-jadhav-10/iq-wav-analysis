@@ -103,6 +103,14 @@ def score_file(meta_path: Path, bench: BenchSet, seed: int) -> dict[str, Any]:
     }
 
 
+def _workers() -> int:
+    """Pool size: one fewer than the cores, or BENCH_WORKERS (each worker holds Numba, LLVM and
+    OpenBLAS, so a machine short of memory has to run fewer)."""
+    if override := os.environ.get("BENCH_WORKERS"):
+        return max(1, int(override))
+    return max(1, (os.cpu_count() or 2) - 1)
+
+
 def score_chain(meta_path: Path) -> dict[str, Any]:
     """Detect and analyse every signal in one file with the decode chain. `acceptedDecodes` counts
     the detections whose hypothesis search accepted a chain (CRC passes significant after
@@ -197,7 +205,7 @@ def run_set(bench: BenchSet | None, data: Path) -> dict[str, Any]:
         ]
         if bench.chain:
             paths = [data / f"{e['file']}.sigmf-meta" for e in manifest["files"]]
-            with ProcessPoolExecutor(max_workers=max(1, (os.cpu_count() or 2) - 1)) as pool:
+            with ProcessPoolExecutor(max_workers=_workers()) as pool:
                 chained = list(pool.map(score_chain, paths, chunksize=4))
             for row, result in zip(rows, chained, strict=True):
                 row.update(result)

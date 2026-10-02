@@ -24,6 +24,7 @@ from dsp.results_table import render_csv
 from dsp.sigmf_out import render_meta
 from dsp.summary import render_summary
 
+from . import samples
 from .history import History
 from .inputs import FormatUnknownError, RecordingError, expand
 from .recordings import Recording, RecordingStore, results_for
@@ -32,6 +33,15 @@ from .sigmf_export import NotDescribable, annotated_meta, save_beside
 from .uploads import DEFAULT_MAX_UPLOAD_BYTES, UploadError, UploadStore
 
 API_PREFIX = "/api/v1"
+
+
+class SampleInfo(CamelModel):
+    id: str
+    title: str
+    description: str
+    synthetic: bool = True
+    signals: int
+    size_bytes: int
 
 
 class OpenRecordingRequest(CamelModel):
@@ -352,6 +362,31 @@ def create_app(
                 status_code=422,
                 content={"detail": str(exc), "formatCandidates": list(exc.candidates)},
             )
+        except RecordingError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return _to_info(recording)
+
+    @app.get(f"{API_PREFIX}/samples", response_model=tuple[SampleInfo, ...])
+    def list_sample_recordings() -> tuple[SampleInfo, ...]:
+        """The bundled synthetic sample recordings, for a first-time visitor to try."""
+        return tuple(
+            SampleInfo(
+                id=s.id,
+                title=s.title,
+                description=s.description,
+                signals=s.signals,
+                size_bytes=s.size_bytes,
+            )
+            for s in samples.list_samples()
+        )
+
+    @app.post(f"{API_PREFIX}/samples/{{sample_id}}/open", response_model=RecordingInfo | None)
+    def open_sample(sample_id: str) -> RecordingInfo:
+        sample = samples.find(sample_id)
+        if sample is None:
+            raise HTTPException(status_code=404, detail="no such sample recording")
+        try:
+            recording = store.open(sample.path)
         except RecordingError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return _to_info(recording)
