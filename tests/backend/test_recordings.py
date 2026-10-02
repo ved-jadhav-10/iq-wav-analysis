@@ -678,3 +678,13 @@ def test_a_recording_says_which_sigmf_output_it_supports(
     assert wav_info["sigmf"] == "none"
     url = f"/api/v1/recordings/{wav_info['id']}/results"
     assert client.get(url, params={"format": "sigmf"}).status_code == 422
+
+
+def test_the_store_is_not_busy_when_it_holds_nothing() -> None:
+    from backend.recordings import RecordingStore
+
+    store = RecordingStore()
+    try:
+        assert store.busy() is False
+    finally:
+        store.close()

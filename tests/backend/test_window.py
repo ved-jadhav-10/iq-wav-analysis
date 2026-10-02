@@ -25,7 +25,13 @@ class FakeWindow:
     def __init__(self, url: str) -> None:
         self.url = url
         self.loaded_urls: list[str] = []
-        self.events = types.SimpleNamespace(loaded=FakeEvents())
+        self.events = types.SimpleNamespace(loaded=FakeEvents(), closing=FakeEvents())
+        self.asked: list[str] = []
+        self.answer = True
+
+    def create_confirmation_dialog(self, title: str, message: str) -> bool:
+        self.asked.append(message)
+        return self.answer
 
     def get_current_url(self) -> str:
         return self.url
@@ -85,6 +91,30 @@ def test_a_page_that_is_not_ours_is_sent_back(monkeypatch: pytest.MonkeyPatch) -
     seen = fake_webview(monkeypatch, drift="https://example.com/")
     window.run("http://127.0.0.1:9000")
     assert seen["window"].loaded_urls == ["http://127.0.0.1:9000"]
+
+
+def test_closing_asks_only_while_an_analysis_runs_and_a_no_keeps_the_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen = fake_webview(monkeypatch)
+    running = {"now": False}
+    window.run("http://127.0.0.1:9000", busy=lambda: running["now"])
+    win: FakeWindow = seen["window"]
+    (closing,) = win.events.closing.handlers
+    assert closing() is True and win.asked == []  # idle: closes without a question
+    running["now"] = True
+    win.answer = False
+    assert closing() is False and len(win.asked) == 1  # busy and "no": stays open
+    win.answer = True
+    assert closing() is True  # busy and "yes": closes
+
+
+def test_without_a_busy_check_the_window_never_intercepts_closing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen = fake_webview(monkeypatch)
+    window.run("http://127.0.0.1:9000")
+    assert seen["window"].events.closing.handlers == []
 
 
 def test_a_remote_url_is_refused_without_creating_a_window(
@@ -153,9 +183,16 @@ def test_by_default_a_window_opens_and_closing_it_stops_the_server(
     shown: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     opened: list[str] = []
-    monkeypatch.setattr(cli.window, "run", lambda url, storage=None: opened.append(url))
+    asked: list[Any] = []
+
+    def show(url: str, storage: Path | None = None, busy: Any = None) -> None:
+        opened.append(url)
+        asked.append(busy)
+
+    monkeypatch.setattr(cli.window, "run", show)
     assert cli.main(["--port", "9001"]) == 0
     assert opened == ["http://127.0.0.1:9001"]
+    assert callable(asked[0]) and asked[0]() is False  # the store's own check: nothing running
     assert shown["browser"] == [] and "served_only" not in shown
     (server,) = shown["servers"]
     assert server.should_exit  # closing the window stopped it
@@ -166,7 +203,7 @@ def test_a_window_that_cannot_open_falls_back_to_the_browser_with_one_line(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    def refuse(url: str, storage: Path | None = None) -> None:
+    def refuse(url: str, storage: Path | None = None, busy: Any = None) -> None:
         raise window.WindowUnavailable("pywebview is not installed (uv sync --extra window)")
 
     monkeypatch.setattr(cli.window, "run", refuse)

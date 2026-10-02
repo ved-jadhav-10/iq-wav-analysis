@@ -586,4 +586,5 @@ def create_app(
 
     # Mounted last so every API route above takes precedence over the SPA files.
     app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
+    app.state.busy = store.busy  # the desktop window asks before closing on a running analysis
     return app

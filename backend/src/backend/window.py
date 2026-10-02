@@ -9,6 +9,7 @@ runtime is an error we report and answer with the browser.
 
 import importlib
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -32,10 +33,11 @@ def is_local(url: str) -> bool:
     return parts.scheme == "http" and parts.hostname == "127.0.0.1"
 
 
-def run(url: str, storage: Path | None = None) -> None:
+def run(url: str, storage: Path | None = None, busy: Callable[[], bool] | None = None) -> None:
     """Show `url` in a native window and return when the window is closed.
 
-    Blocks, and must be called from the main thread (the GUI loop's rule). Raises
+    `busy` says an analysis is still running: closing the window then asks first, and a "no"
+    keeps it open. Blocks, and must be called from the main thread (the GUI loop's rule). Raises
     `WindowUnavailable` when there is no window to show; the caller then falls back to a browser.
     """
     if not is_local(url):
@@ -50,6 +52,8 @@ def run(url: str, storage: Path | None = None) -> None:
         )
         # The page may link out; whatever the window ends up on that isn't ours is sent back.
         window.events.loaded += lambda: _keep_local(window, url)
+        if busy is not None:
+            window.events.closing += lambda: _confirm_close(window, busy)
         webview.start(
             gui=GUI.get(sys.platform),
             private_mode=False,  # the UI remembers its layout in local storage
@@ -57,6 +61,19 @@ def run(url: str, storage: Path | None = None) -> None:
         )
     except Exception as exc:  # the GUI libraries raise their own types; all mean "no window"
         raise WindowUnavailable(f"the window could not start ({exc})") from exc
+
+
+def _confirm_close(window: Any, busy: Callable[[], bool]) -> bool:
+    """The window's closing handler: False keeps it open. Only asks while an analysis runs."""
+    if not busy():
+        return True
+    return bool(
+        window.create_confirmation_dialog(
+            TITLE,
+            "An analysis is still running. Closing now stops it and loses its results."
+            " Close anyway?",
+        )
+    )
 
 
 def _keep_local(window: Any, home: str) -> None:

@@ -145,6 +145,11 @@ class RecordingStore:
         # keeps the reports arriving top to bottom. Recordings opened meanwhile queue behind it.
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="analysis")
 
+    def busy(self) -> bool:
+        """An analysis is still running (closing now would lose it)."""
+        with self._lock:
+            return any(r.job.state == "running" for r in self._recordings.values())
+
     def close(self) -> None:
         """Stop background analysis: drop queued work, finish only the detection in flight."""
         with self._lock:

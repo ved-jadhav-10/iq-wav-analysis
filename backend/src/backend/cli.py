@@ -7,6 +7,7 @@ import threading
 import time
 import webbrowser
 from pathlib import Path
+from typing import Any
 
 import uvicorn
 
@@ -182,7 +183,7 @@ def _frontend_dist() -> Path:
     return REPO_ROOT / "frontend" / "dist"
 
 
-def _serve_and_show(app: object, host: str, port: int, *, browser: bool) -> int:
+def _serve_and_show(app: Any, host: str, port: int, *, browser: bool) -> int:
     """Serve on a thread and show the UI: in Sanket's own window, or the system browser. Closing
     the window stops the server; with a browser the server runs until interrupted."""
     server = uvicorn.Server(uvicorn.Config(app, host=host, port=port))  # type: ignore[arg-type]
@@ -197,7 +198,7 @@ def _serve_and_show(app: object, host: str, port: int, *, browser: bool) -> int:
     try:
         if not browser:
             try:
-                window.run(url, user_data_dir() / "window")
+                window.run(url, user_data_dir() / "window", busy=getattr(app.state, "busy", None))
                 return 0
             except window.WindowUnavailable as exc:
                 print(f"sanket: no desktop window: {exc}; opening {url} in the browser instead")
