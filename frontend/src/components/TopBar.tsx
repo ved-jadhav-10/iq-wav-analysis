@@ -87,7 +87,7 @@ export function TopBar({
               }}
               aria-current={selected ? 'page' : undefined}
               title={`${v.hint} (Alt+${v.digit})`}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium tracking-wide uppercase transition-colors ${
+              className={`rounded-md px-2.5 py-1 text-xs font-medium tracking-wide uppercase transition-colors max-xl:px-1.5 max-xl:tracking-normal ${
                 selected ? 'bg-surface-2 text-foreground' : 'text-muted-foreground hover:bg-surface-2/60 hover:text-foreground'
               }`}
             >
@@ -117,7 +117,7 @@ export function TopBar({
           value={path}
           onChange={(e) => setPath(e.target.value)}
           placeholder="Open a recording by path…"
-          className="w-32 rounded-md border border-border-strong bg-surface px-2 xl:w-56 py-1 text-xs text-foreground placeholder:text-subtle-foreground"
+          className="w-24 rounded-md border border-border-strong bg-surface px-2 xl:w-56 py-1 text-xs text-foreground placeholder:text-subtle-foreground"
         />
         <button
           type="submit"

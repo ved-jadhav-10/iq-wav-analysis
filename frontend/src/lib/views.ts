@@ -33,9 +33,15 @@ export const VIEWS = [
     hint: 'The spectrogram full width, with the power spectrum under it',
   },
   {
+    id: 'history',
+    label: 'History',
+    digit: '3',
+    hint: 'The analyses kept in the workspace: download their results again, or delete them',
+  },
+  {
     id: 'assumptions',
     label: 'Assumptions',
-    digit: '3',
+    digit: '4',
     hint: 'Everything the analysis took as given, over the current view',
   },
 ] as const

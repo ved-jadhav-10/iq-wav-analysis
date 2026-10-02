@@ -422,3 +422,149 @@ test('the results exports follow the recording: SigMF links for SigMF, Save as S
     await page.getByRole('button', { name: /^Switch to (light|dark) theme$/ }).click()
   }
 })
+
+const SECTION_NAV = (page: Page) => page.getByRole('navigation', { name: 'Workspace section' })
+
+test('History lists a finished analysis, links its downloads and deletes it after an inline confirmation', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(180_000)
+  mkdirSync(testInfo.outputDir, { recursive: true })
+  // A name of its own, so this finds its row among whatever earlier runs left in the workspace.
+  const base = testInfo.outputPath(`history-${Date.now()}`)
+  writeSigmf(base)
+  const name = `${base.split(/[\\/]/).pop()}.sigmf-meta`
+  await page.setViewportSize({ width: 1918, height: 950 })
+  await openByPath(page, `${base}.sigmf-meta`)
+  // The analysis has finished once the top bar offers its results.
+  await expect(page.getByRole('banner').getByRole('link', { name: 'Run record' })).toBeVisible({ timeout: 90_000 })
+
+  await SECTION_NAV(page).getByRole('button', { name: 'History' }).click()
+  await expect(page.getByRole('main', { name: 'History' })).toBeVisible()
+  const row = page.getByRole('row').filter({ hasText: name })
+  // The list is fetched on opening and when the analysis finishes; Refresh covers the gap between.
+  await expect(async () => {
+    await page.getByRole('button', { name: 'Refresh' }).click()
+    await expect(row).toHaveCount(1, { timeout: 2_000 })
+  }).toPass({ timeout: 30_000 })
+
+  await expect(row.getByText('SigMF', { exact: true })).toBeVisible()
+  await expect(row.locator('time')).toHaveAttribute('datetime', /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/)
+  await expect(row.locator('td[title$="(UTC)"]')).toHaveCount(1)
+  const json = row.getByRole('link', { name: 'JSON' })
+  const href = (await json.getAttribute('href'))!
+  expect(href).toMatch(/^\/api\/v1\/history\/[0-9a-f]+\/results\?format=json$/)
+  await expect(json).toHaveAttribute('download', '')
+  for (const label of ['CSV', 'Summary', 'PDF', 'Run record']) {
+    await expect(row.getByRole('link', { name: label })).toBeVisible()
+  }
+  const hash = (await row.locator('code').getAttribute('title'))!
+  expect(hash).toMatch(/^[0-9a-f]{64}$/)
+  await expect(row.locator('code')).toHaveText(hash.slice(0, 12))
+  const kept = await page.request.get(href)
+  expect(kept.status()).toBe(200)
+  expect(((await kept.json()) as { signals: unknown[] }).signals.length).toBeGreaterThan(0)
+
+  // Delete asks first, in the row; Cancel keeps it; a failing server shows its own text.
+  const id = href.split('/')[4]!
+  await row.getByRole('button', { name: /^Delete the analysis of / }).click()
+  const confirm = page.getByRole('group', { name: `Confirm deleting ${name}` })
+  await expect(confirm).toContainText('Delete this analysis and everything derived from it?')
+  await confirm.getByRole('button', { name: 'Cancel' }).click()
+  await expect(confirm).toHaveCount(0)
+  await expect(row).toHaveCount(1)
+
+  await page.route(`**/api/v1/history/${id}`, (route) =>
+    route.request().method() === 'DELETE'
+      ? route.fulfill({ status: 500, contentType: 'application/json', body: '{"detail":"the disk is full"}' })
+      : route.continue(),
+  )
+  await row.getByRole('button', { name: /^Delete the analysis of / }).click()
+  await confirm.getByRole('button', { name: 'Delete', exact: true }).click()
+  await expect(page.getByRole('alert').filter({ hasText: 'Not deleted: the disk is full' })).toBeVisible()
+  await expect(row).toHaveCount(1)
+  await page.unroute(`**/api/v1/history/${id}`)
+
+  await confirm.getByRole('button', { name: 'Delete', exact: true }).click()
+  await expect(row).toHaveCount(0)
+  expect((await page.request.get(href)).status()).toBe(404)
+  const listed = (await (await page.request.get('/api/v1/history')).json()) as { id: string }[]
+  expect(listed.map((e) => e.id)).not.toContain(id)
+})
+
+test('History fills the window and its table scrolls inside its own panel, in both themes', async ({ page }) => {
+  const entries = Array.from({ length: 40 }, (_, i) => ({
+    id: `e${String(i).padStart(30, '0')}`,
+    createdUtc: `2026-03-${String(1 + (i % 28)).padStart(2, '0')}T0${i % 10}:15:00Z`,
+    name: `a-rather-long-recording-name-number-${i}-from-the-field-trip.sigmf-meta`,
+    container: i % 2 ? 'raw' : 'SigMF',
+    signals: 1 + (i % 5),
+    verified: i % 3,
+    resultsSha256: (i + 1).toString(16).padStart(2, '0').repeat(32),
+  }))
+  // The demo shows the section too: nothing is open, and the list is the server's.
+  let served: typeof entries = entries
+  await page.route('**/api/v1/history', (route) =>
+    route.request().method() === 'GET' ? route.fulfill({ json: served }) : route.continue(),
+  )
+  await page.goto('/')
+  await expect(page.getByText('Synthetic demo', { exact: true })).toBeVisible()
+
+  const measure = async () =>
+    (await page.evaluate(`(() => {
+      const main = document.querySelector('main[aria-label="History"]')
+      const panel = main.querySelector('.overflow-auto')
+      const r = main.getBoundingClientRect()
+      return {
+        scrollHeight: document.documentElement.scrollHeight,
+        innerHeight: window.innerHeight,
+        pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        mainBottom: r.bottom,
+        panelScroll: panel ? panel.scrollHeight : 0,
+        panelClient: panel ? panel.clientHeight : 0,
+      }
+    })()`)) as {
+      scrollHeight: number
+      innerHeight: number
+      pageOverflow: number
+      mainBottom: number
+      panelScroll: number
+      panelClient: number
+    }
+
+  for (let pass = 0; pass < 2; pass++) {
+    for (const size of [
+      { width: 1918, height: 950 },
+      { width: 1440, height: 800 },
+    ]) {
+      await page.setViewportSize(size)
+      await SECTION_NAV(page).getByRole('button', { name: 'History' }).click()
+      await expect(page.getByRole('row')).toHaveCount(41) // the header and 40 entries
+      const where = `${size.width} wide, pass ${pass}`
+      let m = await measure()
+      expect(m.scrollHeight, where).toBeLessThanOrEqual(m.innerHeight)
+      expect(m.pageOverflow, where).toBeLessThanOrEqual(0)
+      expect(m.mainBottom, where).toBeLessThanOrEqual(m.innerHeight)
+      // 40 rows do not fit: the panel holds the overflow, so the page does not.
+      expect(m.panelScroll, where).toBeGreaterThan(m.panelClient)
+
+      // An open confirmation adds a row and still changes nothing outside the panel.
+      await page.getByRole('button', { name: /^Delete the analysis of / }).first().click()
+      await expect(page.getByRole('group', { name: /^Confirm deleting / })).toBeVisible()
+      m = await measure()
+      expect(m.scrollHeight, `${where}, confirming`).toBeLessThanOrEqual(m.innerHeight)
+      expect(m.pageOverflow, `${where}, confirming`).toBeLessThanOrEqual(0)
+      await page.getByRole('button', { name: 'Cancel' }).click()
+
+      // The empty list, with the demo's own wording.
+      served = []
+      await page.getByRole('button', { name: 'Refresh' }).click()
+      await expect(page.getByText(/synthetic demo is generated in the browser/i)).toBeVisible()
+      m = await measure()
+      expect(m.scrollHeight, `${where}, empty`).toBeLessThanOrEqual(m.innerHeight)
+      served = entries
+      await SECTION_NAV(page).getByRole('button', { name: 'Survey' }).click()
+    }
+    await page.getByRole('button', { name: /^Switch to (light|dark) theme$/ }).click()
+  }
+})

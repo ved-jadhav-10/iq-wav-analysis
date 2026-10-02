@@ -29,9 +29,10 @@ zoom and selection — those are genuinely different lifetimes.
 |---|---|---|
 | **Survey** | Detections + pipeline rail, then the plot column, then the resizable evidence panel | Everything at once. The default. |
 | **Waterfall** | Detection chips in a strip, then the plot column full width | The spectrogram and its power spectrum, nothing competing for the display |
+| **History** | A header strip, then one table that fills the rest and scrolls inside its own panel | The analyses the server kept in its workspace (they survive a restart): see below |
 | **Assumptions** | A modal, not a section | Everything the analysis took as given, over whatever is on screen |
 
-Switch by clicking the nav in the top bar, or with `Alt+1`–`Alt+2`. The choice is persisted in
+Switch by clicking the nav in the top bar, or with `Alt+1`–`Alt+4` (Assumptions is `Alt+4`). The choice is persisted in
 `localStorage` under `sanket.view.v1`, because an analyst who reopens the tool on Survey and has to
 click back costs a beat. A bare `1`–`3` is deliberately *not* used: it would fight numeric
 fields and the synthetic-capture worker's inputs.
@@ -58,6 +59,28 @@ Before a file is opened, the workspace runs on a synthetic capture generated in 
 - **Frames tab:** start bit, sync word, CRC result, header and payload hex; for a real recording, download links for the table as JSON, CSV, hex and bits.
 - **Results download (top bar):** for a recording whose analysis has finished, a `Results` label with `JSON`, `CSV` and `Summary` links (the results document; one row per value with its level and proof; a plain-language text summary). Absent for the demo and while the analysis runs.
 - **Assumptions (modal):** container, datatype, sample rate, centre frequency, IQ order and everything else taken as given, each with its level; above them, entry fields for the centre frequency and the IQ order (a swap has the server tile the recording again). Opening a folder lists its recordings in a dialog to pick from; a raw file whose sample format is UNKNOWN opens a prompt strip with the sniffer's candidates; "Join numbered files" beside the path reads `rec_000`, `rec_001`, … as one recording.
+
+## The History section
+
+`components/HistorySection.tsx` lists `GET /api/v1/history` (newest first) as a table: name, container,
+finished (local time; the UTC stamp is in the cell's title), signals, the VERIFIED count (the
+`EvidenceBadge` glyph and word, or "none verified" in words) and the first 12 hex digits of the results
+SHA-256 (full value in a title, with a copy button). Each row has plain `<a download>` links (JSON, CSV,
+Summary, PDF, Run record; no SigMF, which needs the recording's files) and a Delete button. Delete opens a
+confirmation row straight under the entry ("Delete this analysis and everything derived from it?", Delete
+and Cancel; Cancel has focus and Esc cancels); a failing delete shows the server's text in that row, never
+an `alert()`.
+
+- The list is fetched when the section opens, when an analysis finishes (App bumps `historyTick` when the
+  recording's state turns `done`, at once and again about two seconds later, because the server keeps the
+  analysis on its worker thread just after the state turns) and from the Refresh control.
+- An empty list says what makes an entry. The demo (no recording open) shows the section with its own
+  wording and a *Synthetic demo* label; it still lists whatever the server holds.
+- The section renders inside `Workspace`, not beside it, so zoom and selection survive a visit. Layout: a
+  `main` that is `flex min-h-0 flex-1 flex-col overflow-hidden`, a fixed 32px strip, and the table in a
+  `min-h-0 flex-1 overflow-auto` panel with a sticky header. Measured (e2e, 40 rows, both themes): the
+  page's `scrollHeight` equals `innerHeight` at 1918x950 and 1440x800, the panel's content is 1429px in a
+  846px / 696px panel, and nothing overflows horizontally.
 
 ## The Signal overlay
 
@@ -153,5 +176,6 @@ wide display.
 | `hooks/useSplit.ts` | Drag, arrow keys, clamping, persistence |
 | `hooks/useMediaQuery.ts` | Where the split applies and where the grid stacks |
 | `components/SignalOverlay.tsx` | The full-screen deep dive |
+| `components/HistorySection.tsx` | The History table, its inline delete confirmation and its fetching (`lib/history.ts`: row formatting and download URLs) |
 | `App.tsx` | Section branching, the plot column, the evidence rail |
 | `TopBar.tsx` | The section nav, the open box, the theme toggle |

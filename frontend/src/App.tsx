@@ -29,6 +29,7 @@ import { BatchChooser } from '@/components/BatchChooser'
 import { BottomPanel } from '@/components/BottomPanel'
 import { EvidenceBadge } from '@/components/EvidenceBadge'
 import { FormatPrompt } from '@/components/FormatPrompt'
+import { HistorySection } from '@/components/HistorySection'
 import { EvidencePanel } from '@/components/EvidencePanel'
 import { PipelineRail } from '@/components/PipelineRail'
 import { PsdPlot } from '@/components/PsdPlot'
@@ -40,7 +41,11 @@ import { SymbolView } from '@/components/SymbolView'
 import { TopBar } from '@/components/TopBar'
 import { Waterfall } from '@/components/Waterfall'
 
-type Mode = { kind: 'demo'; demo: DemoProducts } | { kind: 'recording'; info: RecordingInfo; source: WaterfallSource }
+/** When, after an analysis reports done, the History list is fetched again (the server keeps the
+ * finished analysis on its worker thread, just after the state turns). */
+const KEPT_REFETCH_MS = [200, 2000]
+
+type Mode ={ kind: 'demo'; demo: DemoProducts } | { kind: 'recording'; info: RecordingInfo; source: WaterfallSource }
 
 /** A real detection's `analysis` (the `DetectionReport` contract) plus the `id`/`boxes` the
  * waterfall and the pipeline rail need - the same shape the demo path's `Detection` already is
@@ -142,12 +147,15 @@ function Workspace({
   railOpen,
   onRailOpenChange,
   onEnterAssumptions,
+  historyTick,
 }: {
   mode: Mode
   view: ViewId
   railOpen: boolean
   onRailOpenChange: (open: boolean) => void
   onEnterAssumptions: (values: AssumptionValues) => Promise<void>
+  /** Changes whenever an analysis finishes, so the History list is fetched again. */
+  historyTick: number
 }) {
   const demo = mode.kind === 'demo' ? mode.demo : undefined
   const source = mode.kind === 'demo' ? mode.demo : mode.source
@@ -329,6 +337,10 @@ function Workspace({
         </main>
       )}
 
+      {/* The kept analyses are the server's, not this recording's: the section sits in the
+          Workspace only so that zoom and selection survive a visit to it. */}
+      {view === 'history' && <HistorySection demo={mode.kind === 'demo'} refreshKey={historyTick} />}
+
       {/* Removed separate assumptions view, using modal below */}
 
       {!showRail && view === 'survey' && (
@@ -401,6 +413,8 @@ export default function App() {
   const [batch, setBatch] = useState<{ source: string; items: InputInfo[] } | null>(null)
   // Counts restarts of the analysis (entered values), so the progress stream is followed again.
   const [run, setRun] = useState(0)
+  // Counts finished analyses, so the History list is fetched again.
+  const [historyTick, setHistoryTick] = useState(0)
   // A raw file whose sample format is UNKNOWN, until the analyst chooses one.
   const [formatNeeded, setFormatNeeded] = useState<{ item: InputInfo; candidates: string[] } | null>(null)
 
@@ -409,7 +423,7 @@ export default function App() {
     storeView(next)
   }, [])
 
-  // Alt+1..3 jumps between sections without leaving the waterfall's keyboard handling. A bare 1..3
+  // Alt+1..4 jumps between sections without leaving the waterfall's keyboard handling. A bare 1..4
   // would fight the demo worker's inputs and any future numeric field.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -525,6 +539,15 @@ export default function App() {
     return watchAnalysis(watchedId, () => void refetch(), () => setOpenError('lost the connection to the analysis'))
   }, [watchedId, analysing, run])
 
+  // A finished analysis is kept by the server a moment after the stream reports `done`, so the
+  // History list is fetched again at once and once more shortly after.
+  const analysisState = recording?.info.analysis.state
+  useEffect(() => {
+    if (!watchedId || analysisState !== 'done') return
+    const timers = KEPT_REFETCH_MS.map((ms) => setTimeout(() => setHistoryTick((n) => n + 1), ms))
+    return () => timers.forEach(clearTimeout)
+  }, [watchedId, analysisState])
+
   // The analyst entered what the file lacks (or gets wrong): the server restarts the analysis with
   // it. The waterfall grid stays the same unless I and Q were swapped, which mirrors the spectrum
   // and has the server tile it again; otherwise only the units (and the boxes) change.
@@ -595,6 +618,7 @@ export default function App() {
           railOpen={railOpen}
           onRailOpenChange={setRailOpen}
           onEnterAssumptions={enterAssumptions}
+          historyTick={historyTick}
         />
       ) : (
         <div className="grid flex-1 place-items-center" role={error ? 'alert' : 'status'}>

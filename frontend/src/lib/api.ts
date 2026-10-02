@@ -184,6 +184,32 @@ export async function saveAsSigmf(id: string): Promise<string> {
   return (await asJson<{ path: string }>(response)).path
 }
 
+/** One finished analysis the server kept in its workspace (`GET /api/v1/history`, newest first). */
+export interface HistoryEntry {
+  id: string
+  /** When the analysis finished, UTC, `YYYY-MM-DDTHH:MM:SSZ`. */
+  createdUtc: string
+  name: string
+  container: string
+  signals: number
+  /** How many of the signals have a VERIFIED headline. */
+  verified: number
+  /** SHA-256 of the results document, as hex. */
+  resultsSha256: string
+}
+
+/** The analyses kept in the workspace, newest first; they survive a server restart. */
+export async function fetchHistory(): Promise<HistoryEntry[]> {
+  return asJson<HistoryEntry[]>(await fetch('/api/v1/history'))
+}
+
+/** Deletes a kept analysis and everything derived from it. Rejects with the server's own text
+ * (404 "no such analysis" when it is already gone). */
+export async function deleteHistory(id: string): Promise<void> {
+  const response = await fetch(`/api/v1/history/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (!response.ok) await asJson(response) // always throws, with the server's detail
+}
+
 export async function getRecording(id: string): Promise<RecordingInfo> {
   return asJson<RecordingInfo>(await fetch(`/api/v1/recordings/${id}`))
 }
