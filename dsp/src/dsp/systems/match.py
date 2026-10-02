@@ -26,7 +26,7 @@ from numpy.typing import NDArray
 from dsp.evidence import Alternative, EvidenceLevel, Parameter, Proof
 from dsp.framing import MAX_SYNC_ERRORS, FrameResult, binomial_tail
 from dsp.report import Frame, Hypothesis, StageReport
-from dsp.systems import ais, ccir476, dsc, pocsag
+from dsp.systems import ais, ccir476, ccsds_ldpc, dsc, pocsag
 from dsp.systems.catalogue import CATALOGUE, RATE_TOLERANCE, TONE_TOLERANCE, SystemEntry
 from dsp.systems.ccsds import HEADER_BYTES, TM_VERSION, parse_header
 
@@ -71,6 +71,9 @@ class Candidate:
     findings: Findings
     bits: Bits | None
     key: int = 0  # the caller's index of this hypothesis
+    # The same stream as soft values (positive = bit 0, one per bit), for a check that decodes
+    # (the LDPC codes); None when only the hard decisions are to hand.
+    llr: NDArray[np.float64] | None = None
 
 
 @dataclass(frozen=True)
@@ -214,6 +217,8 @@ def match(
             runs += _ais_runs(entry, candidates)
         elif entry.check == "ccsds-tm":
             runs.append(_ccsds_run(entry, accepted, candidates))
+        elif entry.check == "ccsds-ldpc":
+            runs += _ccsds_ldpc_runs(entry, candidates)
     # A run with no p-value never ran a check (the entry needs a chain the blind search did not
     # accept), so it is listed but is not a hypothesis in the correction.
     checked = [r for r in runs if r.outcome in ("verified", "failed") and r.p_value is not None]
@@ -556,6 +561,170 @@ def _ccsds_run(entry: SystemEntry, accepted: Accepted | None, candidates: list[C
         evidence=(reason, f"Header of {HEADER_BYTES} bytes parsed per CCSDS 132.0-B-3"),
         notes=tuple(notes),
         tm=tm,
+    )
+
+
+def _ccsds_ldpc_runs(entry: SystemEntry, candidates: list[Candidate]) -> list[_Run]:
+    """One run per catalogued TM LDPC code and candidate: the marker's recurrence at the code's
+    period, then the code words behind it decoded (`dsp.systems.ccsds_ldpc`). A run that finds no
+    recurrence is a rejected row with p = 1, so the ledger shows every code that was tried."""
+    runs: list[_Run] = []
+    for cand in candidates:
+        conflicts, notes = fit(entry, cand.findings)
+        if conflicts:
+            runs.append(
+                _Run(
+                    entry, cand.label, "conflict", None, "Parameters conflict", "; ".join(conflicts)
+                )
+            )
+            continue
+        llr = cand.llr
+        if llr is None and cand.bits is not None:
+            llr = 1.0 - 2.0 * cand.bits.astype(np.float64)
+        needed = ccsds_ldpc.min_bits()
+        if llr is None or len(llr) < needed:
+            n = 0 if llr is None else len(llr)
+            runs.append(
+                _Run(
+                    entry,
+                    cand.label,
+                    "failed",
+                    None,
+                    "Too few bits to check",
+                    f"{n} bits; the check needs two markers and a code word of the shortest TM "
+                    f"LDPC code ({needed:,})",
+                    notes=tuple(notes),
+                )
+            )
+            continue
+        scan = ccsds_ldpc.scan(llr, cand.findings.modulation)
+        for r in scan.runs:
+            label = f"{r.code.name.removeprefix('CCSDS TM ')} · {cand.label}"
+            if not r.verified:
+                runs.append(
+                    _Run(
+                        entry,
+                        label,
+                        "failed",
+                        ccsds_ldpc.p_value(r),
+                        r.statistic,
+                        r.reason,
+                        notes=tuple(notes),
+                    )
+                )
+                continue
+            runs.append(_ccsds_ldpc_verified(entry, label, cand, r, tuple(notes)))
+    return runs
+
+
+def _ccsds_ldpc_verified(
+    entry: SystemEntry,
+    label: str,
+    cand: Candidate,
+    r: ccsds_ldpc.CodeRun,
+    notes: tuple[str, ...],
+) -> _Run:
+    p = ccsds_ldpc.p_value(r)
+    code = r.code
+    good = sum(1 for b in r.blocks if b.valid)
+    distances = ", ".join(str(d) for d in r.distances)
+    proof = Proof(
+        kind="sync_recurrence",
+        detail=f"the attached sync marker {ccsds_ldpc.ASM.hex} recurs {r.pairs} time(s) at the "
+        f"{code.name} period of {r.period:,} bits (up to {MAX_SYNC_ERRORS} bit errors each), and "
+        f"the code words behind it decode to valid {code.name} code words: every one of the "
+        f"{code.checks:,} parity checks holds on {r.valid} of {r.scanned} scanned words "
+        f"(syndrome 0), at Hamming distances {distances} from the received bits; the chance "
+        f"that random blocks lie that close to some code word is at most "
+        f"10^{r.log10_p_blocks:.0f}",
+    )
+    evidence = (
+        r.reason,
+        f"Chance of this in a random stream: {p:.1e} = marker recurrence 10^{r.log10_p_asm:.1f} "
+        f"x distance bound over the valid blocks 10^{r.log10_p_blocks:.1f} x {r.hypotheses} "
+        "hypotheses (stream arrangements x 2 polarities x randomiser on or off)",
+        f"LDPC syndrome: 0 of {code.checks:,} parity checks unsatisfied after decoding, on "
+        f"{r.valid} of {r.scanned} scanned code words; the decoded words differ from the "
+        f"received bits in {distances} of {code.transmitted:,} positions",
+        f"{good} of {len(r.blocks)} code words behind a marker decode to a valid code word",
+        "The p-value is a union bound on the distance to the code: it reaches raw bit-error "
+        "rates up to about 11 % (rate 1/2), 6 % (2/3) and 3 % (4/5); a noisier stream can "
+        "still decode but is not claimed",
+    )
+    if not r.randomised:
+        evidence += (
+            "The check passed WITHOUT the CCSDS pseudo-randomiser, which 131.0-B applies to "
+            "these code words: an LDPC stream of this code, but not the standard's as written",
+        )
+    extra = (
+        Parameter(
+            id="ldpc_code",
+            name="LDPC code",
+            value=f"{code.name} (n = {code.n}, k = {code.k}, last {code.punctured} columns "
+            "punctured)",
+            level=E.VERIFIED,
+            method="The catalogued AR4JA code whose code words, behind a marker recurring at its "
+            "period, satisfy every parity check",
+            evidence=(code.source,),
+            proof=proof,
+        ),
+        Parameter(
+            id="tm_header",
+            name="Transfer frame header (assumed)",
+            value=_ldpc_header_text(r),
+            level=E.HYPOTHESIS,
+            method="The first 6 bytes of the first valid code word's message read as a CCSDS "
+            "132.0-B-3 primary header",
+            convention=(
+                "Each decoded message is read as a TM transfer frame and its first 6 bytes as "
+                "the primary header; the LDPC check covers the code word, not the frame's "
+                "layout (a frame error control field, if present, is not checked here), so the "
+                "header fields rest on this convention"
+            ),
+        ),
+    )
+    return _Run(
+        entry,
+        label,
+        "verified",
+        p,
+        r.statistic,
+        r.reason,
+        proof=proof,
+        evidence=evidence,
+        notes=notes,
+        frames=_ldpc_frames(r),
+        key=cand.key,
+        extra=extra,
+    )
+
+
+def _ldpc_header_text(r: ccsds_ldpc.CodeRun) -> str:
+    first = next((b for b in r.blocks if b.valid), None)
+    header = parse_header(first.message) if first else None
+    if header is None:
+        return "no valid code word"
+    return (
+        f"version {header.version}, spacecraft {header.spacecraft_id:#x}, virtual channel "
+        f"{header.virtual_channel}, master channel count {header.master_channel_count}"
+    )
+
+
+def _ldpc_frames(r: ccsds_ldpc.CodeRun) -> tuple[Frame, ...]:
+    """One frame per marker on the recurrence grid: the marker as its sync word, the decoded
+    message as its payload (header: its first 6 bytes), passing when the code word decoded to a
+    valid one, which is this system's frame check."""
+    return tuple(
+        Frame(
+            index=i + 1,
+            start_bit=b.start_bit,
+            sync_word=ccsds_ldpc.ASM.hex,
+            length_bits=r.period,
+            crc="pass" if b.valid else "fail",
+            header_hex=" ".join(f"{x:02X}" for x in b.message[: ccsds_ldpc.HEADER_BYTES]),
+            payload_hex=b.message.hex().upper(),
+        )
+        for i, b in enumerate(r.blocks[:MAX_FRAMES])
     )
 
 

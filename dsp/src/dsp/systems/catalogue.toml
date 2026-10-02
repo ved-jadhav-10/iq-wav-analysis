@@ -2,7 +2,7 @@
 # document that ran Match. An entry is data about a public specification; the check that verifies
 # it is code in this package (`check` names it) and must pass on the recording itself. No entry
 # holds samples, and none is copied from another project's source.
-version = "0.2.0"
+version = "0.3.0"
 
 [[system]]
 id = "ccsds-tm"
@@ -79,3 +79,24 @@ tone_spacing_hz = 4800.0              # the index of 0.5; reported when it diffe
 codes = ["Uncoded"]                   # NRZI and HDLC bit stuffing are the system's own check
 sync = "HDLC flag"
 frame_check = "CRC-16/X.25"
+
+[[system]]
+id = "ccsds-tm-ldpc"
+name = "CCSDS TM LDPC (AR4JA)"
+specification = "CCSDS 131.0-B-5 section 7 (AR4JA LDPC codes, k = 1024 and 4096 at rates 1/2, 2/3, 4/5; the last M columns punctured), attached sync marker and pseudo-randomiser as in its sections 8 and 10; transfer frame as CCSDS 132.0-B-3"
+licence = "Public CCSDS Blue Books; parameters restated, no code copied; the parity-check tables are the ones in dsp.fec.ldpc (MIT-licensed sources, listed in THIRD_PARTY.md)"
+check = "ccsds-ldpc"
+modulations = ["BPSK", "QPSK"]
+symbol_rates = []                    # any: set by the mission
+codes = [
+  "CCSDS TM k=1024 r1/2",
+  "CCSDS TM k=1024 r2/3",
+  "CCSDS TM k=1024 r4/5",
+  "CCSDS TM k=4096 r1/2",
+  "CCSDS TM k=4096 r2/3",
+  "CCSDS TM k=4096 r4/5",
+]
+sync = "CCSDS ASM"                   # in front of each code word, which is pseudo-randomised; the marker is not
+descramblers = ["CCSDS pseudo-randomiser"]
+frame_check = "LDPC parity-check syndrome of the code words behind a recurring marker"
+header_bytes = 6                     # the primary header, which the frame table splits off (a convention here)

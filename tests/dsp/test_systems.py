@@ -57,7 +57,7 @@ def test_catalogue_entries_are_complete_and_unique() -> None:
     assert len(ids) == len(set(ids)) >= 2
     for e in CATALOGUE.entries:
         assert e.specification and e.licence and e.modulations and e.frame_check
-        assert e.check in {"pocsag", "ccsds-tm", "navtex", "dsc", "ais"}
+        assert e.check in {"pocsag", "ccsds-tm", "ccsds-ldpc", "navtex", "dsc", "ais"}
 
 
 def test_holm_steps_down_and_stops_at_the_first_failure() -> None:
@@ -232,7 +232,10 @@ def test_match_does_not_run_a_check_on_bits_demodulated_for_something_else(
     assert result.verified is None
     assert result.stage.level is EvidenceLevel.UNKNOWN
     assert any(why in r.reason for r in result.rows if r.outcome == "rejected")
-    assert result.tried == 0  # no POCSAG check ran, and CCSDS had no chain to read
+    # No POCSAG check ran, and CCSDS had no chain to read; a QPSK candidate does get the six
+    # CCSDS TM LDPC checks (it fits that system by parameters), which find nothing in these bits.
+    assert not any(r.candidate.startswith("POCSAG") and r.p_value for r in result.rows)
+    assert result.tried == (6 if modulation == "QPSK" else 0)
 
 
 def test_match_with_too_few_bits_says_consistent_and_does_not_verify() -> None:

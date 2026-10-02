@@ -18,14 +18,26 @@ the message bits and a CRC-16/X.25 frame check sequence (low byte first, each by
 significant bit first) with a 0 stuffed after five 1s, and a closing flag; the whole stream NRZI
 coded (a 0 changes level). Written here from the Recommendation, with its own CRC and stuffing,
 independent of `dsp.systems.ais`.
+
+CCSDS TM LDPC (CCSDS 131.0-B-5): the 32-bit attached sync marker 0x1ACFFC1D, then the transmitted
+columns of an AR4JA code word whose message is a transfer frame, the code word XORed with the
+pseudo-randomiser (x^8 + x^7 + x^5 + x^3 + 1, all ones at the start of every code word, the
+marker not covered). The randomiser is written here from its recurrence and checked in the tests
+against the standard's published first bytes; the code words come from `synth.fec.standard_ldpc`
+(galois), not from the decoder's encoder. The parity-check tables are the one thing shared with
+`dsp.fec.ldpc`: a wrong entry in them would not be caught by these streams. The near-misses
+(`fault`, `randomiser`, `asm`, `flips`) are streams the check must not accept.
 """
 
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
-from dsp.synth.bits import Bits, int_bits
+from dsp.fec.ldpc import by_name
+from dsp.synth.bits import Bits, int_bits, to_bits
+from dsp.synth.fec import standard_ldpc
 
 POCSAG_SYNC = 0x7CD215D8
 POCSAG_IDLE = 0x7A89C197
@@ -337,3 +349,147 @@ class Ais:
         if self.corrupt:
             sent ^= (rng.random(len(sent)) < self.corrupt).astype(np.uint8)
         return np.zeros((0, 0), np.uint8), clean, sent
+
+
+CCSDS_ASM = 0x1ACFFC1D
+CCSDS_SPACECRAFT = 0x1A5  # the primary header the synthetic transfer frames carry
+CCSDS_VIRTUAL_CHANNEL = 2
+
+
+def _recurrence(taps: tuple[int, ...], seed_bits: int, n: int) -> Bits:
+    """The sequence a[k] = XOR of a[k - t] for t in `taps`, from `seed_bits` ones."""
+    a = [1] * seed_bits
+    while len(a) < n:
+        value = 0
+        for t in taps:
+            value ^= a[len(a) - t]
+        a.append(value)
+    return np.array(a[:n], np.uint8)
+
+
+def ccsds_randomiser(n: int) -> Bits:
+    """The first `n` bits of the CCSDS 131.0-B pseudo-random sequence, h(x) = x^8 + x^7 + x^5 +
+    x^3 + 1 from the all-ones register (period 255): a[k] = a[k-1] ^ a[k-3] ^ a[k-5] ^ a[k-8],
+    which begins FF 48 0E C0 9A 0D 70 BC as the standard lists it."""
+    one = _recurrence((1, 3, 5, 8), 8, 255)
+    return np.tile(one, -(-n // 255))[:n]
+
+
+def _wrong_randomiser(n: int) -> Bits:
+    """Another scrambler's sequence (IEEE 802.11's x^7 + x^4 + 1, all ones): not the CCSDS one."""
+    one = _recurrence((3, 7), 7, 127)
+    return np.tile(one, -(-n // 127))[:n]
+
+
+@dataclass(frozen=True)
+class CcsdsLdpc:
+    """A CCSDS TM LDPC transmission: marker, randomised code word, marker, ... of one catalogued
+    AR4JA code (`code` is its name in `dsp.fec.ldpc`), repeated to fill a recording. Each message
+    is a TM transfer frame: a 6-byte primary header (version 0, spacecraft 0x1A5, virtual channel 2,
+    frame counts) and random data.
+
+    Defects, each a stream the check must not verify: `randomiser="wrong"` (another LFSR) or
+    "none" (the code words not randomised, which the check treats as its own hypothesis and
+    names); `asm=False` (no marker: code words back to back); `fault` "shuffle" (the code word's
+    bits permuted), "parity" (the message right, the parity bits random) or "other-code" (the
+    code word of the other rate of the same k, padded or cut to this code's length); `flips`
+    flips that many bits of every transmitted code word, which is a channel error, not a defect:
+    a few of them are corrected."""
+
+    code: str = "CCSDS TM k=1024 r1/2"
+    randomiser: Literal["ccsds", "wrong", "none"] = "ccsds"
+    asm: bool = True
+    fault: Literal["none", "shuffle", "parity", "other-code"] = "none"
+    flips: int = 0
+    seed: int = 1
+
+    def messages(self, count: int) -> Bits:
+        """The transfer frames' bits, `count` rows of k."""
+        k = by_name(self.code).k
+        rng = np.random.default_rng([self.seed, 1])
+        out = rng.integers(0, 2, (count, k), dtype=np.uint8)
+        for i in range(count):
+            header = bytes(
+                [
+                    CCSDS_SPACECRAFT >> 4,
+                    (CCSDS_SPACECRAFT & 0xF) << 4 | CCSDS_VIRTUAL_CHANNEL << 1,
+                    i & 0xFF,
+                    i & 0xFF,
+                    0,
+                    0,
+                ]
+            )
+            out[i, :48] = to_bits(header)
+        return out
+
+    def _other(self) -> str:
+        return (
+            self.code.replace("r1/2", "r2/3")
+            if "r1/2" in self.code
+            else (self.code.replace("r2/3", "r1/2").replace("r4/5", "r1/2"))
+        )
+
+    def codewords(self, messages: Bits) -> Bits:
+        """The transmitted bits of each message, before randomising: rows of `transmitted`."""
+        code = by_name(self.code)
+        rng = np.random.default_rng([self.seed, 2])
+        tx = code.transmitted
+        if self.fault == "other-code":
+            other = by_name(self._other())
+            words = standard_ldpc(other).encode(messages.ravel()).reshape(len(messages), -1)
+            filler = rng.integers(0, 2, (len(messages), max(0, tx - words.shape[1])), np.uint8)
+            return np.hstack([words, filler])[:, :tx]
+        words = standard_ldpc(code).encode(messages.ravel()).reshape(len(messages), tx)
+        if self.fault == "parity":
+            words[:, code.k :] = rng.integers(0, 2, (len(messages), tx - code.k), np.uint8)
+        elif self.fault == "shuffle":
+            words = words[:, rng.permutation(tx)]
+        return words
+
+    def transmission(self, count: int) -> tuple[Bits, Bits]:
+        """(message rows, the stream of `count` marker + code word blocks)."""
+        code = by_name(self.code)
+        tx = code.transmitted
+        messages = self.messages(count)
+        words = self.codewords(messages)
+        mask = {
+            "ccsds": ccsds_randomiser(tx),
+            "wrong": _wrong_randomiser(tx),
+            "none": np.zeros(tx, np.uint8),
+        }[self.randomiser]
+        marker = int_bits(CCSDS_ASM, 32) if self.asm else np.zeros(0, np.uint8)
+        blocks = [np.concatenate([marker, w ^ mask]) for w in words]
+        return messages, np.concatenate(blocks)
+
+    def truth(self) -> dict[str, object]:
+        code = by_name(self.code)
+        return {
+            "system": "CCSDS TM LDPC",
+            "code": self.code,
+            "k": code.k,
+            "n": code.n,
+            "transmittedBits": code.transmitted,
+            "punctured": code.punctured,
+            "asm": f"0x{CCSDS_ASM:08X}" if self.asm else None,
+            "periodBits": code.transmitted + (32 if self.asm else 0),
+            "randomiser": self.randomiser,
+            "fault": self.fault,
+            "flips": self.flips,
+            "spacecraft": CCSDS_SPACECRAFT,
+            "virtualChannel": CCSDS_VIRTUAL_CHANNEL,
+        }
+
+    def stream(self, needed: int, rng: np.random.Generator) -> tuple[NDArray[np.uint8], Bits, Bits]:
+        """(message rows packed to bytes, the bits before channel errors, the transmitted bits), at
+        least `needed` bits."""
+        code = by_name(self.code)
+        period = code.transmitted + (32 if self.asm else 0)
+        count = -(-needed // period) + 1
+        messages, clean = self.transmission(count)
+        sent = clean.copy()
+        if self.flips:
+            flip_rng = np.random.default_rng([self.seed, 3])
+            for i in range(count):
+                at = flip_rng.choice(code.transmitted, self.flips, replace=False)
+                sent[i * period + period - code.transmitted + at] ^= 1
+        return np.packbits(messages, axis=1), clean, sent
