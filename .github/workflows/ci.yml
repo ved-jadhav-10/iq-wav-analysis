@@ -87,3 +87,38 @@ jobs:
       - name: End-to-end smoke test (offline)
         working-directory: frontend
         run: npm run e2e
+
+  frozen:
+    # The one-folder build runs, serves its bundled UI and decodes a recording from a cold cache.
+    # Linux is not yet known to build (PLAN M8): it reports but does not fail the run.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os == 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: |
+          uv sync --locked --extra window
+          npm ci --prefix frontend
+
+      - name: Build
+        run: uv run python tools/build.py
+
+      - name: Smoke test
+        run: |
+          uv run python tools/make_demo.py
+          uv run python tools/smoke_frozen.py
