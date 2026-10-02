@@ -12,6 +12,11 @@ dependencies = [
 [project.scripts]
 sanket = "backend.cli:main"
 
+[project.optional-dependencies]
+window = [
+    "pywebview>=6.2.1",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

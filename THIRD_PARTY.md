@@ -10,9 +10,11 @@ do not edit by hand. Lists only what ships in Sanket, not development tools.
 | annotated-doc | 0.0.5 | MIT |
 | annotated-types | 0.8.0 | MIT |
 | anyio | 4.15.1 | MIT |
+| bottle | 0.13.4 | MIT |
 | cffi | 2.1.1 | MIT-0 |
 | charset-normalizer | 3.5.2 | MIT |
 | click | 8.5.0 | BSD-3-Clause |
+| clr-loader | 0.3.1 | MIT |
 | fastapi | 0.141.1 | MIT |
 | galois | 0.4.11 | MIT |
 | h11 | 0.16.0 | MIT |
@@ -20,10 +22,21 @@ do not edit by hand. Lists only what ships in Sanket, not development tools.
 | llvmlite | 0.49.0 | BSD-2-Clause AND Apache-2.0 WITH LLVM-exception |
 | numba | 0.67.0 | BSD |
 | numpy | 2.5.3 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 |
+| packaging | 26.3 | Apache-2.0 OR BSD-2-Clause |
 | pillow | 12.3.0 | MIT-CMU |
+| proxy-tools | 0.1.0 | MIT |
 | pycparser | 3.0 | BSD-3-Clause |
 | pydantic | 2.13.5 | MIT |
 | pydantic-core | 2.46.5 | MIT |
+| pyobjc-core | 12.2.2 | MIT |
+| pyobjc-framework-cocoa | 12.2.2 | MIT |
+| pyobjc-framework-quartz | 12.2.2 | MIT |
+| pyobjc-framework-security | 12.2.2 | MIT |
+| pyobjc-framework-uniformtypeidentifiers | 12.2.2 | MIT |
+| pyobjc-framework-webkit | 12.2.2 | MIT |
+| pythonnet | 3.2.0 | MIT |
+| pywebview | 6.2.1 | BSD-3-Clause |
+| qtpy | 2.4.3 | MIT |
 | reportlab | 5.0.1 | BSD License |
 | scipy | 1.18.1 | BSD License |
 | soundfile | 0.14.0 | BSD 3-Clause License |
@@ -66,6 +79,7 @@ do not edit by hand. Lists only what ships in Sanket, not development tools.
 | xz (liblzma) | pillow | 0BSD |
 | Zstandard | pillow | BSD-3-Clause |
 | libxcb and libXau | pillow | MIT |
+| Microsoft WebView2 SDK (wrappers and loader) | pywebview | BSD-3-Clause-style |
 | OpenBLAS | scipy | BSD-3-Clause |
 | LAPACK | scipy | BSD-3-Clause-Open-MPI |
 | GCC runtime library | scipy | GPL-3.0-or-later WITH GCC-exception-3.1 |

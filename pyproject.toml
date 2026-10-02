@@ -6,6 +6,10 @@ requires-python = ">=3.12,<3.13"
 # ml/ is deliberately absent: training dependencies never enter the product install.
 dependencies = ["sanket-backend", "sanket-dsp", "sanket-bench"]
 
+[project.optional-dependencies]
+# The desktop window (`sanket` without --browser): pywebview, used only when it is installed.
+window = ["sanket-backend[window]"]
+
 [dependency-groups]
 dev = [
  "httpx2",
@@ -13,6 +17,7 @@ dev = [
  "jsonschema>=4.26.0",
  "pre-commit",
  "psutil>=6.0",
+ "pyinstaller>=6.22.3",
  "pypdf>=6.19.0",
  "pyright",
  "pytest",

@@ -1,0 +1,72 @@
+# PyInstaller spec for the one-folder build: `uv run python tools/build.py` (builds the frontend
+# first, then runs this). Output: dist/sanket/sanket.exe with its libraries in dist/sanket/_internal.
+# PyInstaller is a dev-only build tool: nothing in the product imports it.
+import shutil
+from pathlib import Path
+
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules, copy_metadata
+
+root = Path(SPECPATH).parent
+dsp = root / "dsp" / "src" / "dsp"
+built = root / "frontend" / "dist"
+if not (built / "index.html").is_file():
+    raise SystemExit(f"no built frontend at {built}: run `npm run build` in frontend/ first")
+# Bundle a snapshot, so a rebuild of frontend/dist while this runs can't leave files missing.
+frontend = root / "build" / "frontend-dist"
+shutil.rmtree(frontend, ignore_errors=True)
+shutil.copytree(built, frontend)
+
+datas = [
+    (str(frontend), "frontend/dist"),
+    (str(dsp / "results.schema.json"), "dsp"),
+    (str(dsp / "systems" / "catalogue.toml"), "dsp/systems"),
+    (str(dsp / "fonts"), "dsp/fonts"),
+]
+# galois reads its prime and irreducible-polynomial tables from SQLite files in the package.
+datas += collect_data_files("galois")
+# `importlib.metadata.version("sanket-backend")` is read at run time.
+datas += copy_metadata("sanket-backend") + copy_metadata("sanket-dsp")
+
+hiddenimports = []
+for package in ("dsp", "backend", "uvicorn", "fastapi", "galois", "reportlab"):
+    hiddenimports += collect_submodules(package)
+# Numba and llvmlite have PyInstaller hooks (pyinstaller-hooks-contrib); named here so that a
+# change in what the hooks find shows up as a build error rather than as a missing kernel.
+hiddenimports += ["numba", "llvmlite", "llvmlite.binding", "numba.core.typing.cffi_utils"]
+# The frozen Numba cache locator is named by an environment variable, so nothing imports it.
+hiddenimports += ["backend.numba_cache"]
+
+# The desktop window: pywebview is imported by name at run time (backend/window.py), so
+# PyInstaller can't see it. Bundled when the build environment has it (`uv sync --extra window`);
+# without it the program falls back to the browser.
+binaries = []
+for package in ("webview", "pythonnet", "clr_loader", "proxy_tools"):
+    try:
+        found = collect_all(package)
+    except Exception:
+        continue
+    datas += found[0]
+    binaries += found[1]
+    hiddenimports += found[2]
+hiddenimports += ["clr", "bottle"]  # single-file modules: no package to collect
+
+a = Analysis(
+    [str(root / "packaging" / "launcher.py")],
+    pathex=[],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
+    excludes=["tkinter", "pytest", "hypothesis", "IPython", "matplotlib", "pyright", "ruff"],
+    noarchive=False,
+)
+pyz = PYZ(a.pure)
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="sanket",
+    console=True,  # `sanket analyse ...` and the server's log live in the same program
+    upx=False,
+)
+coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="sanket")

@@ -25,18 +25,35 @@ def dist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def served(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     calls: dict[str, Any] = {}
     monkeypatch.setattr(cli.uvicorn, "run", lambda app, **kw: calls.update(kw))
+    monkeypatch.setattr(cli.warm, "start", lambda: calls.update(warmed=True))
     return calls
 
 
 def test_binds_loopback_by_default(dist: Path, served: dict[str, Any]) -> None:
-    assert cli.main([]) == 0
-    assert served == {"host": "127.0.0.1", "port": 8765}
+    assert cli.main(["--no-open"]) == 0
+    assert served == {"host": "127.0.0.1", "port": 8765, "warmed": True}
+
+
+def test_no_warm_skips_the_background_compile(dist: Path, served: dict[str, Any]) -> None:
+    assert cli.main(["--no-open", "--no-warm"]) == 0
+    assert "warmed" not in served
+
+
+def test_a_frozen_build_finds_its_bundled_frontend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("SANKET_FRONTEND_DIST", raising=False)
+    monkeypatch.setattr(cli.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(cli.sys, "_MEIPASS", str(tmp_path), raising=False)
+    assert cli._frontend_dist() == tmp_path / "frontend" / "dist"  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setenv("SANKET_FRONTEND_DIST", str(tmp_path / "other"))
+    assert cli._frontend_dist() == tmp_path / "other"  # pyright: ignore[reportPrivateUsage]
 
 
 def test_warns_when_binding_beyond_loopback(
     dist: Path, served: dict[str, Any], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert cli.main(["--host", "0.0.0.0"]) == 0
+    assert cli.main(["--host", "0.0.0.0", "--no-open"]) == 0
     assert "exposes Sanket beyond this machine" in capsys.readouterr().err
 
 

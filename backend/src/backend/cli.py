@@ -3,12 +3,17 @@ import ipaddress
 import math
 import os
 import sys
+import threading
+import time
+import webbrowser
 from pathlib import Path
 
 import uvicorn
 
+from backend import warm, window
 from backend.analysis import Entries, analyse_recording
 from backend.app import create_app, default_workspace
+from backend.appdata import user_data_dir
 from backend.inputs import FormatUnknownError, Input, RecordingError, expand, open_input
 from backend.runrecord import PhaseTimer, run_record
 from backend.sigmf_export import NotDescribable, annotated_meta, save_beside
@@ -21,7 +26,17 @@ from dsp.summary import render_summary
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
+def _utf8_console() -> None:
+    """Headlines carry symbols (an arrow, a middle dot) that a Windows console's code page can't
+    encode: say them as UTF-8, replacing what the console can't show, rather than crash."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _utf8_console()
     parser = argparse.ArgumentParser(
         prog="sanket", description="Blind signal analysis, with evidence."
     )
@@ -36,7 +51,29 @@ def main(argv: list[str] | None = None) -> int:
         help="where uploaded recordings are kept (default: ~/.sanket/workspace, "
         "or SANKET_WORKSPACE)",
     )
-    commands = parser.add_subparsers(dest="command", metavar="{analyse}")
+    shown = parser.add_mutually_exclusive_group()
+    shown.add_argument(
+        "--browser",
+        action="store_true",
+        help="open the system browser instead of Sanket's own window",
+    )
+    shown.add_argument(
+        "--no-open",
+        action="store_true",
+        help="only serve: open neither a window nor a browser (also SANKET_NO_OPEN or CI set)",
+    )
+    parser.add_argument(
+        "--no-warm",
+        action="store_true",
+        help="don't compile the Numba kernels in the background at start-up",
+    )
+    commands = parser.add_subparsers(dest="command", metavar="{analyse,warm}")
+    commands.add_parser(
+        "warm",
+        help="compile and cache the Numba kernels now, then exit (an installer can run this)",
+        description="Compile the Numba kernels on tiny inputs and write the per-user cache, so "
+        "that the first recording opened doesn't wait for it.",
+    )
     analyse = commands.add_parser(
         "analyse",
         help="analyse recordings without the UI, one results JSON each",
@@ -105,8 +142,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "analyse":
         return _analyse(args)
+    if args.command == "warm":
+        print(f"Numba kernels ready in {warm.warm():.1f} s", flush=True)
+        return 0
 
-    dist = Path(os.environ.get("SANKET_FRONTEND_DIST", REPO_ROOT / "frontend" / "dist"))
+    dist = _frontend_dist()
     if not (dist / "index.html").is_file():
         print(
             f"sanket: no built frontend at {dist}; run `npm run build` in frontend/",
@@ -121,9 +161,55 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     workspace = args.workspace or Path(os.environ.get("SANKET_WORKSPACE") or default_workspace())
+    app = create_app(dist, workspace)
+    if not (args.no_warm or os.environ.get("SANKET_NO_WARM")):
+        warm.start()
 
     print(f"Sanket running at http://{args.host}:{args.port}", flush=True)
-    uvicorn.run(create_app(dist, workspace), host=args.host, port=args.port)
+    if args.no_open or os.environ.get("SANKET_NO_OPEN") or os.environ.get("CI"):
+        uvicorn.run(app, host=args.host, port=args.port)
+        return 0
+    return _serve_and_show(app, args.host, args.port, browser=args.browser)
+
+
+def _frontend_dist() -> Path:
+    """The built UI: SANKET_FRONTEND_DIST, else the copy bundled in a frozen build, else the
+    repo's `frontend/dist`."""
+    if override := os.environ.get("SANKET_FRONTEND_DIST"):
+        return Path(override)
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)) / "frontend" / "dist"
+    return REPO_ROOT / "frontend" / "dist"
+
+
+def _serve_and_show(app: object, host: str, port: int, *, browser: bool) -> int:
+    """Serve on a thread and show the UI: in Sanket's own window, or the system browser. Closing
+    the window stops the server; with a browser the server runs until interrupted."""
+    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port))  # type: ignore[arg-type]
+    thread = threading.Thread(target=server.run, name="sanket-server", daemon=True)
+    thread.start()
+    while not server.started and thread.is_alive():
+        time.sleep(0.02)
+    if not server.started:
+        return 1  # uvicorn has said why (a port in use)
+    # A wildcard bind is reached through loopback; the window shows only 127.0.0.1.
+    url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '', 'localhost') else host}:{port}"
+    try:
+        if not browser:
+            try:
+                window.run(url, user_data_dir() / "window")
+                return 0
+            except window.WindowUnavailable as exc:
+                print(f"sanket: no desktop window: {exc}; opening {url} in the browser instead")
+        if not webbrowser.open(url):
+            print(f"sanket: could not open a browser; browse to {url}", file=sys.stderr)
+        while thread.is_alive():
+            thread.join(0.5)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.should_exit = True
+        thread.join(5)
     return 0
 
 

@@ -1,8 +1,9 @@
 """Generate THIRD_PARTY.md from the lockfiles and enforce the licence policy (PLAN §2).
 
-Covers only what ships in the product: Python runtime dependencies (no dev group, no ml/)
-and non-dev npm packages. Run `uv run python tools/third_party.py` to regenerate, or with
-`--check` in CI to fail on a stale file or a disallowed or unrecognised licence.
+Covers only what ships in the product: Python runtime dependencies (the optional desktop
+window included; no dev group, no ml/, so not PyInstaller) and non-dev npm packages. Run
+`uv run python tools/third_party.py` to regenerate, or with `--check` in CI to fail on a stale
+file or a disallowed or unrecognised licence.
 """
 
 import argparse
@@ -62,6 +63,9 @@ BUNDLED: dict[str, tuple[tuple[str, str], ...]] = {
         ("Zstandard", "BSD-3-Clause"),
         ("libxcb and libXau", "MIT"),
     ),
+    # The Windows wheel ships Microsoft's WebView2 .NET wrappers and loader (the SDK's BSD-style
+    # licence); the WebView2 runtime itself is the system's, never bundled.
+    "pywebview": (("Microsoft WebView2 SDK (wrappers and loader)", "BSD-3-Clause-style"),),
     "soundfile": (
         ("libsndfile", "LGPL-2.1-or-later"),
         ("FLAC", "BSD-3-Clause"),
@@ -70,6 +74,25 @@ BUNDLED: dict[str, tuple[tuple[str, str], ...]] = {
         ("mpg123", "LGPL-2.1"),
         ("LAME", "LGPL-2.0"),
     ),
+}
+
+# The desktop-window extra (`uv sync --extra window`) is optional and platform-conditional, so a
+# given machine may not have it installed. Its licences are fixed here, from each package's own
+# metadata, so THIRD_PARTY.md comes out the same everywhere; the same policy checks them.
+EXTRA_LICENCES = {
+    "bottle": "MIT",
+    "clr-loader": "MIT",
+    "proxy-tools": "MIT",
+    "pythonnet": "MIT",
+    "pywebview": "BSD-3-Clause",
+    # macOS and OpenBSD back ends of pywebview, never installed on Windows or Linux.
+    "pyobjc-core": "MIT",
+    "pyobjc-framework-cocoa": "MIT",
+    "pyobjc-framework-quartz": "MIT",
+    "pyobjc-framework-security": "MIT",
+    "pyobjc-framework-uniformtypeidentifiers": "MIT",
+    "pyobjc-framework-webkit": "MIT",
+    "qtpy": "MIT",
 }
 
 
@@ -85,7 +108,16 @@ def classify(licence: str) -> str:
 
 def python_packages() -> list[tuple[str, str, str]]:
     exported = subprocess.run(
-        ["uv", "export", "--no-dev", "--no-hashes", "--no-emit-workspace", "--frozen"],
+        [
+            "uv",
+            "export",
+            "--no-dev",
+            "--no-hashes",
+            "--no-emit-workspace",
+            "--frozen",
+            "--extra",
+            "window",
+        ],
         cwd=ROOT,
         check=True,
         capture_output=True,
@@ -101,6 +133,8 @@ def python_packages() -> list[tuple[str, str, str]]:
 
 
 def _python_licence(name: str) -> str:
+    if name in EXTRA_LICENCES:
+        return EXTRA_LICENCES[name]
     meta = metadata.metadata(name)
     if expression := meta.get("License-Expression"):
         return expression
