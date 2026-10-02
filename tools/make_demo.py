@@ -9,6 +9,8 @@ All three files are synthetic (dsp.synth, truth in the SigMF annotations and a .
   - scene_widen.sigmf-meta: 8PSK through a 16x36 block interleaver, and QPSK with
     an outer RS(255,223) code, both VERIFIED.
   - scene_fsk.sigmf-meta: a lone coded 2-FSK signal, VERIFIED.
+  - scene_ldpc.sigmf-meta: a lone QPSK signal under the IEEE 802.11n n=648 rate-1/2 LDPC code,
+    identified from the catalogue and VERIFIED by its frame CRC.
 
 Run: uv run python tools/make_demo.py
 """
@@ -22,6 +24,7 @@ from typing import NotRequired, TypedDict
 from dsp.analyse import analyse
 from dsp.detect import detect
 from dsp.evidence import EvidenceLevel
+from dsp.fec import ldpc
 from dsp.ingest.dispatch import open_path
 from dsp.synth import fec
 from dsp.synth import interleave as il
@@ -180,6 +183,24 @@ def build_fsk() -> tuple[Generated, Scene, list[TruthEntry]]:
     return g, scene, [_frames_truth(g, 0, "2FSK", "2fsk", 100_000.0)]
 
 
+def build_ldpc() -> tuple[Generated, Scene, list[TruthEntry]]:
+    """QPSK under a catalogued LDPC code (802.11n, n = 648, rate 1/2), 10 dB Es/N0."""
+    inner = fec.standard_ldpc(ldpc.by_name("IEEE 802.11n n=648 r1/2"))
+    qpsk = _spec(
+        "qpsk",
+        8,
+        10.0,
+        inner=inner,
+        offset=150_000.0 / SAMPLE_RATE,
+        stream_offset=123,
+        start=10_000,
+        duration=230_000,
+    )
+    scene = Scene(samples=1 << 18, signals=(qpsk,), noise_db=NOISE_DB, sample_rate=SAMPLE_RATE)
+    g = generate(scene, SEED + 3)
+    return g, scene, [_frames_truth(g, 0, "QPSK", "qpsk + LDPC 802.11n r1/2", 150_000.0)]
+
+
 def write_and_verify(stem: Path, g: Generated, scene: Scene, truth: list[TruthEntry]) -> bool:
     stem.parent.mkdir(parents=True, exist_ok=True)
     path = write_sigmf(stem, g, scene, "cf32_le")
@@ -240,7 +261,8 @@ def main() -> None:
     ok_main = write_and_verify(OUT_DIR / "scene", *build_main())
     ok_widen = write_and_verify(OUT_DIR / "scene_widen", *build_widen())
     ok_fsk = write_and_verify(OUT_DIR / "scene_fsk", *build_fsk())
-    if not (ok_main and ok_widen and ok_fsk):
+    ok_ldpc = write_and_verify(OUT_DIR / "scene_ldpc", *build_ldpc())
+    if not (ok_main and ok_widen and ok_fsk and ok_ldpc):
         print("\nSOME CHECKS FAILED - see above")
         sys.exit(1)
     print("\nall checks passed")

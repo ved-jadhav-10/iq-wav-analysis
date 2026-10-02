@@ -76,18 +76,20 @@ BUNDLED: dict[str, tuple[tuple[str, str], ...]] = {
     ),
 }
 
-# Reference data shipped inside Sanket's own source (no package): (data, where it came from,
-# licence). The numbers are the standards' own; each was cross-checked against the MIT-licensed
-# implementation named, whose licence text sits beside the data in dsp/src/dsp/fec/ldpc_codes/.
+# Reference data shipped inside Sanket's own source (no package): (data, what it was derived
+# from, licence). The numbers were extracted mechanically from the MIT-licensed files of the
+# implementation named (tools/gen_ldpc_data.py); they describe the published standards' codes but
+# have not been compared with the standards' own tables. The licence texts sit beside the sources
+# in dsp/src/dsp/fec/ldpc_codes/ and are bundled by packaging/sanket.spec.
 BUNDLED_DATA: tuple[tuple[str, str, str], ...] = (
     (
         "IEEE 802.11n n=648 LDPC base matrices (dsp/fec/ldpc_data.py)",
-        "yairmz/ldpc, Copyright (c) 2021 Yair M",
+        "yairmz/ldpc (.qc files), Copyright (c) 2021 Yair M",
         "MIT",
     ),
     (
         "CCSDS TC and TM LDPC parity-check tables (dsp/fec/ldpc_data.py)",
-        "labrador-ldpc, Copyright 2017 Adam Greig",
+        "labrador-ldpc (compact_parity_checks.rs), Copyright 2017 Adam Greig",
         "MIT",
     ),
 )
@@ -205,7 +207,7 @@ def render(
     lines += ["| Library | Shipped in | Licence |", "|---|---|---|"]
     lines += [f"| {library} | {package} | {licence} |" for library, package, licence in native]
     lines += ["", "## Reference data bundled in Sanket", ""]
-    lines += ["| Data | Cross-checked against | Licence |", "|---|---|---|"]
+    lines += ["| Data | Derived from | Licence |", "|---|---|---|"]
     lines += [f"| {data} | {source} | {licence} |" for data, source, licence in BUNDLED_DATA]
     return "\n".join(lines) + "\n"
 

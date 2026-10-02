@@ -52,11 +52,13 @@ def get(url: str, *, data: bytes | None = None) -> tuple[int, bytes]:
 
 
 def main() -> int:
-    recording = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "data/demo/scene_fsk.sigmf-meta")
+    # With no argument the bundled sample recordings are opened through the API, which is what
+    # the first-run user does; a path opens that file instead.
+    recording = Path(sys.argv[1]) if len(sys.argv) > 1 else None
     if not EXE.is_file():
         return fail(f"{EXE} not built (uv run python tools/build.py)")
-    if not recording.is_file():
-        return fail(f"{recording} missing (uv run python tools/make_demo.py)")
+    if recording is not None and not recording.is_file():
+        return fail(f"{recording} missing")
 
     port = free_port()
     base = f"http://127.0.0.1:{port}"
@@ -83,7 +85,7 @@ def main() -> int:
                 server.kill()
 
 
-def _check(server: subprocess.Popen[bytes], base: str, recording: Path, log: Path) -> int:
+def _check(server: subprocess.Popen[bytes], base: str, recording: Path | None, log: Path) -> int:
     began = time.monotonic()
     while True:
         if server.poll() is not None:
@@ -102,9 +104,18 @@ def _check(server: subprocess.Popen[bytes], base: str, recording: Path, log: Pat
     if status != 200 or b'<div id="root"' not in page:
         return fail(f"the bundled UI isn't served (HTTP {status})")
 
-    status, body = get(
-        f"{base}/api/v1/recordings", data=json.dumps({"path": str(recording)}).encode()
-    )
+    status, body = get(f"{base}/api/v1/samples")
+    listed = {s["id"] for s in json.loads(body)} if status == 200 else set()
+    if {"scene", "scene_widen", "scene_fsk", "scene_ldpc"} - listed:
+        return fail(f"the bundled samples are missing (HTTP {status}, listed: {sorted(listed)})")
+    print(f"smoke: {len(listed)} sample recordings bundled")
+
+    if recording is None:
+        status, body = get(f"{base}/api/v1/samples/scene_ldpc/open", data=b"{}")
+    else:
+        status, body = get(
+            f"{base}/api/v1/recordings", data=json.dumps({"path": str(recording)}).encode()
+        )
     if status != 200:
         return fail(f"open returned HTTP {status}: {body.decode(errors='replace')}")
     rec_id = json.loads(body)["id"]

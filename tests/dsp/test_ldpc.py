@@ -1,7 +1,12 @@
 """The standard LDPC catalogue, encoder and min-sum decoder against exact ground truth: the
-parity-check matrices' structure (and a checksum of their edge lists published by labrador-ldpc,
-MIT), encoding through two independent paths (`dsp.gf2` and `galois`), decoding of BPSK over
-AWGN to the exact message, and the alignment screen on a stream at a known offset."""
+parity-check matrices' structure (and the checksums of their edge lists that labrador-ldpc, MIT,
+tests its own copy of the tables against: the data here was generated from the same file, so that
+check is circular and says nothing about the standards' PDFs), encoding through two independent
+paths (`dsp.gf2` and `galois`), decoding of BPSK over AWGN to the exact message, and the alignment
+screen on streams at a known offset: its recall near each code's waterfall, its false alarms on
+noise and uncoded data, and degenerate and non-finite input."""
+
+import time
 
 import numpy as np
 import pytest
@@ -29,7 +34,9 @@ EXPECTED = {
 }
 
 # labrador-ldpc's own test (MIT, Copyright 2017 Adam Greig): CRC-32 over the (check, variable)
-# pairs of each code in the order its tables give them, "manually verified" there.
+# pairs of each code in the order its tables give them. The tables here were generated from that
+# crate's own file, so this compares the data with the file it came from: it catches a parsing or
+# construction error, not an error in the file or a difference from the standards' tables.
 LABRADOR_EDGE_CRC = {
     "CCSDS TC n=128 k=64": 0x13A9D28D,
     "CCSDS TC n=256 k=128": 0xC3CC7625,
@@ -132,15 +139,19 @@ def test_weight_distributions_of_the_regular_looking_codes() -> None:
 
 
 @pytest.mark.parametrize("name", list(LABRADOR_EDGE_CRC))
-def test_ccsds_edge_lists_match_labradors_published_checksums(name: str) -> None:
+def test_ccsds_edge_lists_match_the_checksums_of_the_file_they_were_generated_from(
+    name: str,
+) -> None:
     assert _edge_crc(name) == LABRADOR_EDGE_CRC[name]
     # ...and the catalogue's own (sorted) edge list is the same set of edges.
     code = _code(name)
     assert len(set(zip(code.rows.tolist(), code.cols.tolist(), strict=True))) == len(code.cols)
 
 
-def test_ieee_80211n_first_rows_are_the_standards() -> None:
-    # IEEE 802.11-2020 Annex F, n = 648 rate 1/2, first block row (a few columns of it).
+def test_ieee_80211n_base_matrices_have_the_expected_structure() -> None:
+    # Spot values of the n = 648 rate 1/2 first block row and the shape and dual-diagonal parity
+    # part of every rate: a sanity check of the generated tables, not a comparison with the
+    # standard's own tables.
     first = ldpc_data.IEEE_802_11N_648["1/2"][0]
     assert first[:5] == (0, -1, -1, -1, 0)
     assert first[12:14] == (1, 0)
@@ -311,15 +322,36 @@ def _stream(code: LdpcCode, offset: int, words: int, ebn0: float, seed: int) -> 
     return _llr(bits, ebn0, code.k / code.transmitted, rng)
 
 
-def test_find_alignment_recovers_a_known_offset_by_hard_syndrome() -> None:
+def _around(
+    code: LdpcCode, before: int, words: int, after: int, ebn0: float, seed: int
+) -> NDArray[np.float64]:
+    """`before` unrelated random bits, `words` code words, then `after` more random bits, all at
+    the same SNR: a burst of a code's stream inside a longer one."""
+    rng = np.random.default_rng(seed)
+    coded = ldpc.encode(code, _messages(code, words, seed + 1)).ravel()
+    bits = np.concatenate(
+        [
+            rng.integers(0, 2, before, dtype=np.uint8),
+            coded,
+            rng.integers(0, 2, after, dtype=np.uint8),
+        ]
+    )
+    return _llr(bits, ebn0, code.k / code.transmitted, rng)
+
+
+UNPUNCTURED = [c.name for c in ldpc.CATALOGUE if c.punctured == 0]
+
+
+def test_find_alignment_recovers_a_known_offset_by_soft_syndrome() -> None:
     code = _code("IEEE 802.11n n=648 r1/2")
     stream = _stream(code, offset=123, words=6, ebn0=4.5, seed=40)
     found = ldpc.find_alignment(stream, code, codewords=4)
-    assert found.method == "syndrome" and found.hypotheses == 648 and found.codewords == 4
-    assert found.found and found.offset == 123
-    assert found.rate < found.threshold < 0.5
-    # A noisy but unshuffled stream scores 0 only when clean; here some checks still fail.
-    assert 0.0 <= found.rate < 0.35
+    assert found.method == "soft syndrome" and found.codewords == 4
+    assert found.windows == 1 and found.hypotheses == found.windows * 648
+    assert found.found and found.offset == 123 and found.converged == 4
+    assert found.statistic > found.threshold > 0  # the gate that paid for the decoder was cleared
+    # The hard decisions at the right alignment still fail some checks at this SNR.
+    assert 0.0 < found.rate < 0.35
 
 
 def test_find_alignment_abstains_on_shuffled_bits() -> None:
@@ -327,9 +359,8 @@ def test_find_alignment_abstains_on_shuffled_bits() -> None:
     stream = _stream(code, offset=123, words=6, ebn0=4.5, seed=40)
     shuffled = np.random.default_rng(41).permutation(stream)
     result = ldpc.find_alignment(shuffled, code, codewords=4)
-    assert not result.found
-    assert result.rate > result.threshold  # nothing beat chance over all 648 offsets
-    assert result.rate > 0.4
+    assert not result.found and result.converged < 4
+    assert result.rate > 0.4  # chance
 
 
 def test_find_alignment_on_a_punctured_code_decodes_each_offset() -> None:
@@ -337,7 +368,7 @@ def test_find_alignment_on_a_punctured_code_decodes_each_offset() -> None:
     stream = _stream(code, offset=77, words=3, ebn0=4.5, seed=50)
     found = ldpc.find_alignment(stream, code, codewords=2)
     assert found.method == "decode" and found.hypotheses == code.transmitted
-    assert found.found and found.offset == 77 and found.rate == 0.0
+    assert found.found and found.offset == 77 and found.rate == 0.0 and found.converged == 2
     shuffled = np.random.default_rng(51).permutation(stream)
     assert not ldpc.find_alignment(shuffled, code, codewords=2).found
 
@@ -348,4 +379,193 @@ def test_find_alignment_needs_at_least_one_scannable_block() -> None:
         ldpc.find_alignment(np.zeros(2 * code.n - 2), code)
     # Just enough for one code word at every offset: scans one block, not the four asked for.
     short = ldpc.find_alignment(np.zeros(2 * code.n - 1), code, codewords=4)
-    assert short.codewords == 1
+    assert short.codewords == 1 and not short.found
+
+
+def test_find_alignment_scans_past_unrelated_blocks_at_the_head_of_the_stream() -> None:
+    """Five blocks of unrelated bits and 200 more, then six clean 802.11n r5/6 code words: the
+    screen used to look only at the head and miss them."""
+    code = _code("IEEE 802.11n n=648 r5/6")
+    stream = _around(code, 5 * 648 + 200, 6, 0, ebn0=6.0, seed=60)
+    found = ldpc.find_alignment(stream, code)
+    assert found.found and found.offset == 200 and found.converged == 4
+    assert found.windows > 1 and found.hypotheses == found.windows * 648
+
+
+def test_find_alignment_finds_a_burst_in_the_middle_of_a_longer_stream() -> None:
+    code = _code("IEEE 802.11n n=648 r1/2")
+    stream = _around(code, 10 * 648 + 77, 7, 10 * 648, ebn0=6.0, seed=61)
+    found = ldpc.find_alignment(stream, code)
+    assert found.found and found.offset == 77 and found.windows == ldpc.MAX_WINDOWS
+    assert found.hypotheses == ldpc.MAX_WINDOWS * 648
+
+
+# Eb/N0 (dB) near each code's waterfall, and the fewest of 20 streams (4 code words after a
+# random offset) the screen must find at the right offset. Found means every one of the 4 words
+# converged, so the decoder run at the true offset on the same words is the ceiling.
+RECALL = [
+    ("IEEE 802.11n n=648 r1/2", 2.0, 17),
+    ("IEEE 802.11n n=648 r2/3", 2.5, 13),
+    ("IEEE 802.11n n=648 r3/4", 3.0, 14),
+    ("IEEE 802.11n n=648 r5/6", 3.5, 14),
+    ("CCSDS TC n=128 k=64", 3.5, 18),
+    ("CCSDS TC n=256 k=128", 2.5, 13),
+    ("CCSDS TC n=512 k=256", 2.0, 6),
+]
+
+
+@pytest.mark.parametrize(("name", "ebn0", "at_least"), RECALL)
+def test_find_alignment_is_about_as_sensitive_as_the_decoder(
+    name: str, ebn0: float, at_least: int
+) -> None:
+    code = _code(name)
+    found = decoder = 0
+    for trial in range(20):
+        offset = int(np.random.default_rng(trial).integers(0, code.n))
+        stream = _stream(code, offset, 6, ebn0, 100 + trial)
+        result = ldpc.find_alignment(stream, code, codewords=4)
+        blocks = stream[offset : offset + 4 * code.n].reshape(4, -1)
+        decodes = bool(ldpc.decode_many(blocks, code, max_iter=50)[1].all())
+        decoder += decodes
+        assert not result.found or result.offset == offset  # a find is never at the wrong place
+        assert not result.found or decodes  # and always one the decoder can decode
+        found += result.found
+    assert found >= at_least
+    assert found >= decoder - 1
+
+
+@pytest.mark.parametrize("family", ["IEEE 802.11n", "CCSDS TC"])
+def test_find_alignment_never_fires_on_500_noise_and_uncoded_streams(family: str) -> None:
+    """Gaussian noise and uncoded random bits (at 6 dB, as confident as real data), 250 of each
+    per code family, rotating through its codes. Measured: 0 of 500 per family."""
+    codes = [_code(n) for n in UNPUNCTURED if n.startswith(family)]
+    rng = np.random.default_rng(2026)
+    fired = 0
+    for i in range(500):
+        code = codes[i % len(codes)]
+        length = 6 * code.n + int(rng.integers(0, code.n))
+        if i % 2:
+            llr = 4.0 * rng.standard_normal(length)
+        else:
+            llr = _llr(rng.integers(0, 2, length, dtype=np.uint8), 6.0, 0.5, rng)
+        fired += ldpc.find_alignment(llr, code).found
+    assert fired == 0
+
+
+def test_find_alignment_never_fires_on_long_noise_streams_over_every_window() -> None:
+    rng = np.random.default_rng(7)
+    for code in map(_code, UNPUNCTURED):
+        for _ in range(8):
+            result = ldpc.find_alignment(4.0 * rng.standard_normal(40 * code.n), code)
+            assert result.windows == ldpc.MAX_WINDOWS and not result.found
+
+
+def test_find_alignment_stays_within_its_time_budget() -> None:
+    code = _code("IEEE 802.11n n=648 r1/2")
+    stream = _stream(code, 300, 6, 3.0, 5)
+    ldpc.find_alignment(stream, code)  # compiled
+    began = time.perf_counter()
+    for _ in range(5):
+        ldpc.find_alignment(stream, code)
+    short = (time.perf_counter() - began) / 5
+    noise = 4.0 * np.random.default_rng(6).standard_normal(40 * code.n)
+    began = time.perf_counter()
+    ldpc.find_alignment(noise, code)
+    long = time.perf_counter() - began
+    # Targets are 50 ms and a few hundred ms; the bounds leave room for a loaded machine.
+    assert short < 0.25 and long < 1.0
+
+
+@pytest.mark.parametrize("name", ["IEEE 802.11n n=648 r1/2", "IEEE 802.11n n=648 r5/6"])
+def test_degenerate_streams_are_never_found(name: str) -> None:
+    """The all-zero word is a code word of every linear code, so constant LLRs, erasures and short
+    repeating patterns satisfy every check at every offset and say nothing about the alignment."""
+    code = _code(name)
+    n = 6 * code.n
+    rng = np.random.default_rng(3)
+    cases = {
+        "zeros": np.zeros(n),
+        "ones": np.ones(n),
+        "minus ones": -3.0 * np.ones(n),
+        "alternating": np.tile([5.0, -5.0], n // 2),
+        "period 8": np.tile([5.0, -5.0, -5.0, 5.0, 5.0, 5.0, -5.0, 5.0], n // 8),
+        "period 27": np.tile(5.0 * rng.choice([-1.0, 1.0], 27), n // 27 + 1)[:n],
+        "mostly erased": np.where(rng.random(n) < 0.7, 0.0, 5.0 * rng.choice([-1.0, 1.0], n)),
+        "almost constant": np.where(rng.random(n) < 0.01, -5.0, 5.0),
+    }
+    for label, llr in cases.items():
+        result = ldpc.find_alignment(llr, code)
+        assert not result.found, label
+
+
+def test_an_erased_block_never_converges() -> None:
+    code = _code("CCSDS TC n=256 k=128")
+    erased = ldpc.decode(np.zeros(code.n), code)
+    assert not erased[1] and erased[3] == 0  # every check "holds" on the all-zero word; not a find
+    mostly = np.zeros(code.n)
+    mostly[: code.n // 4] = 5.0
+    assert not ldpc.decode(mostly, code)[1]
+
+
+def _nonfinite_blocks() -> tuple[LdpcCode, NDArray[np.uint8], NDArray[np.float64]]:
+    code = _code("IEEE 802.11n n=648 r1/2")
+    words = ldpc.encode(code, _messages(code, 4, seed=70))
+    llr = np.asarray(6.0 * (1.0 - 2.0 * words), np.float64)
+    llr[1] = np.nan  # a block the demodulator could not scale
+    rng = np.random.default_rng(71)
+    spots = rng.choice(code.n, 40, replace=False)
+    llr[2, spots[:20]] = np.nan
+    llr[2, spots[20:30]] = np.where(words[2, spots[20:30]] == 0, np.inf, -np.inf)
+    llr[3, spots[30:]] = np.where(words[3, spots[30:]] == 0, np.inf, -np.inf)  # confident, correct
+    return code, words, llr
+
+
+def test_non_finite_llrs_are_cleaned_and_decode_the_blocks_around_them() -> None:
+    code, words, llr = _nonfinite_blocks()
+    assert np.isfinite(ldpc.clean_llr(llr)).all()
+    assert (ldpc.clean_llr(llr)[1] == 0).all()  # NaN is an erasure
+    hard, converged, _, _ = ldpc.decode_many(llr, code)
+    assert converged.tolist() == [True, False, True, True]
+    for row in (0, 2, 3):
+        assert np.array_equal(hard[row], words[row])
+    # An erased block is not a decode: not "converged", whatever its hard decisions are.
+    assert not ldpc.decode(np.full(code.n, np.nan), code)[1]
+
+
+def test_find_alignment_survives_non_finite_llrs() -> None:
+    code = _code("CCSDS TC n=256 k=128")
+    stream = _stream(code, 40, 6, 6.0, 72)
+    rng = np.random.default_rng(73)
+    stream[rng.choice(len(stream), 30, replace=False)] = np.nan
+    sure = np.argsort(-np.abs(stream))[:200]  # the most confident decisions, which are right
+    spots = rng.choice(sure, 10, replace=False)
+    stream[spots] = np.copysign(np.inf, stream[spots])
+    found = ldpc.find_alignment(stream, code)
+    assert found.found and found.offset == 40
+    nothing = ldpc.find_alignment(np.full(8 * code.n, np.nan), code)
+    assert not nothing.found and nothing.statistic == 0.0
+
+
+@pytest.mark.parametrize(
+    ("name", "complement_is_a_code_word"),
+    [
+        ("IEEE 802.11n n=648 r1/2", False),
+        ("IEEE 802.11n n=648 r2/3", False),
+        ("IEEE 802.11n n=648 r3/4", False),
+        ("IEEE 802.11n n=648 r5/6", True),
+        ("CCSDS TC n=128 k=64", True),
+        ("CCSDS TC n=512 k=256", True),
+    ],
+)
+def test_a_complemented_stream_is_a_code_word_only_when_every_check_has_even_weight(
+    name: str, complement_is_a_code_word: bool
+) -> None:
+    code = _code(name)
+    assert (not (code.row_weights % 2).any()) is complement_is_a_code_word
+    stream = _stream(code, 91, 6, 8.0, 80)
+    upright = ldpc.find_alignment(stream, code)
+    assert upright.found and upright.offset == 91
+    inverted = ldpc.find_alignment(-stream, code)
+    assert inverted.found is complement_is_a_code_word
+    if complement_is_a_code_word:
+        assert inverted.offset == 91

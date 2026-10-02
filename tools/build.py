@@ -1,6 +1,7 @@
 """Build the one-folder desktop program: the frontend, then PyInstaller on packaging/sanket.spec.
 
 Run: uv run python tools/build.py [--skip-frontend]   ->   dist/sanket/sanket.exe
+The sample recordings (data/demo) are made first when missing.
 
 PyInstaller is a dev-only tool (GPL-2.0 with the bootloader exception, which lets the programs
 it builds carry any licence); the product never imports it. The window needs pywebview, so
@@ -28,6 +29,8 @@ def main() -> int:
     args = parser.parse_args()
 
     began = time.perf_counter()
+    if not (ROOT / "data" / "demo" / "scene.sigmf-meta").is_file():
+        subprocess.run([sys.executable, str(ROOT / "tools" / "make_demo.py")], cwd=ROOT, check=True)
     if not args.skip_frontend:
         npm = shutil.which("npm")
         if npm is None:

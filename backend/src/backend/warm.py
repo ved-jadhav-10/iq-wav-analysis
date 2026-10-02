@@ -32,10 +32,11 @@ def warm() -> float:
     # Soft-decision Viterbi, K=7 rate 1/2 (dsp.fec.viterbi).
     viterbi.decode(rng.standard_normal(2 * 24))
 
-    # LDPC min-sum decoder and the alignment scan's syndrome kernel (dsp.fec.ldpc).
-    code = ldpc.CATALOGUE[0]
-    ldpc.decode(rng.standard_normal(code.transmitted), code, max_iter=2)
-    ldpc.find_alignment(rng.standard_normal(2 * code.transmitted), code, codewords=1)
+    # LDPC min-sum decoder and the alignment screen's kernels (dsp.fec.ldpc): a clean stream of
+    # a small code runs the soft-syndrome scan, the degenerate-window test and the decoder.
+    code = ldpc.by_name("CCSDS TC n=128 k=64")
+    words = ldpc.encode(code, rng.integers(0, 2, (3, code.k), dtype=np.uint8)).ravel()
+    ldpc.find_alignment(4.0 * (1.0 - 2.0 * words), code, codewords=2)
 
     # Every catalogued CRC, one frame (dsp.framing); the kernel is shared, the types are not.
     CRCS[0].compute_many(rng.integers(0, 2, (2, 32), dtype=np.uint8))

@@ -93,7 +93,7 @@ do not edit by hand. Lists only what ships in Sanket, not development tools.
 
 ## Reference data bundled in Sanket
 
-| Data | Cross-checked against | Licence |
+| Data | Derived from | Licence |
 |---|---|---|
-| IEEE 802.11n n=648 LDPC base matrices (dsp/fec/ldpc_data.py) | yairmz/ldpc, Copyright (c) 2021 Yair M | MIT |
-| CCSDS TC and TM LDPC parity-check tables (dsp/fec/ldpc_data.py) | labrador-ldpc, Copyright 2017 Adam Greig | MIT |
+| IEEE 802.11n n=648 LDPC base matrices (dsp/fec/ldpc_data.py) | yairmz/ldpc (.qc files), Copyright (c) 2021 Yair M | MIT |
+| CCSDS TC and TM LDPC parity-check tables (dsp/fec/ldpc_data.py) | labrador-ldpc (compact_parity_checks.rs), Copyright 2017 Adam Greig | MIT |
