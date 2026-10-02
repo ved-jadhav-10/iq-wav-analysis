@@ -39,8 +39,20 @@ You need **Node.js 22**, [uv](https://docs.astral.sh/uv/) and **Python 3.12** (`
 uv sync                              # Python workspace + dev tools
 npm ci --prefix frontend
 npm run build --prefix frontend      # sanket serves this build
-uv run sanket                        # http://127.0.0.1:8765
+uv run sanket                        # Sanket's own window over http://127.0.0.1:8765
 ```
+
+`sanket` opens a desktop window when pywebview is installed (`uv sync --extra window`; Windows uses the system's Edge WebView2, Linux GTK/WebKit) and otherwise your browser. `sanket --browser` forces the browser, `sanket --no-open` only serves, `sanket warm` compiles the Numba kernels ahead of the first analysis (the first run on a machine otherwise spends 10–20 s compiling). The window asks before closing while an analysis is running.
+
+### One-folder build (Windows)
+
+```bash
+uv sync --extra window
+uv run python tools/build.py         # frontend, sample recordings, then PyInstaller -> dist/sanket/sanket.exe
+uv run python tools/smoke_frozen.py  # starts it, opens a bundled sample, checks the result
+```
+
+The folder runs with networking off and carries the built UI and the sample recordings below (listed at `GET /api/v1/samples`). The Linux build is not yet checked.
 
 Checks, as CI runs them:
 
@@ -62,6 +74,7 @@ npx playwright install chromium && npm run e2e   # offline smoke test against sa
 | `scene.sigmf-meta` | QPSK and BPSK (conv K=7 r½, CCSDS frames, CRC-16), FM, uncoded QPSK | Both coded signals VERIFIED; FM labelled analog; the uncoded QPSK with its FEC UNKNOWN and the reason |
 | `scene_widen.sigmf-meta` | 8PSK with a block interleaver; QPSK inside RS(255,223) | Both VERIFIED, with the de-interleave and RS stages shown |
 | `scene_fsk.sigmf-meta` | Coded 2-FSK | VERIFIED frames |
+| `scene_ldpc.sigmf-meta` | QPSK under the IEEE 802.11n n = 648 rate-½ LDPC code | The code named from the catalogue, VERIFIED by the frame CRC |
 
 What each view shows: [docs/UI.md](docs/UI.md#what-each-view-shows).
 
