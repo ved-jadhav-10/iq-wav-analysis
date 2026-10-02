@@ -63,6 +63,56 @@ describe('plainHeadline', () => {
     expect(plainHeadline(d)).toBe('Digital QPSK signal, error-corrected and proven by 51 of 51 frame checksums (CRC)')
   })
 
+  it('names the interleaver it undid, without the bit offset, only when that was verified', () => {
+    const verified: HeadlineInput = {
+      ...base,
+      level: 'VERIFIED',
+      label: '8PSK',
+      headline: '8PSK 50 kBd → conv K=7 r½ → CCSDS ASM frames, 67/67 CRC pass',
+      stages: [
+        estimate,
+        stage('classify', 'Classify', 'VERIFIED', [p('modulation', 'Modulation', '8PSK', { level: 'VERIFIED' })]),
+        stage('deinterleave', 'De-interleave', 'VERIFIED', [
+          p('interleaver', 'Interleaver', 'block 16x36 from bit 284', { level: 'VERIFIED' }),
+        ]),
+        stage('fec', 'FEC', 'VERIFIED', [p('code', 'Code', 'conv K=7 r½', { level: 'VERIFIED' })]),
+        stage('frame', 'Frame', 'VERIFIED'),
+      ],
+      frames: frames(67),
+    }
+    expect(plainHeadline(verified)).toBe(
+      'Digital 8PSK signal, de-interleaved (block 16x36), error-corrected and proven by 67 of 67 frame checksums (CRC)',
+    )
+    const hypothesis = {
+      ...verified,
+      stages: verified.stages.map((s) =>
+        s.id === 'deinterleave'
+          ? { ...s, parameters: [p('interleaver', 'Interleaver', 'block 16x36 from bit 284', { level: 'HYPOTHESIS' })] }
+          : s,
+      ),
+    }
+    expect(plainHeadline(hypothesis)).not.toContain('de-interleaved')
+  })
+
+  it('says when the error-correcting code was found blind rather than taken from the catalogue', () => {
+    const d: HeadlineInput = {
+      ...base,
+      level: 'VERIFIED',
+      label: 'QPSK',
+      headline: 'QPSK 35.7 kBd → Conv K=9 r1/2 (561,753)₈ (found blind) → CCSDS ASM frames, 47/47 CRC pass',
+      stages: [
+        estimate,
+        classify,
+        stage('fec', 'FEC', 'VERIFIED', [p('code', 'Code', 'Conv K=9 r1/2 (561,753)₈', { level: 'VERIFIED' })]),
+        stage('frame', 'Frame', 'VERIFIED'),
+      ],
+      frames: frames(47),
+    }
+    expect(plainHeadline(d)).toBe(
+      'Digital QPSK signal, error-corrected by a code it found blind, and proven by 47 of 47 frame checksums (CRC)',
+    )
+  })
+
   it('leaves out error-corrected for an uncoded chain and counts partial passes', () => {
     const d: HeadlineInput = {
       ...base,

@@ -64,8 +64,14 @@ export function plainHeadline(d: HeadlineInput): string {
       if (frameStage?.level === 'VERIFIED') {
         const code = param(d.stages, 'fec', 'code')?.value
         const coded = typeof code === 'string' && code.length > 0 && !/^uncoded$/i.test(code)
+        const blind = coded && /\(found blind\)/i.test(d.headline)
+        const il = param(d.stages, 'deinterleave', 'interleaver')
+        const undone =
+          il && il.level === 'VERIFIED' && typeof il.value === 'string' && il.value.trim()
+            ? il.value.replace(/\s+from bit\s+\d+\s*$/i, '').trim()
+            : null
         return (
-          `${base}, ${coded ? 'error-corrected and ' : ''}proven by ${integer.format(passes)} of ` +
+          `${base}, ${undone ? `de-interleaved (${undone}), ` : ''}${coded ? (blind ? 'error-corrected by a code it found blind, and ' : 'error-corrected and ') : ''}proven by ${integer.format(passes)} of ` +
           `${integer.format(complete)} frame ${complete === 1 ? 'checksum' : 'checksums'} (CRC)` +
           (matched ? `; matches ${matched}` : '')
         )

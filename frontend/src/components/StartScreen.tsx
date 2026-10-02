@@ -143,9 +143,11 @@ export function StartScreen({ opening, openingSample, onUpload, onOpenSample }: 
           </div>
 
           {samples.state === 'loading' && (
-            <p role="status" className="text-xs text-muted-foreground italic">
-              Looking for the bundled samples…
-            </p>
+            <div className="min-h-[440px]">
+              <p role="status" className="text-xs text-muted-foreground italic">
+                Looking for the bundled samples…
+              </p>
+            </div>
           )}
           {samples.state === 'error' && (
             <p role="alert" className="text-xs text-destructive">

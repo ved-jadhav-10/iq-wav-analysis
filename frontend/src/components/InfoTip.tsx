@@ -87,7 +87,7 @@ function Tip({ term, entry }: { term: string; entry: GlossaryEntry }) {
           if (pinned) close()
           else setPinned(true)
         }}
-        className="inline-flex size-3.5 shrink-0 cursor-help items-center justify-center rounded-full align-middle text-subtle-foreground hover:text-foreground focus-visible:text-foreground"
+        className="-m-[5px] inline-flex size-6 shrink-0 cursor-help items-center justify-center rounded-full align-middle text-subtle-foreground hover:text-foreground focus-visible:text-foreground"
       >
         <CircleHelp className="size-3.5" aria-hidden />
       </button>
