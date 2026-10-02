@@ -18,6 +18,8 @@ def test_assumptions_come_first_then_each_signals_headline_and_values(
 ) -> None:
     table = rows(sample_results)
     assert [(r["signal"], r["stage"], r["id"]) for r in table] == [
+        ("", "document", "results_sha256"),
+        ("", "document", "sanket_version"),
         ("", "assumptions", "datatype"),
         ("", "assumptions", "data_offset"),
         ("", "assumptions", "sample_rate"),
@@ -75,3 +77,27 @@ def test_signal_headline_row_carries_label_headline_and_level(sample_results: Re
 
 def test_output_is_deterministic(sample_results: Results) -> None:
     assert render_csv(sample_results) == render_csv(sample_results)
+
+
+def test_the_table_carries_the_results_hash_and_the_recordings_files(
+    sample_results: Results,
+) -> None:
+    import hashlib
+
+    from dsp.results import FileIdentity, RecordingIdentity
+
+    digest = "ab" * 32
+    results = sample_results.model_copy(
+        update={
+            "recording": RecordingIdentity(
+                container="SigMF",
+                samples=10,
+                files=(FileIdentity(name="rec.sigmf-data", size_bytes=80, sha256=digest),),
+            )
+        }
+    )
+    table = rows(results)
+    own = next(r for r in table if r["id"] == "results_sha256")
+    assert own["value"] == hashlib.sha256(results.to_json().encode()).hexdigest()
+    file = next(r for r in table if r["stage"] == "recording")
+    assert (file["name"], file["value"], file["level"]) == ("rec.sigmf-data", digest, "MEASURED")

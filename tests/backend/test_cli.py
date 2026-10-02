@@ -330,3 +330,53 @@ def test_analyse_summary_writes_plain_text_beside_the_results(
     assert cli.main(["analyse", str(sigmf_path), "--out", str(out), "--summary"]) == 0
     text = (out / "rec.summary.txt").read_text(encoding="utf-8")
     assert text.startswith("Sanket ") and "Signal 1 (signal_0)" in text
+
+
+def test_the_results_name_the_recordings_files_by_content_and_the_rule_sets(
+    tmp_path: Path, sigmf_path: Path
+) -> None:
+    import hashlib
+
+    out = tmp_path / "out"
+    assert cli.main(["analyse", str(sigmf_path), "--out", str(out), "--csv", "--summary"]) == 0
+    data = load(out / "rec.results.json")
+    assert data["schemaVersion"] == SCHEMA_VERSION == "0.6.0"
+    identity = data["recording"]
+    assert identity["container"] and identity["samples"] > 0
+    # The metadata file and the dataset it names, by name only, with the hash of each file's bytes.
+    files = {f["name"]: f for f in identity["files"]}
+    assert set(files) == {"rec.sigmf-meta", "rec.sigmf-data"}
+    for name, f in files.items():
+        raw = (sigmf_path.parent / name).read_bytes()
+        assert f["sizeBytes"] == len(raw)
+        assert f["sha256"] == hashlib.sha256(raw).hexdigest()
+    assert all("/" not in f["name"] and "\\" not in f["name"] for f in identity["files"])
+    assert {c["name"] for c in data["catalogues"]} == {
+        "fec-interleaver",
+        "framing",
+        "known-systems",
+    }
+    # Every export carries the hash of the JSON it was made from.
+    digest = hashlib.sha256((out / "rec.results.json").read_bytes()).hexdigest()
+    assert digest in (out / "rec.results.csv").read_text(encoding="utf-8")
+    assert f"Results SHA-256 {digest}" in (out / "rec.summary.txt").read_text(encoding="utf-8")
+
+
+def test_a_sequence_hashes_every_file(tmp_path: Path, sigmf_path: Path) -> None:
+    import hashlib
+
+    raw = sigmf_path.with_suffix(".sigmf-data").read_bytes()
+    half = len(raw) // 2 // 8 * 8
+    first, second = tmp_path / "cap_1.cf32", tmp_path / "cap_2.cf32"
+    first.write_bytes(raw[:half])
+    second.write_bytes(raw[half:])
+    out = tmp_path / "out"
+    assert (
+        cli.main(["analyse", str(first), "--sequence", "--sample-rate", "1M", "--out", str(out)])
+        == 0
+    )
+    (results,) = list(out.glob("*.results.json"))
+    names = [f["name"] for f in load(results)["recording"]["files"]]
+    assert names == ["cap_1.cf32", "cap_2.cf32"]
+    hashes = {f["name"]: f["sha256"] for f in load(results)["recording"]["files"]}
+    assert hashes["cap_2.cf32"] == hashlib.sha256(second.read_bytes()).hexdigest()

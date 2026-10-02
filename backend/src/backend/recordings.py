@@ -85,6 +85,8 @@ class Recording:
     inferred_rate: Parameter | None = None
     # What the samples say about the capture (`dsp.quality`), measured when the file was opened.
     quality: tuple[Parameter, ...] = ()
+    # The files it was opened from (a path, or a sequence's files), for its content identity.
+    files: tuple[Path, ...] = ()
 
     @property
     def swap_iq(self) -> bool:
@@ -156,6 +158,7 @@ class RecordingStore:
             recorder=sigmf_recorder(path),
             inferred_rate=infer_sample_rate(opened.recording, detections),
             quality=quality,
+            files=items[0].paths,
         )
         return self._start(recording)
 

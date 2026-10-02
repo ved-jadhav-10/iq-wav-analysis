@@ -14,6 +14,7 @@ from dsp.ingest.formats import SampleFormat
 from dsp.ingest.raw import read_raw
 from dsp.ingest.sigmf import read_sigmf
 from dsp.results import (
+    NO_FILES,
     SCHEMA_PATH,
     SCHEMA_VERSION,
     Assumptions,
@@ -49,7 +50,13 @@ def results(tmp_path: Path) -> Results:
     detect = StageResult(
         id="detect", name="Detect", status="failed", summary="Detection failed", error="boom"
     )
-    return Results(sanket_version="0.1.0", assumptions=assumptions, stages=(ingest, detect))
+    return Results(
+        sanket_version="0.1.0",
+        recording=NO_FILES,
+        catalogues=(),
+        assumptions=assumptions,
+        stages=(ingest, detect),
+    )
 
 
 def a_signal(stages: tuple[StageResult, ...] = (), **changes: Any) -> Signal:
@@ -232,7 +239,13 @@ def raw_results(tmp_path: Path, datatype: str = "ci16_le") -> Results:
     x = COMPLEX_SIGNALS["noise"](np.random.default_rng(0), 16384) * 0.05
     path = tmp_path / "capture.bin"
     path.write_bytes(SampleFormat.parse(datatype).encode(x))
-    return Results(sanket_version="0.1.0", assumptions=read_raw(path).assumptions, stages=())
+    return Results(
+        sanket_version="0.1.0",
+        recording=NO_FILES,
+        catalogues=(),
+        assumptions=read_raw(path).assumptions,
+        stages=(),
+    )
 
 
 def test_needs_review_lists_every_value_taken_on_a_convention(tmp_path: Path) -> None:

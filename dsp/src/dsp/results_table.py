@@ -14,7 +14,7 @@ import io
 from collections.abc import Iterator
 
 from dsp.evidence import Parameter
-from dsp.results import Results
+from dsp.results import Results, results_sha256
 
 COLUMNS = (
     "signal",
@@ -52,7 +52,22 @@ def _row(signal: str, stage: str, p: Parameter) -> list[object]:
     ]
 
 
+def _fact(stage: str, id: str, name: str, value: str, method: str) -> list[object]:
+    """A row that identifies the analysis (a file's hash, a rule set's version, the document's
+    own hash): computed, so MEASURED, with no unit or uncertainty."""
+    return ["", stage, id, name, value, "", "", "MEASURED", method, "", "", "", ""]
+
+
 def _rows(results: Results) -> Iterator[list[object]]:
+    yield _fact("document", "results_sha256", "Results SHA-256", results_sha256(results),
+                "SHA-256 of the results JSON this table was made from")  # fmt: skip
+    yield _fact("document", "sanket_version", "Sanket version", results.sanket_version, "Program")
+    for c in results.catalogues:
+        yield _fact("document", f"catalogue_{c.name}", f"Catalogue {c.name}", c.version, "Version")
+    for f in results.recording.files:
+        yield _fact(
+            "recording", "sha256", f.name, f.sha256, f"SHA-256 of the file ({f.size_bytes} B)"
+        )
     for p in results.assumptions.parameters():
         yield _row("", "assumptions", p)
     for stage in results.stages:

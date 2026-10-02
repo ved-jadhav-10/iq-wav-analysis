@@ -4,7 +4,7 @@ import pytest
 
 from dsp.evidence import EvidenceLevel, Parameter, Proof
 from dsp.findings import Frame
-from dsp.results import Assumptions, Results, Signal, StageResult
+from dsp.results import NO_FILES, Assumptions, Results, Signal, StageResult
 
 
 def param(id: str, level: EvidenceLevel, value: float | str | None, **fields: object) -> Parameter:
@@ -65,6 +65,8 @@ def build_results() -> Results:
     )
     return Results(
         sanket_version="0.1.0",
+        recording=NO_FILES,
+        catalogues=(),
         assumptions=assumptions(),
         stages=(StageResult(id="ingest", name="Ingest", status="done", summary="i"),),
         signals=(signal,),

@@ -26,7 +26,7 @@ from dsp.ingest.sdriq import read_sdriq
 from dsp.ingest.sigmf import read_sigmf, read_sigmf_archive
 from dsp.ingest.vita49 import read_vita49
 from dsp.ingest.wav import read_wav
-from dsp.results import Assumptions, Results
+from dsp.results import NO_FILES, Assumptions, Results
 
 STATS_SAMPLES = 1 << 20
 AUDIO = {".flac", ".mp3", ".ogg", ".oga"}
@@ -110,7 +110,9 @@ def report(path: Path) -> str:
         return "\n".join([*out, f"Not readable: {error}", ""])
     for reader_name, rec in recordings:
         a: Assumptions = rec.assumptions
-        review = Results(sanket_version="0.1.0", assumptions=a, stages=()).needs_review
+        review = Results(
+            sanket_version="0.1.0", recording=NO_FILES, catalogues=(), assumptions=a, stages=()
+        ).needs_review
         out += [f"Reader: {reader_name}", "", "| Assumption | Value | Level | Method |"]
         out.append("|---|---|---|---|")
         out += [f"| {p.name} | {_value(p)} | {p.level} | {p.method} |" for p in a.parameters()]

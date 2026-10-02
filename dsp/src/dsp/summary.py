@@ -7,7 +7,7 @@ still unknown and what would settle it. The output is deterministic.
 """
 
 from dsp.evidence import EvidenceLevel, Parameter
-from dsp.results import Results, Signal
+from dsp.results import Results, Signal, results_sha256
 
 PLAIN_LEVEL = {
     EvidenceLevel.VERIFIED: "proved on this recording",
@@ -72,6 +72,12 @@ def render_summary(results: Results) -> str:
     lines = [f"Sanket {results.sanket_version} results summary", ""]
     if ingest is not None:
         lines.append(f"Recording: {ingest.summary}.")
+    for f in results.recording.files:
+        lines.append(f"  File {f.name}: {f.size_bytes:,} bytes, SHA-256 {f.sha256}")
+    capture = next((s for s in results.stages if s.id == "capture"), None)
+    if capture is not None:
+        lines.append(f"Capture quality: {capture.summary}.")
+        lines += [f"  - {w}" for w in capture.warnings]
     lines.append("Taken as given about the recording:")
     lines += [f"  - {_line(p)}" for p in a.parameters() if p.level is not EvidenceLevel.UNKNOWN]
     lines += [
@@ -94,4 +100,10 @@ def render_summary(results: Results) -> str:
         lines += [f"  - {r.name} = {r.value}: {r.convention}" for r in review]
     else:
         lines.append("No value rests on a convention.")
+    rules = ", ".join(f"{c.name} {c.version}" for c in results.catalogues)
+    lines += [
+        "",
+        f"Made by Sanket {results.sanket_version} with the rule sets {rules or 'none recorded'}.",
+        f"Results SHA-256 {results_sha256(results)}",
+    ]
     return "\n".join(lines) + "\n"

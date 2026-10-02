@@ -17,7 +17,7 @@ from dsp.ingest.wav import (
     read_header,
     read_wav,
 )
-from dsp.results import Assumptions, Results
+from dsp.results import NO_FILES, Assumptions, Results
 from dsp.synth.waveforms import awgn, frequency_shift, psk_symbols, shape
 
 N = 1 << 15
@@ -323,14 +323,26 @@ def test_centred_iq_is_proposed_by_convention_and_listed_for_review(tmp_path: Pa
     assert rec.quadrature is not None and rec.quadrature.verdict == "inconclusive"
     assert (rec.datatype.value, rec.datatype.level) == ("ci16_le", EvidenceLevel.HYPOTHESIS)
     assert rec.datatype.convention
-    results = Results(sanket_version="0.1.0", assumptions=rec.assumptions, stages=())
+    results = Results(
+        sanket_version="0.1.0",
+        recording=NO_FILES,
+        catalogues=(),
+        assumptions=rec.assumptions,
+        stages=(),
+    )
     assert {item.parameter for item in results.needs_review} == {"datatype", "iq_order"}
 
 
 def test_offset_iq_leaves_only_the_iq_order_for_review(tmp_path: Path) -> None:
     x = qpsk()
     rec = read_wav(stereo(tmp_path / "x.wav", np.real(x), np.imag(x)))
-    results = Results(sanket_version="0.1.0", assumptions=rec.assumptions, stages=())
+    results = Results(
+        sanket_version="0.1.0",
+        recording=NO_FILES,
+        catalogues=(),
+        assumptions=rec.assumptions,
+        stages=(),
+    )
     assert [item.parameter for item in results.needs_review] == ["iq_order"]
     Assumptions.model_validate(rec.assumptions.model_dump())
 

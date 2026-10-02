@@ -82,6 +82,28 @@
       "title": "Assumptions",
       "type": "object"
     },
+    "CatalogueVersion": {
+      "additionalProperties": false,
+      "description": "A rule set the analysis ran with, versioned apart from the program (PLAN §7).",
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "title": "CatalogueVersion",
+      "type": "object"
+    },
     "EvidenceLevel": {
       "enum": [
         "VERIFIED",
@@ -92,6 +114,35 @@
       ],
       "title": "EvidenceLevel",
       "type": "string"
+    },
+    "FileIdentity": {
+      "additionalProperties": false,
+      "description": "One file the recording is read from, by name (never a path) and content.",
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "sizeBytes": {
+          "minimum": 0,
+          "title": "Sizebytes",
+          "type": "integer"
+        },
+        "sha256": {
+          "description": "Lower-case hex SHA-256 of the file.",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "sizeBytes",
+        "sha256"
+      ],
+      "title": "FileIdentity",
+      "type": "object"
     },
     "Frame": {
       "additionalProperties": false,
@@ -581,6 +632,36 @@
       "title": "Proof",
       "type": "object"
     },
+    "RecordingIdentity": {
+      "additionalProperties": false,
+      "description": "What was analysed, tied to the exact bytes: the container and sample count, and every file\nthe samples and their metadata come from (a SigMF recording's metadata and dataset, a\nnumbered sequence's files), sorted by name.",
+      "properties": {
+        "container": {
+          "minLength": 1,
+          "title": "Container",
+          "type": "string"
+        },
+        "samples": {
+          "minimum": 0,
+          "title": "Samples",
+          "type": "integer"
+        },
+        "files": {
+          "items": {
+            "$ref": "#/$defs/FileIdentity"
+          },
+          "title": "Files",
+          "type": "array"
+        }
+      },
+      "required": [
+        "container",
+        "samples",
+        "files"
+      ],
+      "title": "RecordingIdentity",
+      "type": "object"
+    },
     "ReviewItem": {
       "additionalProperties": false,
       "description": "A value taken on a convention rather than evidence, for the analyst to confirm.",
@@ -827,8 +908,8 @@
   "description": "The results of analysing one recording.\n\n`needsReview` is derived from the parameters, never set by hand: it lists every value taken\non a convention, so one field tells a reader or a script whether anything rests on a guess.",
   "properties": {
     "schemaVersion": {
-      "const": "0.5.0",
-      "default": "0.5.0",
+      "const": "0.6.0",
+      "default": "0.6.0",
       "title": "Schemaversion",
       "type": "string"
     },
@@ -836,6 +917,16 @@
       "minLength": 1,
       "title": "Sanketversion",
       "type": "string"
+    },
+    "recording": {
+      "$ref": "#/$defs/RecordingIdentity"
+    },
+    "catalogues": {
+      "items": {
+        "$ref": "#/$defs/CatalogueVersion"
+      },
+      "title": "Catalogues",
+      "type": "array"
     },
     "assumptions": {
       "$ref": "#/$defs/Assumptions"
@@ -868,6 +959,8 @@
   "required": [
     "schemaVersion",
     "sanketVersion",
+    "recording",
+    "catalogues",
     "assumptions",
     "stages",
     "signals",

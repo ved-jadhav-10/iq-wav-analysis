@@ -13,7 +13,7 @@ from dsp.ingest.formats import SampleFormat
 from dsp.ingest.npy import read_npy
 from dsp.ingest.recording import Recording
 from dsp.ingest.sdriq import read_sdriq
-from dsp.results import Results
+from dsp.results import NO_FILES, Results
 
 N = 2000
 
@@ -28,7 +28,13 @@ def samples_of(rec: Recording) -> np.ndarray:
 
 
 def review(rec: Recording) -> set[str]:
-    results = Results(sanket_version="0.1.0", assumptions=rec.assumptions, stages=())
+    results = Results(
+        sanket_version="0.1.0",
+        recording=NO_FILES,
+        catalogues=(),
+        assumptions=rec.assumptions,
+        stages=(),
+    )
     return {item.parameter for item in results.needs_review}
 
 

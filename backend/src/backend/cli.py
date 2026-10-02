@@ -174,17 +174,20 @@ def _analyse_one(
     if not fmt.is_complex and any(name == "iq_order" for name, _ in entries):
         raise RecordingError("IQ order applies to complex samples; this recording is real")
     results, reports = analyse_recording(
-        opened.recording, opened.container, entries, real=not fmt.is_complex
+        opened.recording,
+        opened.container,
+        entries,
+        real=not fmt.is_complex,
+        files=item.paths,
     )
     target = _unused(out / f"{item.paths[0].stem}.results.json", written)
-    target.write_text(results.to_json(), encoding="utf-8")
+    _write(target, results.to_json())
     if csv_table:
-        target.with_name(target.name.removesuffix(".json") + ".csv").write_text(
-            render_csv(results), encoding="utf-8"
-        )
+        _write(target.with_name(target.name.removesuffix(".json") + ".csv"), render_csv(results))
     if summary:
-        target.with_name(target.name.removesuffix(".results.json") + ".summary.txt").write_text(
-            render_summary(results), encoding="utf-8"
+        _write(
+            target.with_name(target.name.removesuffix(".results.json") + ".summary.txt"),
+            render_summary(results),
         )
     print(f"{item.name}: {len(reports)} signal(s) -> {target}")
     for i, report in enumerate(reports):
@@ -192,12 +195,19 @@ def _analyse_one(
         for fmt in dict.fromkeys(frame_formats):  # each once, in the order given
             ext = fmt if fmt in ("json", "csv") else f"{fmt}.txt"
             name = target.name.removesuffix(".results.json")
-            (out / f"{name}.signal_{i}.frames.{ext}").write_text(
+            _write(
+                out / f"{name}.signal_{i}.frames.{ext}",
                 render(report.frames, fmt),  # type: ignore[arg-type]
-                encoding="utf-8",
             )
     if results.assumptions.sample_rate.value is None:
         print("  the sample rate is UNKNOWN; pass --sample-rate to analyse the bands")
+
+
+def _write(path: Path, text: str) -> None:
+    """Text as UTF-8 bytes exactly as given: `write_text` turns every newline into CRLF on
+    Windows, which would make a file's bytes (and so its SHA-256) differ from the document the
+    exports cite by hash."""
+    path.write_bytes(text.encode("utf-8"))
 
 
 def _unused(target: Path, written: set[Path]) -> Path:

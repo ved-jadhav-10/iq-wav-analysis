@@ -4,11 +4,14 @@ Every results JSON carries `schemaVersion` and an `Assumptions` block that state
 took as given about the recording. A breaking change to the schema is a major version bump.
 
 Schema history: 0.4.0 held each signal's stage results only; 0.5.0 adds each signal's label, kind,
-headline, level, hypothesis ledger and frame table (`SignalFindings`). A 0.4.0 document does not
-validate against 0.5.0 (the new fields are always written, so they are required): results are
-regenerated from the recording, never migrated, and a reader checks `schemaVersion` first.
+headline, level, hypothesis ledger and frame table (`SignalFindings`); 0.6.0 adds the recording's
+identity (file names, sizes and SHA-256s) and the catalogue versions the analysis ran with, which
+tie a result to the exact bytes and rules behind it. An older document does not validate against
+a newer schema (the new fields are always written, so they are required): results are regenerated
+from the recording, never migrated, and a reader checks `schemaVersion` first.
 """
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, Literal, Self, cast
@@ -19,8 +22,8 @@ from dsp.evidence import CamelModel, Parameter, Value
 from dsp.findings import SignalFindings
 from dsp.ingest.formats import SampleFormat
 
-SchemaVersion = Literal["0.5.0"]
-SCHEMA_VERSION: SchemaVersion = "0.5.0"
+SchemaVersion = Literal["0.6.0"]
+SCHEMA_VERSION: SchemaVersion = "0.6.0"
 SCHEMA_PATH = Path(__file__).with_name("results.schema.json")
 
 
@@ -84,6 +87,34 @@ class StageResult(CamelModel):
         return self
 
 
+class FileIdentity(CamelModel):
+    """One file the recording is read from, by name (never a path) and content."""
+
+    name: str = Field(min_length=1)
+    size_bytes: int = Field(ge=0)
+    sha256: str = Field(pattern="^[0-9a-f]{64}$", description="Lower-case hex SHA-256 of the file.")
+
+
+class RecordingIdentity(CamelModel):
+    """What was analysed, tied to the exact bytes: the container and sample count, and every file
+    the samples and their metadata come from (a SigMF recording's metadata and dataset, a
+    numbered sequence's files), sorted by name."""
+
+    container: str = Field(min_length=1)
+    samples: int = Field(ge=0)
+    files: tuple[FileIdentity, ...]
+
+
+class CatalogueVersion(CamelModel):
+    """A rule set the analysis ran with, versioned apart from the program (PLAN §7)."""
+
+    name: str = Field(min_length=1)
+    version: str = Field(min_length=1)
+
+
+NO_FILES = RecordingIdentity(container="in memory", samples=0, files=())  # held in memory
+
+
 class ReviewItem(CamelModel):
     """A value taken on a convention rather than evidence, for the analyst to confirm."""
 
@@ -125,6 +156,8 @@ class Results(CamelModel):
 
     schema_version: SchemaVersion = SCHEMA_VERSION
     sanket_version: str = Field(min_length=1)
+    recording: RecordingIdentity
+    catalogues: tuple[CatalogueVersion, ...]
     assumptions: Assumptions
     stages: tuple[StageResult, ...]
     signals: tuple[Signal, ...] = ()
@@ -187,6 +220,12 @@ class Results(CamelModel):
     def to_json(self) -> str:
         """Deterministic JSON: the same results always give the same bytes."""
         return self.model_dump_json(indent=2) + "\n"
+
+
+def results_sha256(results: Results) -> str:
+    """The SHA-256 of the document's JSON bytes: what an export carries to say which analysis it
+    came from (the document can't hold its own hash)."""
+    return hashlib.sha256(results.to_json().encode("utf-8")).hexdigest()
 
 
 def results_schema() -> dict[str, Any]:

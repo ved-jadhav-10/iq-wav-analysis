@@ -20,6 +20,7 @@ from dsp.results_table import render_csv
 from dsp.summary import render_summary
 
 from .analysis import results_of
+from .identity import recording_identity
 from .inputs import FormatUnknownError, RecordingError, expand
 from .recordings import Recording, RecordingStore
 from .uploads import DEFAULT_MAX_UPLOAD_BYTES, UploadError, UploadStore
@@ -349,8 +350,9 @@ def create_app(
             raise HTTPException(status_code=409, detail="the analysis has not finished")
         results = results_of(
             recording.assumptions,
-            recording.container,
-            recording.num_samples,
+            recording_identity(
+                recording.container, recording.num_samples, recording.files, recording.source
+            ),
             len(recording.detections),
             [report for report in reports if report is not None],
             recording.quality,

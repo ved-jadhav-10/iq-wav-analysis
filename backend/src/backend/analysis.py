@@ -7,8 +7,9 @@ headline and level, the hypothesis ledger and the frame table of its `DetectionR
 constellation and the eye are for the live views and stay out of it.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from importlib.metadata import version
+from pathlib import Path
 
 from dsp.analyse import analyse, measure_symbol_rate
 from dsp.detect import Detection, detect, detection_parameters
@@ -20,7 +21,10 @@ from dsp.ingest.raw import RawRecording
 from dsp.ingest.recording import entered
 from dsp.quality import capture_quality
 from dsp.report import DetectionReport, StageReport, cap_digital_labels, note_rate_basis
-from dsp.results import Assumptions, Results, Signal, StageResult
+from dsp.results import Assumptions, RecordingIdentity, Results, Signal, StageResult
+from dsp.versions import catalogue_versions
+
+from .identity import recording_identity
 
 # Values the analyst entered, by assumption name; each replaces the file's own entry.
 Entries = tuple[tuple[str, float | str], ...]
@@ -224,13 +228,15 @@ def analyse_recording(
     entries: Entries = (),
     *,
     real: bool,
+    files: Iterable[Path] = (),
     on_detection: Callable[[int, int], None] | None = None,
 ) -> tuple[Results, Sequence[DetectionReport]]:
     """Detect and analyse every signal in a recording; the results document and the reports.
 
     Without a sample rate the bands are found but not analysed, as in the server: a box in
     seconds and hertz needs one, and the results say so. `on_detection(done, total)` is called
-    after each one."""
+    after each one. `files` are the paths the recording was opened from, hashed into the
+    document's identity (with the dataset a SigMF file names)."""
     swap_iq = dict(entries).get("iq_order") == "QI"
     with source.reader(swap_iq=swap_iq) as reader:
         samples = reader.num_samples
@@ -258,14 +264,14 @@ def analyse_recording(
             )
             if on_detection:
                 on_detection(i + 1, len(detections))
-    results = results_of(assumptions, container, samples, len(detections), reports, quality)
+    identity = recording_identity(container, samples, files, source)
+    results = results_of(assumptions, identity, len(detections), reports, quality)
     return results, reports
 
 
 def results_of(
     assumptions: Assumptions,
-    container: str,
-    samples: int,
+    identity: RecordingIdentity,
     detections: int,
     reports: Sequence[DetectionReport],
     quality: Sequence[Parameter] = (),
@@ -277,7 +283,7 @@ def results_of(
         id="ingest",
         name="Ingest",
         status="done",
-        summary=f"{container}: {samples:,} samples",
+        summary=f"{identity.container}: {identity.samples:,} samples",
     )
     capture = (
         (
@@ -302,6 +308,8 @@ def results_of(
         )
         return Results(
             sanket_version=version("sanket-backend"),
+            recording=identity,
+            catalogues=catalogue_versions(),
             assumptions=assumptions,
             stages=(ingest, *capture, detect_stage),
         )
@@ -310,6 +318,8 @@ def results_of(
     )
     return Results(
         sanket_version=version("sanket-backend"),
+        recording=identity,
+        catalogues=catalogue_versions(),
         assumptions=assumptions,
         stages=(ingest, *capture, detect_stage),
         signals=tuple(signal_of(i, r) for i, r in enumerate(reports)),
