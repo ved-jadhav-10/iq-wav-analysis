@@ -37,6 +37,7 @@ from dsp.deinterleave import (
     FORNEY_CATALOGUE,
     Block,
     Forney,
+    Helical,
     Interleaver,
     deinterleave,
     deinterleave_forney,
@@ -680,10 +681,11 @@ def _blind_block_cells(branch: Branch) -> list[_Chain]:
     modulation, rotation, soft = branch
     if base_modulation(modulation) in INVERTING and rotation >= 180:
         return []  # as for the catalogue: only inverts every bit of the 0°/90° branch
-    known = {(e.rows, e.cols) for e in CATALOGUE if isinstance(e, Block)}
+    known = {(type(e), e.rows, e.cols) for e in CATALOGUE if isinstance(e, Block | Helical)}
     found = find_blocks((np.asarray(soft) < 0).astype(np.uint8))
     return _block_cells(
-        branch, [(b.block, b) for b in found if (b.block.rows, b.block.cols) not in known]
+        branch,
+        [(b.block, b) for b in found if (type(b.block), b.block.rows, b.block.cols) not in known],
     )
 
 

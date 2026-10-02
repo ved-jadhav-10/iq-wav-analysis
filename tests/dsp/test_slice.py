@@ -513,3 +513,30 @@ def test_a_block_interleaver_outside_the_catalogue_is_found_blind_and_decoded(
     assert stage.parameters[0].level is EvidenceLevel.VERIFIED
     assert "stride scan" in stage.parameters[0].method
     assert f"Every {rows}th received bit" in " ".join(stage.parameters[0].evidence)
+
+
+@pytest.mark.parametrize(("rows", "cols", "offset"), [(20, 40, 5), (30, 50, 0)], ids=str)
+def test_a_helical_interleaver_outside_the_catalogue_is_found_blind_and_decoded(
+    rows: int, cols: int, offset: int
+) -> None:
+    spec = _spec(
+        "qpsk",
+        8,
+        15.0,
+        inner=CONV,
+        interleaver=il.Helical(rows, cols),
+        stream_offset=offset,
+        offset=0.1,
+    )
+    g, report = _run(spec)
+    assert report.level is EvidenceLevel.VERIFIED
+    truth = _truth_bodies(g)
+    passing = [f for f in report.frames if f.crc == "pass"]
+    assert len(passing) >= 30 and all(f.payload_hex in truth for f in passing)
+    assert report.search is not None and report.search.shuffled_accepts == 0
+    accepted = next(r for r in report.search.rows if r.outcome == "accepted")
+    assert accepted.layer == "Interleaver"
+    assert f"helical {rows}x{cols} (found blind)" in accepted.candidate
+    stage = next(s for s in report.stages if s.id == "deinterleave")
+    assert stage.parameters[0].level is EvidenceLevel.VERIFIED
+    assert f"helical walk of {rows} rows" in " ".join(stage.parameters[0].evidence)
