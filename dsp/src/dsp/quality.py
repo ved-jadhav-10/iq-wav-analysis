@@ -62,6 +62,7 @@ class _Scan:
     gap_samples: int = 0
     first_gap: int | None = None
     blocks: list[tuple[float, float, float, int]] = field(default_factory=lambda: [])
+    non_finite: int = 0  # NaN or infinite samples among those read (the readers zero them)
     ii: float = 0.0  # I, Q and cross power summed over every sample, for a short file
     qq: float = 0.0
     iq: float = 0.0
@@ -138,9 +139,16 @@ def capture_quality(reader: Any) -> tuple[Parameter, ...]:
         )
     scan: _Scan | None = None
     for start, length in _pieces(count):
-        x = np.asarray(reader.read(start, length))
+        x = np.asarray(getattr(reader, "read_raw", reader.read)(start, length))
         if len(x) == 0:
             continue
+        if x.dtype.kind in "fc":
+            finite = np.isfinite(x)
+            if not finite.all():
+                if scan is None:
+                    scan = _Scan(complex_input=bool(np.iscomplexobj(x)))
+                scan.non_finite += int(x.size - np.count_nonzero(finite))
+                x = np.where(finite, x, np.zeros((), x.dtype))
         if scan is None:
             scan = _Scan(complex_input=bool(np.iscomplexobj(x)))
         _absorb(scan, x, start, start == scan.end)
@@ -309,6 +317,25 @@ def _parameters(scan: _Scan, count: int) -> tuple[Parameter, ...]:
         else f"{scan.samples:,} of {count:,} samples, in {PIECES} evenly spaced pieces"
     )
     out: list[Parameter] = [_clipping(scan, read)]
+    if scan.non_finite:
+        out.append(
+            Parameter(
+                id="non_finite_samples",
+                name="Non-finite samples",
+                value=scan.non_finite,
+                unit="samples",
+                level=E.MEASURED,
+                method="Count of NaN and infinite samples among those read (dsp.quality)",
+                evidence=(
+                    f"Read {read}: {scan.non_finite:,} are NaN or infinite "
+                    f"({100 * scan.non_finite / scan.samples:.3g} %).",
+                ),
+                warnings=(
+                    "The file holds corrupt float samples. Every stage reads them as 0, so a "
+                    "burst of them looks like a gap in the signal.",
+                ),
+            )
+        )
 
     mean = scan.total / scan.samples
     rms = math.sqrt(scan.energy / scan.samples)  # of the whole sample, I and Q together

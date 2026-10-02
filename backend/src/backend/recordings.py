@@ -10,6 +10,7 @@ results document is assembled by `backend.analysis` (used by `sanket analyse`), 
 """
 
 import json
+import logging
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -173,7 +174,13 @@ class RecordingStore:
         fmt = opened.recording.sample_format
         assert fmt is not None  # open_input raised for an UNKNOWN format
         real = not fmt.is_complex
-        pyramid, detections, quality, phases = _survey(opened.recording, real=real, swap_iq=False)
+        try:
+            pyramid, detections, quality, phases = _survey(
+                opened.recording, real=real, swap_iq=False
+            )
+        except Exception as exc:  # a file that can't be surveyed is the file's problem, not a crash
+            logging.getLogger("sanket").warning("could not survey %s", opened.name, exc_info=True)
+            raise RecordingError(f"{opened.name} can't be analysed: {exc}") from exc
         recording = Recording(
             id=str(uuid.uuid4()),
             path=path,

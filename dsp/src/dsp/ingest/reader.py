@@ -102,6 +102,17 @@ class SegmentReader:
         self._files: OrderedDict[int, BinaryIO] = OrderedDict()
 
     def read(self, start: int, count: int) -> NDArray[Any]:
+        """`read_raw` with every non-finite sample (NaN, ±inf: a float file's corrupt samples)
+        replaced by 0, so no stage downstream has to survive them. The capture-quality stage reads
+        the raw samples and reports how many there were."""
+        x = self.read_raw(start, count)
+        if x.dtype.kind in "fc":
+            finite = np.isfinite(x)
+            if not finite.all():
+                x = np.where(finite, x, np.zeros((), x.dtype))
+        return x
+
+    def read_raw(self, start: int, count: int) -> NDArray[Any]:
         if start < 0 or count < 0:
             raise ValueError("start and count must be non-negative")
         end = min(start + count, self.num_samples)
