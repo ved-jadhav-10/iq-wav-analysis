@@ -97,6 +97,9 @@ class SignalSpec:
     interleaver: BitInterleaver | None = None
     stream_offset: int = 0  # coded bits skipped before the recording starts
     fill: int | None = None  # constant payload byte (an idle pattern) instead of random data
+    # ASCII banner payloads instead of random data: frame n carries `text` followed by n (the
+    # frame's counter, four digits), repeated and cut to the payload size. None keeps random data.
+    text: str | None = None
     offset: float = 0.0  # carrier position, cycles/sample
     start: int = 0  # first sample of the burst
     duration: int | None = None  # burst length in samples; None runs to the end
@@ -243,11 +246,12 @@ def _bitstream(
     payload_bytes = frame.payload_bytes if frame else 64
     count = 8
     while True:
-        payloads = (
-            np.full((count, payload_bytes), spec.fill, dtype=np.uint8)
-            if spec.fill is not None
-            else rng.integers(0, 256, (count, payload_bytes), dtype=np.uint8)
-        )
+        if spec.text is not None:
+            payloads = _text_payloads(spec.text, count, payload_bytes)
+        elif spec.fill is not None:
+            payloads = np.full((count, payload_bytes), spec.fill, dtype=np.uint8)
+        else:
+            payloads = rng.integers(0, 256, (count, payload_bytes), dtype=np.uint8)
         if frame:
             framed = frames(frame, payloads)
             stream = _scramble(framed, frame, spec.scrambler)
@@ -258,6 +262,16 @@ def _bitstream(
         if len(coded) >= needed:
             return payloads, framed, coded
         count *= 2
+
+
+def _text_payloads(text: str, count: int, payload_bytes: int) -> NDArray[np.uint8]:
+    """One ASCII banner per frame: `text`, the frame number and a space, repeated to the size."""
+    rows = np.zeros((count, payload_bytes), np.uint8)
+    for n in range(count):
+        banner = f"{text}{n % 10000:04d} ".encode("ascii")
+        repeated = banner * (payload_bytes // len(banner) + 1)
+        rows[n] = np.frombuffer(repeated[:payload_bytes], np.uint8)
+    return rows
 
 
 def _scramble(bits: Bits, frame: FrameSpec, scrambler: str | None) -> Bits:

@@ -196,7 +196,7 @@ export function TopBar({
           </div>
         )}
         <span
-          className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs font-medium text-muted-foreground max-xl:hidden"
+          className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-2xs font-medium text-muted-foreground max-xl:hidden"
           title="This build loads nothing from the network: fonts, code and data are all bundled."
         >
           <WifiOff className="size-3" aria-hidden />

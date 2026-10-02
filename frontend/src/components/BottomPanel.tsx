@@ -2,12 +2,14 @@ import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { CircleSlash, ShieldCheck, X } from 'lucide-react'
 import type { Detection } from '@/lib/analysis'
 import { hexToText, integer, sci } from '@/lib/format'
+import { BitstreamView } from './BitstreamView'
 import { InfoTip } from './InfoTip'
 
 const TABS = [
-  { id: 'hypotheses', label: 'Hypotheses' },
-  { id: 'frames', label: 'Frames' },
-  { id: 'assumptions', label: 'Assumptions' },
+  { id: 'hypotheses', label: 'Hypotheses', caption: 'Every candidate the blind search tried, and why each was kept or rejected.' },
+  { id: 'frames', label: 'Frames', caption: 'Frames found by sync-word search, with the CRC result, header and payload of each.' },
+  { id: 'bitstream', label: 'Bit stream', caption: 'How the frames sit in the stream and how the sync word recurs.' },
+  { id: 'assumptions', label: 'Assumptions', caption: 'Everything opening this recording took as given.' },
 ] as const
 type TabId = (typeof TABS)[number]['id']
 
@@ -265,11 +267,12 @@ interface Props {
 
 export function BottomPanel({ detection, assumptionsPanel, assumptionsCount, frameExportUrl }: Props) {
   const [tab, setTab] = useState<TabId>('hypotheses')
-  const tabRefs = useRef<Record<TabId, HTMLButtonElement | null>>({ hypotheses: null, frames: null, assumptions: null })
+  const tabRefs = useRef<Record<TabId, HTMLButtonElement | null>>({ hypotheses: null, frames: null, bitstream: null, assumptions: null })
 
   const counts: Record<TabId, number | null> = {
     hypotheses: detection.search?.tried ?? null,
     frames: detection.frames.length,
+    bitstream: detection.frames.length,
     assumptions: assumptionsCount ?? null,
   }
 
@@ -289,38 +292,45 @@ export function BottomPanel({ detection, assumptionsPanel, assumptionsCount, fra
 
   return (
     <section aria-label="Analysis details" data-tour="bottom-tabs" className="flex min-h-0 flex-col border-t bg-surface">
-      <div role="tablist" aria-label="Analysis details" className="flex shrink-0 gap-1 border-b px-2" onKeyDown={onKeyDown}>
-        {TABS.map((t) => {
-          const selected = t.id === tab
-          const count = counts[t.id]
-          return (
-            <button
-              key={t.id}
-              ref={(el) => {
-                tabRefs.current[t.id] = el
-              }}
-              role="tab"
-              id={`tab-${t.id}`}
-              aria-selected={selected}
-              aria-controls={`panel-${t.id}`}
-              tabIndex={selected ? 0 : -1}
-              onClick={() => setTab(t.id)}
-              className={`relative flex items-center gap-1.5 px-2 py-2 text-xs font-medium ${selected ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              {t.label}
-              {count !== null && (
-                <span className="num rounded-[3px] bg-surface-2 px-1 text-2xs text-muted-foreground">
-                  {integer.format(count)}
-                </span>
-              )}
-              {selected && <span className="absolute inset-x-1 -bottom-px h-0.5 rounded-full bg-primary" aria-hidden />}
-            </button>
-          )
-        })}
+      <div className="@container flex shrink-0 items-center border-b px-2">
+        <div role="tablist" aria-label="Analysis details" className="flex shrink-0 gap-1" onKeyDown={onKeyDown}>
+          {TABS.map((t) => {
+            const selected = t.id === tab
+            const count = counts[t.id]
+            return (
+              <button
+                key={t.id}
+                ref={(el) => {
+                  tabRefs.current[t.id] = el
+                }}
+                role="tab"
+                id={`tab-${t.id}`}
+                aria-selected={selected}
+                aria-controls={`panel-${t.id}`}
+                tabIndex={selected ? 0 : -1}
+                onClick={() => setTab(t.id)}
+                title={t.caption}
+                className={`relative flex items-center gap-1.5 px-2 py-2 text-xs font-medium ${selected ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {t.label}
+                {count !== null && (
+                  <span className="num rounded-[3px] bg-surface-2 px-1 text-2xs text-muted-foreground">
+                    {integer.format(count)}
+                  </span>
+                )}
+                {selected && <span className="absolute inset-x-1 -bottom-px h-0.5 rounded-full bg-primary" aria-hidden />}
+              </button>
+            )
+          })}
+        </div>
+        <p className="ml-3 hidden min-w-0 flex-1 truncate text-2xs text-muted-foreground @2xl:block" aria-live="off">
+          {TABS.find((t) => t.id === tab)?.caption}
+        </p>
       </div>
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} tabIndex={0} className="min-h-0 flex-1 overflow-auto">
         {tab === 'hypotheses' && <Hypotheses detection={detection} />}
         {tab === 'frames' && <Frames detection={detection} exportUrl={frameExportUrl} />}
+        {tab === 'bitstream' && <BitstreamView detection={detection} />}
         {tab === 'assumptions' && assumptionsPanel}
       </div>
     </section>

@@ -23,6 +23,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from backend.samples import CATALOGUE
+
 ROOT = Path(__file__).resolve().parents[1]
 EXE = ROOT / "dist" / "sanket" / ("sanket.exe" if sys.platform == "win32" else "sanket")
 START_TIMEOUT = 90.0
@@ -106,8 +108,12 @@ def _check(server: subprocess.Popen[bytes], base: str, recording: Path | None, l
 
     status, body = get(f"{base}/api/v1/samples")
     listed = {s["id"] for s in json.loads(body)} if status == 200 else set()
-    if {"scene", "scene_widen", "scene_fsk", "scene_ldpc"} - listed:
-        return fail(f"the bundled samples are missing (HTTP {status}, listed: {sorted(listed)})")
+    expected = {sample_id for sample_id, _, _ in CATALOGUE}
+    if expected - listed:
+        return fail(
+            f"bundled samples missing: {sorted(expected - listed)} "
+            f"(HTTP {status}, listed: {sorted(listed)})"
+        )
     print(f"smoke: {len(listed)} sample recordings bundled")
 
     if recording is None:

@@ -726,17 +726,29 @@ const SIZES = [
 /** Whether the page scrolls as a whole, and by how much it overflows sideways. A string, not a
  * function: the e2e project has no DOM types, and this runs in the page. */
 async function pageFit(page: Page) {
-  return (await page.evaluate(
-    '({ scrollHeight: document.documentElement.scrollHeight, innerHeight: window.innerHeight, overflowX: document.documentElement.scrollWidth - window.innerWidth })',
-  )) as { scrollHeight: number; innerHeight: number; overflowX: number }
+  const measure = async () =>
+    (await page.evaluate(
+      '({ scrollHeight: document.documentElement.scrollHeight, innerHeight: window.innerHeight, overflowX: document.documentElement.scrollWidth - window.innerWidth })',
+    )) as { scrollHeight: number; innerHeight: number; overflowX: number }
+  // Charts and observers re-measure a moment after a resize: take the layout once it holds still.
+  let last = await measure()
+  for (let i = 0; i < 10; i++) {
+    await page.waitForTimeout(120)
+    const next = await measure()
+    if (JSON.stringify(next) === JSON.stringify(last)) return next
+    last = next
+  }
+  return last
 }
 
 test('the start screen offers the samples, fills the window and never scrolls the page, in both themes', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByTestId('start-screen')).toBeVisible()
-  // Four bundled samples, each labelled synthetic.
-  await expect(page.getByRole('button', { name: /Open sample/ })).toHaveCount(4)
-  await expect(page.getByText('Synthetic', { exact: true })).toHaveCount(4)
+  // The bundled samples (at least the original four), each labelled synthetic.
+  await expect(page.getByRole('button', { name: /Open sample/ }).first()).toBeVisible()
+  const cards = await page.getByRole('button', { name: /Open sample/ }).count()
+  expect(cards).toBeGreaterThanOrEqual(4)
+  await expect(page.getByText('Synthetic', { exact: true })).toHaveCount(cards)
   for (let pass = 0; pass < 2; pass++) {
     for (const size of SIZES) {
       await page.setViewportSize(size)
@@ -835,4 +847,44 @@ test('the guided tour walks the real dashboard and the page never scrolls at any
     await popover.getByRole('button', { name: 'Next' }).click()
   }
   await expect(popover).toBeHidden()
+})
+
+test('a known-system sample shows its decoded messages and the bit stream, without scrolling the page', async ({ page }) => {
+  test.setTimeout(180_000)
+  await page.goto('/')
+  await page.locator('[data-sample="scene_systems"]').click()
+  await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: /^Analysing signal/ })).toHaveCount(0, { timeout: 150_000 })
+  // The POCSAG pages, as text, under their own level (the text rests on a convention).
+  const card = page.getByRole('region', { name: 'Decoded message' })
+  await expect(card).toBeVisible()
+  await expect(card).toContainText('SANKET DEMO PAGE ONE')
+  await expect(card.getByText('Hypothesis', { exact: true })).toBeVisible()
+  // The NAVTEX warning is on the second signal.
+  await page.getByRole('button', { name: /^#2 / }).click()
+  await expect(page.getByRole('region', { name: 'Decoded message' })).toContainText('GALE WARNING ARABIAN SEA')
+  await page.getByRole('tab', { name: /^Bit stream/ }).click()
+  await expect(page.getByText('Sync-word recurrence', { exact: false }).first()).toBeVisible()
+  for (const size of SIZES) {
+    await page.setViewportSize(size)
+    // The charts re-measure a moment after the resize, so wait for the settled layout.
+    await expect
+      .poll(async () => (await pageFit(page)).overflowX, { message: `${size.width} wide, sideways` })
+      .toBeLessThanOrEqual(0)
+    const fit = await pageFit(page)
+    expect(fit.scrollHeight, `${size.width} wide`).toBeLessThanOrEqual(fit.innerHeight)
+  }
+})
+
+test('the raw sample opens with its sample rate UNKNOWN and asks for it', async ({ page }) => {
+  test.setTimeout(180_000)
+  await page.goto('/')
+  await page.locator('[data-sample="scene_raw"]').click()
+  const prompt = page.getByRole('region', { name: 'Sample rate needed' })
+  await expect(prompt).toBeVisible()
+  await page.getByLabel('Sample rate in samples per second').fill('1M')
+  await page.getByLabel('Sample rate in samples per second').press('Enter')
+  await expect(prompt).toBeHidden()
+  await expect(page.getByRole('status').filter({ hasText: /^Analysing signal/ })).toHaveCount(0, { timeout: 150_000 })
+  await expect(page.getByText('Verified', { exact: true }).first()).toBeVisible()
 })

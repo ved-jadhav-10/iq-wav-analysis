@@ -1,5 +1,6 @@
 """The ground-truth generator, checked against catalogue values and by inverting its own chain."""
 
+import hashlib
 import json
 import zlib
 from pathlib import Path
@@ -311,3 +312,37 @@ def test_integer_output_is_scaled_to_the_requested_level(tmp_path: Path) -> None
 def test_gray_position_inverts_gray() -> None:
     p = np.arange(1024)
     assert np.array_equal(gray_position(gray(p)), p)
+
+
+# -- text payloads -------------------------------------------------------------------------------
+
+
+def _scene_for(spec: SignalSpec) -> Scene:
+    return Scene(samples=1 << 15, signals=(spec,), noise_db=-20.0)
+
+
+def test_text_payloads_are_a_repeating_banner_with_the_frame_number() -> None:
+    frame = FrameSpec(payload_bytes=40)
+    spec = SignalSpec(modulation="qpsk", sps=4, frame=frame, text="DEMO FRAME ")
+    g = generate(_scene_for(spec), 3)
+    rows = g.signals[0].payloads
+    assert rows.shape[1] == 40 and len(rows) >= 8
+    for n, row in enumerate(rows):
+        banner = f"DEMO FRAME {n:04d} ".encode("ascii")
+        assert row.tobytes() == (banner * 4)[:40]
+    # The frame's counter is the same n, and the truth framing carries these exact bytes.
+    framed = g.signals[0].framed.reshape(-1, frame.length)
+    for n, row in enumerate(framed):
+        body = to_bytes(row[len(frame.sync_bits) : len(row) - 16])
+        assert int.from_bytes(body[:2], "big") == n % 65536
+        assert body[2:] == rows[n].tobytes()
+
+
+def test_default_specs_are_unchanged_by_the_text_option() -> None:
+    """text=None draws random payloads exactly as before: the hash is that of the generator
+    without the option (recorded from the tree before it was added)."""
+    spec = SignalSpec(modulation="qpsk", sps=4)
+    assert spec.text is None
+    payloads = generate(_scene_for(spec), 3).signals[0].payloads
+    assert payloads.shape == (32, 64)
+    assert hashlib.sha256(payloads.tobytes()).hexdigest().startswith("cb19e381f446bf16")

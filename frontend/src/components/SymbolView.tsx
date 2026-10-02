@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Detection, Eye } from '@/lib/analysis'
 import { integer, signed } from '@/lib/format'
 import { cssVar, useTheme } from '@/hooks/theme'
+import { isPending } from '@/lib/plainHeadline'
 import { InfoTip } from './InfoTip'
 
 const FONT = '10px "IBM Plex Mono", monospace'
@@ -181,11 +182,15 @@ function emptyMessage(detection: Detection): string {
   if (detection.kind === 'fsk') {
     return 'No constellation: non-coherent FSK decides each symbol by tone energy. Tone spacing and timing are in the evidence below.'
   }
-  return (
-    detection.noFramesReason ??
-    detection.noSearchReason ??
-    'No symbols were recovered for this detection.'
-  )
+  if (isPending(detection)) {
+    return 'Analysing this signal. Its symbols appear here once timing and carrier recovery have run.'
+  }
+  const reason = detection.noFramesReason ?? detection.noSearchReason
+  const settle =
+    ' A stronger or longer capture, or an analyst-entered symbol rate, would give the receiver something to lock to.'
+  return reason
+    ? `No symbols to plot. ${reason.trim()}${/[.!?]$/.test(reason.trim()) ? '' : '.'}${settle}`
+    : `No symbols were recovered for this detection (the signal was not locked to a symbol rate and carrier).${settle}`
 }
 
 /** Symbol-domain view for the selected detection: the constellation (or, on the toggle, the eye

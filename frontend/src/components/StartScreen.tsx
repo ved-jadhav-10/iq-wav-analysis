@@ -8,21 +8,72 @@ import { Logo } from './Logo'
 
 /** What a visitor should look for in each bundled sample, by id. The ground truth behind each is
  * in `data/demo/<id>.truth.json`; the server's own title and description come from `/samples`. */
-const SAMPLE_NOTES: Record<string, readonly string[]> = {
-  scene: [
-    'Two coded signals recovered, their frames proven by CRC',
-    'One noisy signal left undecoded, with the reason why',
-    'An FM broadcast labelled analog, not forced into a digital label',
-  ],
-  scene_widen: [
-    'Block de-interleaving found and undone on an 8PSK signal',
-    'Reed-Solomon outer code peeled off a QPSK signal',
-  ],
-  scene_fsk: ['Tone-based demodulation of a 2-FSK signal', 'Symbol rate estimated, frames proven by CRC'],
-  scene_ldpc: [
-    'An LDPC code named from a catalogue of published codes',
-    'Proven by the frame CRC, with every other candidate in the ledger',
-  ],
+interface SampleNote {
+  /** What the PS asks for that this sample shows, as short chips. */
+  covers: readonly string[]
+  /** What to look for. */
+  sees: readonly string[]
+}
+
+const SAMPLE_NOTES: Record<string, SampleNote> = {
+  scene: {
+    covers: ['Detection', 'QPSK / BPSK', 'Convolutional + Viterbi', 'Framing'],
+    sees: [
+      'Two coded signals recovered, their frames proven by CRC',
+      'One noisy signal left undecoded, with the reason why',
+      'An FM broadcast labelled analog, not forced into a digital label',
+    ],
+  },
+  scene_coverage: {
+    covers: ['16QAM', 'Helical + convolutional interleavers', 'Blind code identification'],
+    sees: [
+      '16QAM through a helical (diagonal) interleaver, undone and proven',
+      'A convolutional (Forney) interleaver found on a QPSK signal',
+      'A K=9 convolutional code that is not in any catalogue, found blind',
+      'Frame payloads that read as text in the Frames and Bit stream tabs',
+    ],
+  },
+  scene_widen: {
+    covers: ['8PSK', 'Block interleaver', 'Reed-Solomon', 'Concatenated codes'],
+    sees: [
+      'Block de-interleaving found and undone on an 8PSK signal',
+      'Reed-Solomon outer code peeled off a QPSK signal',
+    ],
+  },
+  scene_fsk: {
+    covers: ['2-FSK', 'Symbol rate'],
+    sees: ['Tone-based demodulation of a 2-FSK signal', 'Symbol rate estimated, frames proven by CRC'],
+  },
+  scene_fsk4: {
+    covers: ['4-FSK'],
+    sees: ['Four tones told apart, two bits per symbol', 'Frames proven by CRC, payload readable as text'],
+  },
+  scene_ldpc: {
+    covers: ['LDPC'],
+    sees: [
+      'An LDPC code named from a catalogue of published codes',
+      'Proven by the frame CRC, with every other candidate in the ledger',
+    ],
+  },
+  scene_systems: {
+    covers: ['Known systems', 'POCSAG', 'NAVTEX', 'AIS'],
+    sees: [
+      'Three public systems recognised blind, each proved by its own check',
+      'The paging messages and the NAVTEX warning shown as text',
+      'AIS packets proved by CRC-16, with the ship identities',
+    ],
+  },
+  scene_wav: {
+    covers: ['.wav input', 'Sample rate from the header'],
+    sees: ['A stereo WAV read as I and Q, its rate taken from the header', 'Frames proven by CRC'],
+  },
+  scene_raw: {
+    covers: ['Raw .iq input', 'Sample rate unknown'],
+    sees: [
+      'A headerless file opened with its sample rate UNKNOWN, and Sanket asks for it',
+      'Enter 1 MS/s and the signal decodes and is proven',
+    ],
+  },
 }
 
 const LEVELS: readonly EvidenceLevel[] = ['VERIFIED', 'MEASURED', 'ESTIMATED', 'HYPOTHESIS', 'UNKNOWN']
@@ -64,9 +115,9 @@ export function StartScreen({ opening, openingSample, onUpload, onOpenSample }: 
     <main
       aria-label="Start"
       data-testid="start-screen"
-      className="min-h-0 flex-1 overflow-y-auto bg-background"
+      className="relative min-h-0 flex-1 overflow-y-auto bg-background"
     >
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-6 max-sm:px-4">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 2xl:max-w-7xl px-6 py-6 max-sm:px-4">
         <header className="flex items-start gap-4">
           <Logo className="size-11 shrink-0" />
           <div className="min-w-0">
@@ -108,10 +159,10 @@ export function StartScreen({ opening, openingSample, onUpload, onOpenSample }: 
             </p>
           )}
           {samples.state === 'ready' && samples.items.length > 0 && (
-            <ul className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
+            <ul className="grid grid-cols-2 gap-3 max-md:grid-cols-1 2xl:grid-cols-3">
               {samples.items.map((s) => {
                 const busy = openingSample === s.id
-                const notes = SAMPLE_NOTES[s.id] ?? []
+                const note = SAMPLE_NOTES[s.id]
                 return (
                   <li key={s.id} className="flex">
                     <button
@@ -129,10 +180,22 @@ export function StartScreen({ opening, openingSample, onUpload, onOpenSample }: 
                         </span>
                       </span>
                       <span className="text-xs text-muted-foreground">{s.description}</span>
-                      {notes.length > 0 && (
+                      {note && (
+                        <span className="flex flex-wrap gap-1">
+                          {note.covers.map((c) => (
+                            <span
+                              key={c}
+                              className="rounded-[3px] bg-surface-2 px-1.5 py-px text-2xs font-medium text-muted-foreground"
+                            >
+                              {c}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                      {note && (
                         <span className="flex flex-col gap-1">
                           <span className="eyebrow">What you will see</span>
-                          {notes.map((n) => (
+                          {note.sees.map((n) => (
                             <span key={n} className="flex items-start gap-1.5 text-xs">
                               <Check className="mt-[3px] size-3 shrink-0 text-primary" aria-hidden />
                               {n}

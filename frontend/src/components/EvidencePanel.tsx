@@ -6,6 +6,7 @@ import { EvidenceBadge } from './EvidenceBadge'
 import { formatValue } from '@/lib/format'
 import { LEVEL_FILL } from './levelStyles'
 import { InfoTip } from './InfoTip'
+import { DecodedMessages } from './DecodedMessages'
 import { glossaryKeyFor } from '@/lib/glossary'
 import { isPending, plainHeadline } from '@/lib/plainHeadline'
 
@@ -118,6 +119,14 @@ export function EvidencePanel({ detection, activeStage }: { detection: Detection
           Every value shows how sure Sanket is, how it was found, and what would settle it if it is unknown.
         </p>
       </div>
+      <DecodedMessages detection={detection} />
+      {detection.stages.length === 0 && (
+        <p className="rounded-md border border-dashed px-3 py-6 text-center text-xs text-muted-foreground">
+          {isPending(detection)
+            ? 'Analysing this signal. Each stage appears here, with its values and evidence, as soon as it finishes.'
+            : 'No stage reported for this detection, so there is no evidence to show. Re-opening the recording runs the analysis again.'}
+        </p>
+      )}
       {detection.stages.map((s) => (
         <section
           key={s.id}
@@ -135,6 +144,13 @@ export function EvidencePanel({ detection, activeStage }: { detection: Detection
             <p className="text-xs text-subtle-foreground italic">Not applicable — {s.summary.toLowerCase()}.</p>
           ) : (
             <div className="space-y-2">
+              {s.parameters.length === 0 && (
+                <p className="text-xs text-subtle-foreground italic">
+                  {s.status === 'failed'
+                    ? `This stage failed${s.error ? `: ${s.error}` : ''}, so it reported no values.`
+                    : 'This stage reported no values for this signal.'}
+                </p>
+              )}
               {s.parameters.map((p) => (
                 <ParameterCard key={p.id} param={p} />
               ))}

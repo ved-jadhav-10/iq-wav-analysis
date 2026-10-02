@@ -33,6 +33,11 @@ export function PipelineRail({ detections, selected, onSelectDetection, activeSt
       <div className="px-3 pt-3 pb-2">
         <h2 className="eyebrow">Detections</h2>
       </div>
+      {detections.length === 0 && (
+        <p className="mx-3 mb-2 rounded-md border border-dashed px-2 py-3 text-xs text-muted-foreground">
+          No signal found above the noise floor. A longer capture, a different centre frequency or a higher gain would show weaker ones.
+        </p>
+      )}
       <ul className="space-y-px px-1.5">
         {detections.map((d) => {
           const active = d.id === selected.id
@@ -76,6 +81,13 @@ export function PipelineRail({ detections, selected, onSelectDetection, activeSt
       <div className="mt-4 px-3 pb-2">
         <h2 className="eyebrow">Pipeline · #{selected.id}</h2>
       </div>
+      {selected.stages.length === 0 && (
+        <p className="mx-3 mb-3 rounded-md border border-dashed px-2 py-3 text-xs text-muted-foreground">
+          {isPending(selected)
+            ? 'Analysing this signal. A row appears here for each stage as it finishes.'
+            : 'No stage has reported for this signal, so there is nothing to step through.'}
+        </p>
+      )}
       <ol className="relative px-1.5 pb-3">
         {selected.stages.map((s, i) => {
           const na = s.status === 'not-applicable'
