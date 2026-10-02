@@ -247,3 +247,15 @@ def test_detection_parameters_warn_when_marked_as_an_image() -> None:
     )
     params = {p.id: p for p in detection_parameters(d)}
     assert any("image" in w for w in params["snr_db"].warnings)
+
+
+def test_noise_alone_gives_no_detection_including_at_the_band_edge() -> None:
+    """Seeds 32, 83 and 136 gave detections one or two bins wide at 0.46-0.5 cycles/sample on
+    pure noise: the noise floor's running percentile repeated the edge bin (`nearest`) and a low
+    edge bin pulled it down. The spectrum of complex samples is periodic, so the window wraps."""
+    hits = 0
+    for seed in (32, 83, 136, *range(150)):
+        rng = np.random.default_rng(seed)
+        x = (rng.standard_normal(65536) + 1j * rng.standard_normal(65536)) / np.sqrt(2)
+        hits += len(detect(MemorySource(x.astype(np.complex64)), real=False).detections)
+    assert hits == 0

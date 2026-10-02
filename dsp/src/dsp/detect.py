@@ -168,7 +168,12 @@ def noise_floor(spec: Spectrogram) -> Floor:
     # order statistic of such values sits that many spreads below their mean.
     spread = 1.2533 / math.sqrt(rows * dof)
     width = max(3, len(medians) // FLOOR_WINDOW) | 1
-    local = _scipy.percentile_filter(medians, FLOOR_RANK, width) / (1 - 0.8416 * spread)
+    # The spectrum of complex samples is periodic (+0.5 is -0.5), so the floor window wraps
+    # there; a real signal's one-sided spectrum mirrors at 0 and 0.5. Repeating the edge bin
+    # instead (the old `nearest`) let a low edge bin pull the floor down and the
+    # detector fire on noise at the band edge.
+    mode = "reflect" if spec.real_input else "wrap"
+    local = _scipy.percentile_filter(medians, FLOOR_RANK, width, mode) / (1 - 0.8416 * spread)
     cap = float(np.percentile(medians, GLOBAL_RANK)) / (1 - 0.5244 * spread)
     level = np.minimum(local, cap)
     return Floor(level, cap, int(np.sum(local > cap)))

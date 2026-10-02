@@ -59,8 +59,10 @@ def closing(mask: Bool2D, rows: int, cols: int) -> Bool2D:
     return np.asarray(closed[rows:-rows, cols:-cols], np.bool_)
 
 
-def percentile_filter(x: Float, percentile: float, size: int) -> Float:
-    return np.asarray(ndimage.percentile_filter(x, percentile, size=size, mode="nearest"))
+def percentile_filter(x: Float, percentile: float, size: int, mode: str = "nearest") -> Float:
+    """Running percentile; `mode` is how the ends are continued (`wrap`: the axis is periodic, as
+    the spectrum of complex samples is, `reflect`: mirrored, as a real signal's is)."""
+    return np.asarray(ndimage.percentile_filter(x, percentile, size=size, mode=mode))
 
 
 def gamma_ppf(q: float, shape: float) -> float:

@@ -9,17 +9,17 @@ One signal per scene, centred at a random offset, clean AWGN only (no impairment
 | SNR (dB) | Recall | False detections/scene (linear / M-FSK) | Rate error (median %, coverage) | SNR error (median / max abs, dB, coverage) | CFO error (median %, coverage) |
 |---|---|---|---|---|---|
 | 0 | 100.0% | 0.20 (0.00 / 0.54) | 4.694 (15/64) | -0.45 / 0.68 (40/40) | 0.000 (4/16) |
-| 3 | 100.0% | 0.17 (0.20 / 0.12) | 0.001 (43/64) | -0.42 / 0.65 (40/40) | 0.000 (5/16) |
-| 6 | 100.0% | 0.19 (0.20 / 0.17) | 0.000 (45/64) | -0.38 / 0.48 (40/40) | 0.000 (13/16) |
+| 3 | 100.0% | 0.02 (0.00 / 0.04) | 0.001 (44/64) | -0.42 / 0.65 (40/40) | 0.000 (5/16) |
+| 6 | 100.0% | 0.06 (0.00 / 0.17) | 0.000 (45/64) | -0.38 / 0.48 (40/40) | 0.000 (13/16) |
 | 10 | 100.0% | 0.06 (0.00 / 0.17) | 0.000 (58/64) | -0.41 / 0.48 (40/40) | 0.000 (16/16) |
-| 15 | 100.0% | 0.22 (0.05 / 0.50) | 0.000 (64/64) | -0.40 / 0.46 (40/40) | 0.000 (16/16) |
-| 20 | 100.0% | 0.25 (0.20 / 0.33) | 0.000 (64/64) | -0.40 / 0.48 (40/40) | 0.000 (16/16) |
-| 25 | 100.0% | 0.53 (0.17 / 1.12) | 0.000 (64/64) | -0.40 / 0.47 (40/40) | 0.000 (16/16) |
-| 30 | 100.0% | 0.58 (0.00 / 1.54) | 0.000 (64/64) | -0.40 / 0.47 (40/40) | 0.000 (16/16) |
+| 15 | 100.0% | 0.17 (0.00 / 0.46) | 0.000 (64/64) | -0.40 / 0.46 (40/40) | 0.000 (16/16) |
+| 20 | 100.0% | 0.12 (0.00 / 0.33) | 0.000 (64/64) | -0.40 / 0.48 (40/40) | 0.000 (16/16) |
+| 25 | 100.0% | 0.30 (0.00 / 0.79) | 0.000 (64/64) | -0.40 / 0.47 (40/40) | 0.000 (16/16) |
+| 30 | 100.0% | 0.59 (0.00 / 1.58) | 0.000 (64/64) | -0.40 / 0.47 (40/40) | 0.000 (16/16) |
 
 Coverage is scenes with a value, over scenes where one could apply (rate: all modulations; SNR: linear modulations only, see the note below; CFO: BPSK/QPSK only, PLAN §5 M2). A symbol-rate or CFO estimate below its coverage total means the estimator correctly abstained (no significant line) rather than guessing on some scenes, mostly at low SNR; a wrong value that still cleared significance is possible at the estimator's own false-alarm rate and shows up as an outlier, not a missing row.
 
-SNR is not scored for M-FSK: `snr_psd`'s occupied-bandwidth fit assumes one continuous spectral lobe, and M-FSK's several separated tones aren't that (PLAN §5 M2, `dsp.estimate.params.snr_psd`'s Limits).
+SNR here is `snr_psd`'s: the signal's power over the noise power in its own noise-equivalent bandwidth, which for an RRC pulse is the symbol rate over (1 - rolloff / 4), so it reads about 0.4 dB below the Es/N0 the scenes are drawn at (the analysis reports Es/N0 itself, from the same moments over the measured symbol rate, without that offset). It is not scored for M-FSK: the separated tones are not one lobe, and their noise-equivalent bandwidth is not the symbol rate's (PLAN §5 M2, `dsp.estimate.params.snr_psd`'s Limits).
 
 The false-detection rate is dominated by M-FSK, not linear modulations (see the split column): `dsp.synth.modulate.fsk` shapes no pulse onto the frequency trajectory (an abrupt step at each symbol, unlike the RRC-shaped linear modulations), which splatters real, above-floor energy between some tones widely and consistently enough across seeds that `dsp.detect.merge_tone_combs`' honest "no spacing pattern, no merge" rule correctly leaves some of it as its own detection rather than silently absorbing it. This is a ground-truth generator limitation, not a detector bug (`tests/dsp/test_detect.py`'s `test_merge_tone_combs_*` tests the merge logic itself, isolated from the splatter). `fsk()` now takes an optional Gaussian premodulation filter (`bt`, GFSK-style), but a sweep over bt in [0.02, 2.0] found a three-way conflict, not a single fixable value: bt in roughly [0.02, 0.15] does absorb the splatter into one detection, but by then blurring the discrete tone histogram toward FM's continuous one it fails dsp.analog's kurtosis gate, and by smearing the sharp transitions dsp.estimate.params.fsk_symbol_rate's edge-rate comb depends on, it breaks the FSK symbol-rate estimate; bt in [0.2, 0.4] fails two of those three checks at once; only bt=0 or bt >~ 0.5-2.0 (weak enough to be close to a no-op) pass every test, and those barely move these numbers. Left off by default (PLAN §5 M2, `SignalSpec.fsk_bt`); a real fix needs a filter that cuts splatter without erasing the discrete-tone signature the other two stages read off the same trajectory, not just a different bt.
 
