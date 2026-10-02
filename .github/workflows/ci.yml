@@ -47,7 +47,7 @@ jobs:
           uv run ruff check
           uv run ruff format --check
           uv run pyright
-          uv run pytest -n auto --dist loadfile
+          uv run pytest -n auto --dist worksteal
 
       - name: Frontend checks
         working-directory: frontend

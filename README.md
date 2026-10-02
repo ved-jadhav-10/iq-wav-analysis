@@ -45,7 +45,7 @@ uv run sanket                        # http://127.0.0.1:8765
 Checks, as CI runs them:
 
 ```bash
-uv run ruff check && uv run ruff format --check && uv run pyright && uv run pytest -n auto --dist loadfile
+uv run ruff check && uv run ruff format --check && uv run pyright && uv run pytest -n auto --dist worksteal
 uv run python tools/third_party.py --check       # licences + THIRD_PARTY.md
 cd frontend && npm run lint && npm run typecheck && npm test && npm run build
 npx playwright install chromium && npm run e2e   # offline smoke test against sanket

@@ -122,18 +122,14 @@ def _autocorrelation_peaks(s: Bits) -> list[tuple[float, int]]:
     length shows up as a peak of about (constant columns / L) x sqrt(N) standard deviations."""
     n = len(s)
     x = 1.0 - 2.0 * s.astype(np.float64)
-    size = 1 << (2 * n - 1).bit_length()
-    spectrum = np.fft.rfft(x, size)
-    r = np.fft.irfft(spectrum * np.conj(spectrum), size)
     lags = np.arange(MIN_PERIOD, min(MAX_PERIOD, n // (2 * MIN_ROWS)) + 1)
     if len(lags) == 0:
         return []
+    r = _scipy.autocorrelation(x)
     z = r[lags] / np.sqrt(n - lags)
-    order = np.argsort(-z)
+    above = np.flatnonzero(z >= Z_MIN)  # noise has almost none: the sort and the scan are for those
     peaks: list[tuple[float, int]] = []
-    for i in order:
-        if z[i] < Z_MIN:
-            break
+    for i in above[np.argsort(-z[above], kind="stable")]:
         if all(abs(int(lags[i]) - lag) > 2 for _, lag in peaks):
             peaks.append((float(z[i]), int(lags[i])))
     return peaks

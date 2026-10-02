@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy import linalg, ndimage, signal, special, stats
+from scipy import fft, linalg, ndimage, signal, special, stats
 
 Bool2D = NDArray[np.bool_]
 Float = NDArray[np.float64]
@@ -119,3 +119,13 @@ def log10_gamma_sf(x: float, shape: float) -> float:
 def i0(x: Float) -> Float:
     """The modified Bessel function of order 0, compiled (numpy's `np.i0` is pure Python)."""
     return np.asarray(special.i0(x), np.float64)  # pyright: ignore[reportUnknownMemberType]
+
+
+def autocorrelation(x: NDArray[Any]) -> Float:
+    """Linear autocorrelation of a real sequence, lags 0 .. len(x) - 1, in single precision (a
+    screen: the lag-r sums of +-1 values are exact to about 1e-6 of the length)."""
+    n = len(x)
+    size: Any = fft.next_fast_len(2 * n - 1, True)
+    spectrum: Any = fft.rfft(np.asarray(x, np.float32), size)
+    r: Any = fft.irfft(spectrum.real**2 + spectrum.imag**2, size)
+    return np.asarray(r[:n], np.float64)

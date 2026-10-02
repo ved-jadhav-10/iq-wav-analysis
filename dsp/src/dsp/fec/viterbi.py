@@ -50,29 +50,42 @@ def _viterbi(
     n = outputs.shape[1]
     states = 1 << (k - 1)
     steps = len(llr) // n
+    # Every branch of a step scores one of 2^n output patterns: score those once per step, then
+    # each state only adds a table entry (the per-state loop over the n outputs was the cost).
+    patterns = 1 << n
+    pattern_of = np.empty(2 * states, np.int64)
+    for reg in range(2 * states):
+        p = 0
+        for j in range(n):
+            p |= outputs[reg, j] << j
+        pattern_of[reg] = p
     metric = np.zeros(states)
     new = np.empty(states)
+    branch = np.empty(patterns)
     decisions = np.empty((steps, states), np.uint8)
     for t in range(steps):
         base = t * n
+        for p in range(patterns):
+            m = 0.0
+            for j in range(n):
+                if (p >> j) & 1:
+                    m -= llr[base + j]
+                else:
+                    m += llr[base + j]
+            branch[p] = m
+        top = -np.inf
         for ns in range(states):
-            best = -np.inf
-            choice = 0
-            for b in range(2):
-                reg = (ns << 1) | b
-                prev = reg & (states - 1)
-                m = metric[prev]
-                for j in range(n):
-                    if outputs[reg, j]:
-                        m -= llr[base + j]
-                    else:
-                        m += llr[base + j]
-                if m > best:
-                    best = m
-                    choice = b
-            new[ns] = best
-            decisions[t, ns] = choice
-        top = new.max()
+            reg0 = ns << 1
+            m0 = metric[reg0 & (states - 1)] + branch[pattern_of[reg0]]
+            m1 = metric[(reg0 | 1) & (states - 1)] + branch[pattern_of[reg0 | 1]]
+            if m1 > m0:  # ties keep branch 0
+                new[ns] = m1
+                decisions[t, ns] = 1
+            else:
+                new[ns] = m0
+                decisions[t, ns] = 0
+            if new[ns] > top:
+                top = new[ns]
         for s in range(states):
             metric[s] = new[s] - top
     state = int(np.argmax(metric))
