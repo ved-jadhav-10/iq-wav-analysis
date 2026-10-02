@@ -89,20 +89,24 @@ class SnrEstimate:
 
 SNR_BAND = 0.4  # the |frequency| the SNR estimate reads: a channelised signal is flat out to here
 SNR_FLOOR_RANK = 0.4  # percentile of the in-band PSD bins taken as the noise floor
+SNR_MIN_FLOOR_SHARE = 0.4  # of the in-band bins that must be left as noise after the signal
+SNR_MIN_SIGNIFICANCE = 6.0  # the excess power over its own scatter (noise alone: about 1)
 
 
 def _refined_floor(p: Float, floor: float, dof: float) -> float:
     """The noise floor as the mean of the bins that sit off the signal. The percentile that
     starts the estimate is pulled up by the signal's bins (at 0 dB they are a fifth of the band,
     above the median of the rest), so the bins whose smoothed level stands above the floor are
-    dropped, with a margin of their own width, and the rest averaged. Keeps the percentile when
-    less than a quarter of the bins are left."""
+    dropped, with a margin of their own width, and the rest averaged. Raises when less than
+    `SNR_MIN_FLOOR_SHARE` of the bins are left: no floor can be told from a signal that wide."""
     m = max(8, len(p) // 64)
     smooth = np.convolve(p, np.ones(m) / m, mode="same")
     above = smooth > floor * (1 + 3.0 / math.sqrt(dof * m))
     grown = np.convolve(above.astype(float), np.ones(2 * m + 1), mode="same") > 0
     kept = p[~grown]
-    return float(kept.mean()) if len(kept) >= len(p) // 4 else floor
+    if len(kept) < SNR_MIN_FLOOR_SHARE * len(p):
+        raise ValueError("the signal fills too much of the band to find a noise floor beside it")
+    return float(kept.mean())
 
 
 def snr_psd(x: NDArray[Any], nfft: int = 1024) -> SnrEstimate:
@@ -118,11 +122,16 @@ def snr_psd(x: NDArray[Any], nfft: int = 1024) -> SnrEstimate:
     SNR from 0 to 30 dB (`bench/results/bench-v0-detect.md`), and B is about R / (1 - rolloff / 4)
     for symbol rate R, so it sits roughly 0.4 dB below Es/N0 for a roll-off of 0.35.
 
-    Limits: the signal must fill less than the lower SNR_FLOOR_RANK of the |f| < SNR_BAND bins
-    (channelisation leaves it about a sixth), and be one continuous lobe: M-FSK's separated tones
-    give a B of their own, which is not the symbol rate's, so the bench does not score it. A real
-    (one-sided) recording keeps one of the two mirrored lobes. One of the three estimators PLAN
-    §5 M2 calls for (M2M4 on the recovered symbols is `snr_m2m4`; eigenvalue/MDL is not built).
+    Limits: the signal must leave at least SNR_MIN_FLOOR_SHARE of the |f| < SNR_BAND bins as noise
+    (channelisation leaves it about five sixths), else ValueError, and must stand
+    SNR_MIN_SIGNIFICANCE times above the scatter of a noise-only sum, else ValueError. It must be
+    one continuous lobe whose spectrum falls to the noise: M-FSK's separated tones give a B of
+    their own, which is not the symbol rate's, so the bench does not score it, and a rectangular
+    pulse's sidelobes sit above the noise, which the floor reads as noise (Es/N0 reads up to
+    about 1.3 dB low at moderate SNR, and the sidelobes fill the band at high SNR, where it
+    raises). A real (one-sided) recording keeps one of the two mirrored lobes. One of the three
+    estimators PLAN §5 M2 calls for (M2M4 on the recovered symbols is `snr_m2m4`; eigenvalue/MDL
+    is not built).
     """
     real = not np.iscomplexobj(x)
     psd = welch(x, nfft)
@@ -138,7 +147,9 @@ def snr_psd(x: NDArray[Any], nfft: int = 1024) -> SnrEstimate:
     excess = p - floor
     power = float(excess.sum()) * width
     spread = float(np.sum(excess**2 - p**2 / dof)) * width
-    if power <= 0 or spread <= 0:
+    # The excess of noise alone sums to zero with a scatter of floor / sqrt(dof) per bin.
+    scatter = floor * math.sqrt(len(p) / dof) * width
+    if power <= SNR_MIN_SIGNIFICANCE * scatter or spread <= 0:
         raise ValueError("no signal stands above the noise floor")
     bandwidth = power * power / spread
     snr = power / (floor * bandwidth)

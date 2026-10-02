@@ -114,6 +114,8 @@ SHUFFLED_RUNS = 3
 # Significant chains checked against shuffled bits, best first, before acceptance gives up.
 MAX_SHUFFLE_CANDIDATES = 3
 MIN_SYMBOLS = 512
+# An offset-QPSK candidate's symbol rate over the detected bandwidth, which is R (1 + roll-off).
+OFFSET_BAND = (0.4, 1.2)
 MIN_ENVELOPE_VARIATION = 0.01  # std / mean of |x|² below which a symbol-rate line isn't real
 WEAK_ENVELOPE_LINE = 50.0  # |x|² line ratio below which the line doesn't rule out FSK
 CODES: tuple[ConvCode | None, ...] = (K7_R12, None)
@@ -181,7 +183,15 @@ def analyse(
     def offset_report() -> DetectionReport | None:
         if not offset_trials:
             found = offset_symbol_rate(x) if rate is None or weak_line else None
-            usable = found is not None and found.normalised_rate * len(x) >= MIN_SYMBOLS
+            # The rate must fit the band that was detected: R is the band over (1 + roll-off),
+            # so between about half of it and all of it. A spurious pair, or the half-rate alias
+            # of a real one, does not.
+            band = detection.bandwidth * channel.decimation
+            usable = (
+                found is not None
+                and found.normalised_rate * len(x) >= MIN_SYMBOLS
+                and OFFSET_BAND[0] <= found.normalised_rate / band <= OFFSET_BAND[1]
+            )
             offset_trials.append(
                 _offset_report(detect_stage, detection, units, x, found)
                 if found is not None and usable
@@ -1161,7 +1171,9 @@ def _esn0_parameter(x: Any, timing: Timing, modulation: str, evm: float) -> Para
         name="Es/N0",
         value=round(primary, 1),
         unit="dB",
-        uncertainty=0.5 if primary >= 3.0 and method.startswith("PSD") else 1.5,
+        # 0.2 dB scatter and a 0.1 dB bias for RRC pulses from 3 dB up on the detection bench; a
+        # pulse without a fall-off (rectangular) reads up to 1.3 dB low, so the figure is 1 dB.
+        uncertainty=1.0 if primary >= 3.0 and method.startswith("PSD") else 1.5,
         level=E.ESTIMATED,
         confidence=None if spread is None else round(1 / (1 + spread), 2),
         method=f"{method}; other estimators listed as evidence, their agreement as confidence",

@@ -162,3 +162,71 @@ def test_an_undecodable_offset_qpsk_burst_is_still_called_offset_qpsk_not_am() -
     assert report.kind != "analog"
     assert report.level is not EvidenceLevel.VERIFIED
     assert report.label == "OQPSK?"
+
+
+# -- limits the review found: what the pair search must refuse rather than get wrong ------------
+
+
+def _oqpsk(samples: int, esn0: float, seed: int, **kw: Any) -> Any:
+    power = NOISE_DB + esn0 - 10 * math.log10(8)
+    spec = SignalSpec(modulation="oqpsk", sps=8, power_db=power, frame=None, **kw)
+    return generate(Scene(samples=samples, signals=(spec,), noise_db=NOISE_DB), seed).samples
+
+
+@pytest.mark.parametrize("samples", [8192, 32768])
+def test_noise_gives_no_pair_in_a_thousand_trials(samples: int) -> None:
+    rng = np.random.default_rng(samples)
+    found = sum(
+        offset_symbol_rate(
+            (rng.standard_normal(samples) + 1j * rng.standard_normal(samples)) / math.sqrt(2)
+        )
+        is not None
+        for _ in range(1000)
+    )
+    assert found == 0
+
+
+def test_a_short_recording_gives_the_right_rate_or_none_never_a_wrong_one() -> None:
+    """At 2,048 symbols the mean of x² puts a line at 2f as strong as the real ones; the true
+    pair must not be thrown out for it, and a half-rate pair must not take its place."""
+    right = 0
+    for seed in range(40):
+        x = _oqpsk(16384, 20.0, seed, offset=0.004)
+        found = offset_symbol_rate(x)
+        if found is None:
+            continue
+        assert found.normalised_rate == pytest.approx(1 / 8, rel=1e-3), seed
+        assert found.cfo == pytest.approx(0.004, abs=5 * found.cfo_uncertainty + 1e-6), seed
+        right += 1
+    assert right >= 36
+
+
+def test_a_pair_that_would_wrap_is_refused_not_aliased() -> None:
+    x = _oqpsk(1 << 17, 14.0, 3, offset=0.2)  # 2f + R = 0.525: past the edge of the band
+    assert offset_symbol_rate(x) is None
+
+
+def test_a_drifting_carrier_is_not_called_offset_qpsk() -> None:
+    """The lines of x² move twice as far as the carrier and smear out of their bin."""
+    n = 1 << 17
+    x = _oqpsk(n, 14.0, 3)
+    drift = 1e-9  # cycles/sample^2: 1.3e-4 cycles/sample over the recording
+    t = np.arange(n)
+    assert offset_symbol_rate(x * np.exp(2j * np.pi * drift * t**2 / 2)) is None
+    assert offset_symbol_rate(x) is not None  # the same signal without the drift
+
+
+def test_a_very_low_rolloff_gives_the_right_rate_or_none() -> None:
+    power = NOISE_DB + 14.0 - 10 * math.log10(8)
+    spec = SignalSpec(modulation="oqpsk", sps=8, power_db=power, frame=None, rolloff=0.1)
+    x = generate(Scene(samples=1 << 17, signals=(spec,), noise_db=NOISE_DB), 5).samples
+    found = offset_symbol_rate(x)
+    assert found is None or found.normalised_rate == pytest.approx(1 / 8, rel=1e-3)
+
+
+def test_a_carrier_error_beyond_what_timing_can_take_is_not_returned() -> None:
+    """4,096 samples locate the lines to about 1e-5: inside the limit; the gate is on the
+    uncertainty itself, so a shorter or noisier recording returns nothing, not a poor offset."""
+    x = _oqpsk(4096, 20.0, 1, offset=0.003)
+    found = offset_symbol_rate(x)
+    assert found is None or found.cfo_uncertainty <= 2e-5

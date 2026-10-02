@@ -109,3 +109,39 @@ def test_m2m4_recovers_qpsk_and_16qam_symbol_snr() -> None:
                 snr, abs=0.4
             )
     assert snr_m2m4(np.ones(100, np.complex128)) is None  # too few symbols
+
+
+def test_noise_alone_never_gives_an_snr_in_a_hundred_trials() -> None:
+    rng = np.random.default_rng(7)
+    for _ in range(100):
+        x = rng.standard_normal(1 << 15) + 1j * rng.standard_normal(1 << 15)
+        with pytest.raises(ValueError):
+            snr_psd(x)
+
+
+def test_a_rectangular_pulse_reads_low_by_at_most_a_dB_or_raises() -> None:
+    """Its sidelobes sit above the noise, so the floor reads them as noise (the limit the
+    docstring states): up to about 1.3 dB low at moderate SNR, and past about 15 dB they fill the
+    band and there is no floor to find, so the estimator raises rather than reading wrong."""
+    sps = 8.0
+    raised = []
+    for esn0 in (0.0, 10.0, 20.0, 30.0):
+        spec = SignalSpec("qpsk", sps=sps, pulse="rect", frame=None, offset=0.0, power_db=0.0)
+        scene = Scene(1 << 17, (spec,), noise_db=-esn0 + 10 * math.log10(sps))
+        g = generate(scene, seed=5)
+        try:
+            est = snr_psd(g.samples, 4096)
+        except ValueError:
+            raised.append(esn0)
+            continue
+        reading = 10 * math.log10(est.signal_power / (est.noise_density / sps))
+        assert reading == pytest.approx(esn0, abs=1.3)
+    assert 0.0 not in raised and 10.0 not in raised  # it does read where it can
+    assert 30.0 in raised  # and refuses where it cannot
+
+
+def test_a_signal_that_fills_most_of_the_band_raises_not_misreads() -> None:
+    spec = SignalSpec("qpsk", sps=1.8, frame=None, offset=0.0, power_db=0.0)
+    g = generate(Scene(1 << 17, (spec,), noise_db=-30.0 + 10 * math.log10(1.8)), seed=5)
+    with pytest.raises(ValueError, match="fills too much"):
+        snr_psd(g.samples, 4096)
