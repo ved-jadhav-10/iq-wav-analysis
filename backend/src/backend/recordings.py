@@ -35,21 +35,23 @@ from .analysis import (
 )
 from .inputs import RecordingError, expand, open_input
 from .jobs import AnalysisJob, run_analysis
+from .runrecord import Phase, PhaseTimer
 
 
 def _survey(
     source: AnyRecording, *, real: bool, swap_iq: bool
-) -> tuple[Pyramid, tuple[Detection, ...], tuple[Parameter, ...]]:
+) -> tuple[Pyramid, tuple[Detection, ...], tuple[Parameter, ...], tuple[Phase, ...]]:
     """The tile pyramid, the detections and the capture-quality parameters, each one streaming
     pass over the samples. Detection has its own FFT sizes, independent of the pyramid's: PLAN §5
     M2's "first tile <= 2 s" item is still open partly because of this second pass."""
-    with source.reader(swap_iq=swap_iq) as reader:
+    timer = PhaseTimer()
+    with timer.phase("tiles"), source.reader(swap_iq=swap_iq) as reader:
         pyramid = build_pyramid(reader, real=real)
-    with source.reader(swap_iq=swap_iq) as reader:
+    with timer.phase("detect"), source.reader(swap_iq=swap_iq) as reader:
         detections = detect(reader, real=real).detections
-    with source.reader(swap_iq=swap_iq) as reader:
+    with timer.phase("capture-quality"), source.reader(swap_iq=swap_iq) as reader:
         quality = capture_quality(reader)
-    return pyramid, detections, quality
+    return pyramid, detections, quality, tuple(timer.phases)
 
 
 SYNTH_RECORDER = "sanket dsp.synth"
@@ -87,6 +89,8 @@ class Recording:
     quality: tuple[Parameter, ...] = ()
     # The files it was opened from (a path, or a sequence's files), for its content identity.
     files: tuple[Path, ...] = ()
+    # How long opening took, phase by phase, for the run record.
+    survey_phases: tuple[Phase, ...] = ()
 
     @property
     def swap_iq(self) -> bool:
@@ -143,7 +147,7 @@ class RecordingStore:
         fmt = opened.recording.sample_format
         assert fmt is not None  # open_input raised for an UNKNOWN format
         real = not fmt.is_complex
-        pyramid, detections, quality = _survey(opened.recording, real=real, swap_iq=False)
+        pyramid, detections, quality, phases = _survey(opened.recording, real=real, swap_iq=False)
         recording = Recording(
             id=str(uuid.uuid4()),
             path=path,
@@ -159,6 +163,7 @@ class RecordingStore:
             inferred_rate=infer_sample_rate(opened.recording, detections),
             quality=quality,
             files=items[0].paths,
+            survey_phases=phases,
         )
         return self._start(recording)
 
@@ -193,10 +198,16 @@ class RecordingStore:
                 changes["iq_order"] = iq_order
             updated = replace(current, entered=tuple(changes.items()))
             if updated.swap_iq != current.swap_iq:
-                pyramid, detections, quality = _survey(
+                pyramid, detections, quality, phases = _survey(
                     updated.source, real=False, swap_iq=updated.swap_iq
                 )
-                updated = replace(updated, pyramid=pyramid, detections=detections, quality=quality)
+                updated = replace(
+                    updated,
+                    pyramid=pyramid,
+                    detections=detections,
+                    quality=quality,
+                    survey_phases=phases,
+                )
             return self._start(updated)
 
     def _start(self, recording: Recording) -> Recording:

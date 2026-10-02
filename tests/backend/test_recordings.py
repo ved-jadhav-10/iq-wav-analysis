@@ -629,6 +629,14 @@ def test_the_results_download_is_the_document_sanket_analyse_writes(
     assert "Signal 1 (signal_0), VERIFIED:" in as_text.text
     assert "pass their CRC" in as_text.text
 
+    as_run = client.get(url, params={"format": "run"})
+    assert as_run.headers["content-type"] == "application/json"
+    assert 'filename="framed.run.json"' in as_run.headers["content-disposition"]
+    record = as_run.json()
+    assert record["resultsSha256"] == hashlib.sha256(as_json.content).hexdigest()
+    names = [p["name"] for p in record["phases"]]
+    assert names[:3] == ["tiles", "detect", "capture-quality"] and "signal_0" in names
+
     as_pdf = client.get(url, params={"format": "pdf"})
     assert as_pdf.headers["content-type"] == "application/pdf"
     assert 'filename="framed.report.pdf"' in as_pdf.headers["content-disposition"]

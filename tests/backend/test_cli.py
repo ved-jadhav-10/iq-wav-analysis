@@ -172,7 +172,12 @@ def test_analyse_a_folder_is_a_batch_and_one_bad_file_does_not_stop_it(
     (batch / "notes.txt").write_text("not a recording")
     out = tmp_path / "out"
     assert cli.main(["analyse", str(batch), "--out", str(out)]) == 1  # the .gz is refused
-    assert sorted(p.name for p in out.iterdir()) == ["one.results.json", "two.results.json"]
+    assert sorted(p.name for p in out.iterdir()) == [
+        "one.results.json",
+        "one.run.json",
+        "two.results.json",
+        "two.run.json",
+    ]
     assert signal_centre(load(out / "one.results.json")) == pytest.approx(
         signal_centre(load(out / "two.results.json"))
     )
@@ -190,7 +195,12 @@ def test_analyse_sequence_reads_numbered_files_as_one_recording(
         write_wav(parts / f"cap_{i}.wav", part, peak=peak)
     out = tmp_path / "out"
     assert cli.main(["analyse", str(whole), str(parts), "--out", str(out), "--sequence"]) == 0
-    assert sorted(p.name for p in out.iterdir()) == ["cap_0.results.json", "whole.results.json"]
+    assert sorted(p.name for p in out.iterdir()) == [
+        "cap_0.results.json",
+        "cap_0.run.json",
+        "whole.results.json",
+        "whole.run.json",
+    ]
     joined, single = load(out / "cap_0.results.json"), load(out / "whole.results.json")
     assert joined["stages"][0]["summary"] == "Numbered sequence: 65,536 samples"
     assert signal_centre(joined) == signal_centre(single)
@@ -241,6 +251,7 @@ def test_analyse_writes_each_signals_frame_table_in_the_formats_asked_for(
     assert cli.main([*args, "--frames", "hex", "--frames", "json", "--frames", "hex"]) == 0
     assert sorted(p.name for p in out.iterdir()) == [
         "framed.results.json",
+        "framed.run.json",
         "framed.signal_0.frames.hex.txt",
         "framed.signal_0.frames.json",
     ]
@@ -396,3 +407,40 @@ def test_analyse_pdf_writes_the_report_beside_the_results(tmp_path: Path, sigmf_
     digest = hashlib.sha256((out / "rec.results.json").read_bytes()).hexdigest()
     assert digest[:16] in text.replace(chr(10), "")
     assert "rec.sigmf-data" in text
+
+
+def test_analyse_writes_a_run_record_that_names_the_results_and_no_one(
+    tmp_path: Path, sigmf_path: Path
+) -> None:
+    import getpass
+    import hashlib
+    import socket
+
+    out = tmp_path / "out"
+    assert cli.main(["analyse", str(sigmf_path), "--out", str(out)]) == 0
+    text = (out / "rec.run.json").read_text(encoding="utf-8")
+    record = json.loads(text)
+    assert record["schemaVersion"] == "0.1.0"
+    assert (
+        record["resultsSha256"]
+        == hashlib.sha256((out / "rec.results.json").read_bytes()).hexdigest()
+    )
+    names = [p["name"] for p in record["phases"]]
+    assert names[:3] == ["detect", "capture-quality", "sample-rate"] and "signal_0" in names
+    assert record["totalSeconds"] == pytest.approx(
+        sum(p["seconds"] for p in record["phases"]), abs=0.01
+    )
+    assert record["peakMemoryBytes"] is None or record["peakMemoryBytes"] > 10_000_000
+    assert record["logicalCores"] >= 1
+    assert record["finishedUtc"].endswith("Z")
+    # Never a host name, a user name or a path.
+    for private in (socket.gethostname(), getpass.getuser(), str(tmp_path), str(out)):
+        assert private.lower() not in text.lower()
+    # The results document itself carries no timing: it is the same bytes on every run.
+    assert "seconds" not in (out / "rec.results.json").read_text(encoding="utf-8").lower()
+
+
+def test_no_run_record_leaves_only_the_results(tmp_path: Path, sigmf_path: Path) -> None:
+    out = tmp_path / "out"
+    assert cli.main(["analyse", str(sigmf_path), "--out", str(out), "--no-run-record"]) == 0
+    assert [p.name for p in out.iterdir()] == ["rec.results.json"]

@@ -10,6 +10,7 @@ the frontend see (a done/total count, a report per detection that appears when i
 not change when they do.
 """
 
+import time
 from collections.abc import Callable
 from threading import Condition, Event
 from typing import Literal
@@ -23,6 +24,7 @@ class AnalysisJob:
     def __init__(self, total: int) -> None:
         self._cond = Condition()
         self._reports: list[DetectionReport | None] = [None] * total
+        self._seconds: list[float] = [0.0] * total  # wall-clock time of each finished one
         self._version = 0
         self.cancelled = Event()
 
@@ -30,11 +32,21 @@ class AnalysisJob:
     def total(self) -> int:
         return len(self._reports)
 
-    def record(self, index: int, report: DetectionReport) -> None:
+    def record(self, index: int, report: DetectionReport, seconds: float = 0.0) -> None:
         with self._cond:
             self._reports[index] = report
+            self._seconds[index] = seconds
             self._version += 1
             self._cond.notify_all()
+
+    def timings(self) -> tuple[tuple[int, float], ...]:
+        """(detection index, seconds) of each finished analysis, in order."""
+        with self._cond:
+            return tuple(
+                (i, s)
+                for i, (r, s) in enumerate(zip(self._reports, self._seconds, strict=True))
+                if r
+            )
 
     def cancel(self) -> None:
         """Stop after the detection in flight and wake every listener."""
@@ -79,4 +91,6 @@ def run_analysis(
     for index in range(count):
         if job.cancelled.is_set():
             return
-        job.record(index, analyse_one(index))
+        start = time.perf_counter()
+        report = analyse_one(index)
+        job.record(index, report, time.perf_counter() - start)

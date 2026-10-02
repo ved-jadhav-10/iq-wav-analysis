@@ -24,6 +24,7 @@ from .analysis import results_of
 from .identity import recording_identity
 from .inputs import FormatUnknownError, RecordingError, expand
 from .recordings import Recording, RecordingStore
+from .runrecord import Phase, run_record
 from .uploads import DEFAULT_MAX_UPLOAD_BYTES, UploadError, UploadStore
 
 API_PREFIX = "/api/v1"
@@ -147,6 +148,14 @@ class RecordingInfo(CamelModel):
     analysis: AnalysisProgress
     # Empty alongside sample_rate: a box in seconds/Hz needs a known rate, same as freqs_hz.
     detections: tuple[DetectionInfo, ...]
+
+
+def _phases_of(rec: Recording) -> list[Phase]:
+    """How the run went: the phases of opening, then each finished signal's analysis."""
+    return [
+        *rec.survey_phases,
+        *(Phase(name=f"signal_{i}", seconds=round(s, 3)) for i, s in rec.job.timings()),
+    ]
 
 
 def _progress(rec: Recording) -> AnalysisProgress:
@@ -339,7 +348,7 @@ def create_app(
 
     @app.get(f"{API_PREFIX}/recordings/{{recording_id}}/results")
     def get_results(
-        recording_id: str, format: Literal["json", "csv", "txt", "pdf"] = "json"
+        recording_id: str, format: Literal["json", "csv", "txt", "pdf", "run"] = "json"
     ) -> Response:
         """The results document as a download: JSON is the schema-versioned document `sanket
         analyse` writes, CSV one row per reported value (`dsp.results_table`), text a
@@ -366,6 +375,13 @@ def create_app(
             "csv": (lambda: render_csv(results), "text/csv", f"{stem}.results.csv"),
             "txt": (lambda: render_summary(results), "text/plain", f"{stem}.summary.txt"),
             "pdf": (lambda: render_pdf(results), "application/pdf", f"{stem}.report.pdf"),
+            "run": (
+                lambda: run_record(
+                    results, results.sanket_version, _phases_of(recording)
+                ).to_json(),
+                "application/json",
+                f"{stem}.run.json",
+            ),
         }[format]
         return Response(
             content=content(),

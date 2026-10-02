@@ -25,6 +25,7 @@ from dsp.results import Assumptions, RecordingIdentity, Results, Signal, StageRe
 from dsp.versions import catalogue_versions
 
 from .identity import recording_identity
+from .runrecord import PhaseTimer
 
 # Values the analyst entered, by assumption name; each replaces the file's own entry.
 Entries = tuple[tuple[str, float | str], ...]
@@ -230,41 +231,47 @@ def analyse_recording(
     real: bool,
     files: Iterable[Path] = (),
     on_detection: Callable[[int, int], None] | None = None,
+    timer: PhaseTimer | None = None,
 ) -> tuple[Results, Sequence[DetectionReport]]:
     """Detect and analyse every signal in a recording; the results document and the reports.
 
     Without a sample rate the bands are found but not analysed, as in the server: a box in
     seconds and hertz needs one, and the results say so. `on_detection(done, total)` is called
     after each one. `files` are the paths the recording was opened from, hashed into the
-    document's identity (with the dataset a SigMF file names)."""
+    document's identity (with the dataset a SigMF file names). `timer` collects the wall-clock
+    time of each phase for the run record."""
+    timer = timer or PhaseTimer()
     swap_iq = dict(entries).get("iq_order") == "QI"
-    with source.reader(swap_iq=swap_iq) as reader:
+    with timer.phase("detect"), source.reader(swap_iq=swap_iq) as reader:
         samples = reader.num_samples
         detections = detect(reader, real=real).detections
-    with source.reader(swap_iq=swap_iq) as reader:
+    with timer.phase("capture-quality"), source.reader(swap_iq=swap_iq) as reader:
         quality = capture_quality(reader)
-    inferred = (
-        None
-        if dict(entries).get("sample_rate")
-        else infer_sample_rate(source, detections, swap_iq=swap_iq)
-    )
+    with timer.phase("sample-rate"):
+        inferred = (
+            None
+            if dict(entries).get("sample_rate")
+            else infer_sample_rate(source, detections, swap_iq=swap_iq)
+        )
     assumptions = assumptions_with(source.assumptions, entries, inferred)
     sample_rate = numeric_rate(assumptions)
     reports: list[DetectionReport] = []
     if sample_rate is not None:
         for i, d in enumerate(detections):
-            reports.append(
-                analyse_detection(
-                    source,
-                    d,
-                    sample_rate=sample_rate,
-                    swap_iq=swap_iq,
-                    rate_basis=rate_note(assumptions),
+            with timer.phase(f"signal_{i}"):
+                reports.append(
+                    analyse_detection(
+                        source,
+                        d,
+                        sample_rate=sample_rate,
+                        swap_iq=swap_iq,
+                        rate_basis=rate_note(assumptions),
+                    )
                 )
-            )
             if on_detection:
                 on_detection(i + 1, len(detections))
-    identity = recording_identity(container, samples, files, source)
+    with timer.phase("identity"):
+        identity = recording_identity(container, samples, files, source)
     results = results_of(assumptions, identity, len(detections), reports, quality)
     return results, reports
 

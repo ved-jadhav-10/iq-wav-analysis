@@ -10,6 +10,7 @@ import uvicorn
 from backend.analysis import Entries, analyse_recording
 from backend.app import create_app, default_workspace
 from backend.inputs import FormatUnknownError, Input, RecordingError, expand, open_input
+from backend.runrecord import PhaseTimer, run_record
 from dsp.frame_table import FORMATS, render
 from dsp.report_pdf import render_pdf
 from dsp.results_table import render_csv
@@ -57,6 +58,11 @@ def main(argv: list[str] | None = None) -> int:
         "--csv",
         action="store_true",
         help="also write each recording's values as a CSV table, one row per value",
+    )
+    analyse.add_argument(
+        "--no-run-record",
+        action="store_true",
+        help="don't write the run record (timings, peak memory, machine class) beside the results",
     )
     analyse.add_argument(
         "--pdf",
@@ -162,6 +168,7 @@ def _analyse(args: argparse.Namespace) -> int:
                 args.csv,
                 args.summary,
                 args.pdf,
+                not args.no_run_record,
             )
         except FormatUnknownError as exc:
             print(f"sanket: {exc}: {', '.join(exc.candidates)} (pass --datatype)", file=sys.stderr)
@@ -182,18 +189,21 @@ def _analyse_one(
     csv_table: bool = False,
     summary: bool = False,
     pdf: bool = False,
+    run_record_file: bool = True,
 ) -> None:
     opened = open_input(item, datatype)
     fmt = opened.recording.sample_format
     assert fmt is not None  # open_input raised for an UNKNOWN format
     if not fmt.is_complex and any(name == "iq_order" for name, _ in entries):
         raise RecordingError("IQ order applies to complex samples; this recording is real")
+    timer = PhaseTimer()
     results, reports = analyse_recording(
         opened.recording,
         opened.container,
         entries,
         real=not fmt.is_complex,
         files=item.paths,
+        timer=timer,
     )
     target = _unused(out / f"{item.paths[0].stem}.results.json", written)
     _write(target, results.to_json())
@@ -204,6 +214,10 @@ def _analyse_one(
             target.with_name(target.name.removesuffix(".results.json") + ".summary.txt"),
             render_summary(results),
         )
+    if run_record_file:
+        name = target.name.removesuffix(".results.json") + ".run.json"
+        record = run_record(results, results.sanket_version, timer.phases)
+        _write(target.with_name(name), record.to_json())
     if pdf:
         name = target.name.removesuffix(".results.json") + ".report.pdf"
         target.with_name(name).write_bytes(render_pdf(results))
