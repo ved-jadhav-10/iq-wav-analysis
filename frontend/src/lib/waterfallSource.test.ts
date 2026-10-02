@@ -36,6 +36,7 @@ function recording(overrides: Partial<RecordingInfo> = {}): RecordingInfo {
     assumptions,
     captureQuality: [],
     analysis: { state: 'done', done: 0, total: 0 },
+    sigmf: 'none',
     detections: [],
     ...overrides,
   }

@@ -659,3 +659,22 @@ def pdf_text(data: bytes) -> str:
     from pypdf import PdfReader
 
     return "".join(page.extract_text() for page in PdfReader(io.BytesIO(data)).pages)
+
+
+def test_a_recording_says_which_sigmf_output_it_supports(
+    client: TestClient,
+    sigmf_path: Path,
+    samples: NDArray[np.complex128],
+    write_wav: Callable[..., Path],
+    tmp_path: Path,
+) -> None:
+    raw = tmp_path / "capture_fs=1M.cf32"
+    raw.write_bytes(sigmf_path.with_suffix(".sigmf-data").read_bytes())
+    wav = write_wav(tmp_path / "audio.wav", samples)
+    # A raw file can be annotated and saved beside; a SigMF recording only annotated; a WAV neither.
+    assert open_and_finish(client, raw)["sigmf"] == "save"
+    assert open_and_finish(client, sigmf_path)["sigmf"] == "annotate"
+    wav_info = open_and_finish(client, wav)
+    assert wav_info["sigmf"] == "none"
+    url = f"/api/v1/recordings/{wav_info['id']}/results"
+    assert client.get(url, params={"format": "sigmf"}).status_code == 422

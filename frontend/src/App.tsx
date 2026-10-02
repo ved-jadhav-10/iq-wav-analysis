@@ -11,6 +11,7 @@ import {
   listInputs,
   openRecording,
   putAssumptions,
+  saveAsSigmf,
   uploadFiles,
   watchAnalysis,
   type AssumptionValues,
@@ -561,6 +562,8 @@ export default function App() {
             ? (format) => `/api/v1/recordings/${recording.info.id}/results?format=${format}`
             : undefined
         }
+        sigmf={recording?.info.sigmf}
+        onSaveSigmf={recording ? () => saveAsSigmf(recording.info.id) : undefined}
       />
       {formatNeeded && (
         <FormatPrompt

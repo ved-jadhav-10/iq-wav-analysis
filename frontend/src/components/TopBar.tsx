@@ -1,20 +1,12 @@
 import { useState, type FormEvent } from 'react'
-import { Download, FileAudio, FolderOpen, Moon, Sun, Upload, WifiOff } from 'lucide-react'
+import { FileAudio, FolderOpen, Moon, Sun, Upload, WifiOff } from 'lucide-react'
 import { BRAND } from '@/brand'
 import { useTheme } from '@/hooks/theme'
 import { VIEWS, type ViewId } from '@/lib/views'
+import type { RecordingInfo } from '@/lib/api'
+import type { ResultFormat } from '@/lib/exports'
 import { Logo } from './Logo'
-
-const RESULT_FORMATS = [
-  {
-    format: 'json',
-    label: 'JSON',
-    hint: 'The results document: every value with its evidence level, the ledger and the frames (the file sanket analyse writes)',
-  },
-  { format: 'csv', label: 'CSV', hint: 'One row per reported value, with its level, proof and convention' },
-  { format: 'txt', label: 'Summary', hint: 'A plain-language summary: what was proved, what was only estimated, what is unknown' },
-  { format: 'pdf', label: 'PDF', hint: 'A report that opens with the plain-language summary, then every value, the ledger and the frames, tied to the recording by its SHA-256' },
-] as const
+import { ResultsExports } from './ResultsExports'
 
 interface Props {
   fileName: string
@@ -32,7 +24,11 @@ interface Props {
   onOpenSettings: () => void
   /** Where the finished analysis' results download from, by format; absent for the demo and
    * while the analysis is still running (the server holds a partial analysis back). */
-  resultsUrl?: (format: 'json' | 'csv' | 'txt' | 'pdf') => string
+  resultsUrl?: (format: ResultFormat) => string
+  /** What SigMF output the recording supports; the SigMF link and Save as SigMF follow it. */
+  sigmf?: RecordingInfo['sigmf']
+  /** Save as SigMF for a raw file: resolves to the path written, rejects with the server's text. */
+  onSaveSigmf?: () => Promise<string>
 }
 
 export function TopBar({
@@ -47,6 +43,8 @@ export function TopBar({
   onUpload,
   onOpenSettings,
   resultsUrl,
+  sigmf = 'none',
+  onSaveSigmf,
 }: Props) {
   const { theme, toggle } = useTheme()
   const [path, setPath] = useState('')
@@ -166,21 +164,11 @@ export function TopBar({
 
       <div className="ml-auto flex items-center gap-2">
         {resultsUrl && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground max-md:hidden">
-            <Download className="size-3.5" aria-hidden />
-            <span>Results</span>
-            {RESULT_FORMATS.map((f) => (
-              <a
-                key={f.format}
-                href={resultsUrl(f.format)}
-                download
-                title={f.hint}
-                className="rounded-md border border-border-strong px-1.5 py-0.5 text-2xs font-medium uppercase hover:bg-surface-2 hover:text-foreground"
-              >
-                {f.label}
-              </a>
-            ))}
-          </div>
+          <ResultsExports
+            resultsUrl={resultsUrl}
+            sigmf={sigmf}
+            onSaveSigmf={onSaveSigmf ?? (() => Promise.reject(new Error('Save as SigMF is not available')))}
+          />
         )}
         <span
           className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs font-medium text-muted-foreground max-md:hidden"

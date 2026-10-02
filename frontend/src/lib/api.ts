@@ -72,6 +72,9 @@ export interface RecordingInfo {
    * recording, gaps), or one UNKNOWN when the file is empty. */
   captureQuality: Parameter[]
   analysis: AnalysisProgress
+  /** What SigMF output the recording supports: 'save' a raw file (annotations, and a metadata
+   * file written beside it), 'annotate' a SigMF recording (annotations only), else 'none'. */
+  sigmf: 'annotate' | 'save' | 'none'
   /** Empty alongside sampleRate: a box in seconds/Hz needs a known rate, same as freqsHz. */
   detections: DetectionInfo[]
 }
@@ -171,6 +174,14 @@ export async function uploadFiles(files: readonly File[]): Promise<string> {
     if (file === main) mainPath = uploaded.path
   }
   return mainPath
+}
+
+/** Save as SigMF: the server writes `<name>.sigmf-meta` beside a raw file (never touching the
+ * samples) and returns where. Rejects with the server's own text for a recording that isn't raw
+ * (422) or whose metadata file already exists (409). */
+export async function saveAsSigmf(id: string): Promise<string> {
+  const response = await fetch(`/api/v1/recordings/${id}/sigmf`, { method: 'POST' })
+  return (await asJson<{ path: string }>(response)).path
 }
 
 export async function getRecording(id: string): Promise<RecordingInfo> {

@@ -19,6 +19,7 @@ Complex = NDArray[np.complex128]
 @dataclass(frozen=True)
 class Impairments:
     cfo: float = 0.0  # carrier frequency offset, cycles/sample
+    cfo_rate: float = 0.0  # carrier drift, cycles/sample² (a LEO pass's Doppler ramp)
     phase: float = 0.0  # initial carrier phase, radians
     phase_noise: float = 0.0  # Wiener phase-noise step standard deviation, radians/sample
     iq_gain_db: float = 0.0  # I/Q amplitude imbalance
@@ -41,9 +42,10 @@ def apply(x: Complex, imp: Impairments, rng: np.random.Generator) -> Complex:
     n = np.arange(len(y))
     if imp.multipath:
         y = _multipath(y, imp, rng)
-    if imp.cfo or imp.phase or imp.phase_noise:
+    if imp.cfo or imp.cfo_rate or imp.phase or imp.phase_noise:
         walk = np.cumsum(rng.standard_normal(len(y)) * imp.phase_noise)
-        y = y * np.exp(1j * (2 * np.pi * imp.cfo * n + imp.phase + walk))
+        ramp = 2 * np.pi * (imp.cfo * n + 0.5 * imp.cfo_rate * n.astype(np.float64) ** 2)
+        y = y * np.exp(1j * (ramp + imp.phase + walk))
     if imp.clock_ppm or imp.clock_drift_ppm:
         ppm = imp.clock_ppm + imp.clock_drift_ppm * n / max(len(y), 1)
         y = resample(y, np.cumsum(1 + ppm * 1e-6) - 1)

@@ -14,6 +14,7 @@ from pydantic import Field
 from dsp.detect import Detection, detection_parameters
 from dsp.evidence import CamelModel, Parameter
 from dsp.frame_table import MEDIA_TYPES, ExportFormat, render
+from dsp.ingest.raw import RawRecording
 from dsp.report import DetectionReport
 from dsp.report_pdf import render_pdf
 from dsp.results import Assumptions, Results
@@ -152,6 +153,9 @@ class RecordingInfo(CamelModel):
     # (complex recordings), gaps; one UNKNOWN when the file is empty.
     capture_quality: tuple[Parameter, ...]
     analysis: AnalysisProgress
+    # What SigMF output the recording supports: "save" a raw file (annotations, and a metadata
+    # file written beside it), "annotate" a SigMF recording (annotations only), else "none".
+    sigmf: Literal["annotate", "save", "none"]
     # Empty alongside sample_rate: a box in seconds/Hz needs a known rate, same as freqs_hz.
     detections: tuple[DetectionInfo, ...]
 
@@ -162,6 +166,13 @@ def _phases_of(rec: Recording) -> list[Phase]:
         *rec.survey_phases,
         *(Phase(name=f"signal_{i}", seconds=round(s, 3)) for i, s in rec.job.timings()),
     ]
+
+
+def _sigmf_support(rec: Recording) -> Literal["annotate", "save", "none"]:
+    """What `sigmf_export` can do with this recording: the same two tests it applies."""
+    if any(p.name.lower().endswith(".sigmf-meta") for p in rec.files):
+        return "annotate"
+    return "save" if isinstance(rec.source, RawRecording) else "none"
 
 
 def _progress(rec: Recording) -> AnalysisProgress:
@@ -271,6 +282,7 @@ def create_app(
             assumptions=rec.assumptions,
             capture_quality=rec.quality,
             analysis=_progress(rec),
+            sigmf=_sigmf_support(rec),
             detections=detections,
         )
 
