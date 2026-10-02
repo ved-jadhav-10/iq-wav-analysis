@@ -11,6 +11,7 @@ from backend.analysis import Entries, analyse_recording
 from backend.app import create_app, default_workspace
 from backend.inputs import FormatUnknownError, Input, RecordingError, expand, open_input
 from dsp.frame_table import FORMATS, render
+from dsp.report_pdf import render_pdf
 from dsp.results_table import render_csv
 from dsp.summary import render_summary
 
@@ -56,6 +57,11 @@ def main(argv: list[str] | None = None) -> int:
         "--csv",
         action="store_true",
         help="also write each recording's values as a CSV table, one row per value",
+    )
+    analyse.add_argument(
+        "--pdf",
+        action="store_true",
+        help="also write each recording's report as a PDF (summary, values, ledger, frames)",
     )
     analyse.add_argument(
         "--summary",
@@ -147,7 +153,15 @@ def _analyse(args: argparse.Namespace) -> int:
     for item in items:
         try:
             _analyse_one(
-                item, entries, args.out, written, args.datatype, args.frames, args.csv, args.summary
+                item,
+                entries,
+                args.out,
+                written,
+                args.datatype,
+                args.frames,
+                args.csv,
+                args.summary,
+                args.pdf,
             )
         except FormatUnknownError as exc:
             print(f"sanket: {exc}: {', '.join(exc.candidates)} (pass --datatype)", file=sys.stderr)
@@ -167,6 +181,7 @@ def _analyse_one(
     frame_formats: list[str],
     csv_table: bool = False,
     summary: bool = False,
+    pdf: bool = False,
 ) -> None:
     opened = open_input(item, datatype)
     fmt = opened.recording.sample_format
@@ -189,6 +204,9 @@ def _analyse_one(
             target.with_name(target.name.removesuffix(".results.json") + ".summary.txt"),
             render_summary(results),
         )
+    if pdf:
+        name = target.name.removesuffix(".results.json") + ".report.pdf"
+        target.with_name(name).write_bytes(render_pdf(results))
     print(f"{item.name}: {len(reports)} signal(s) -> {target}")
     for i, report in enumerate(reports):
         print(f"  signal_{i}: {report.level.value} {report.headline}")

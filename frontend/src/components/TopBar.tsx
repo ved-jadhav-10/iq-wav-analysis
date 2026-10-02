@@ -13,6 +13,7 @@ const RESULT_FORMATS = [
   },
   { format: 'csv', label: 'CSV', hint: 'One row per reported value, with its level, proof and convention' },
   { format: 'txt', label: 'Summary', hint: 'A plain-language summary: what was proved, what was only estimated, what is unknown' },
+  { format: 'pdf', label: 'PDF', hint: 'A report that opens with the plain-language summary, then every value, the ledger and the frames, tied to the recording by its SHA-256' },
 ] as const
 
 interface Props {
@@ -31,7 +32,7 @@ interface Props {
   onOpenSettings: () => void
   /** Where the finished analysis' results download from, by format; absent for the demo and
    * while the analysis is still running (the server holds a partial analysis back). */
-  resultsUrl?: (format: 'json' | 'csv' | 'txt') => string
+  resultsUrl?: (format: 'json' | 'csv' | 'txt' | 'pdf') => string
 }
 
 export function TopBar({

@@ -43,6 +43,25 @@ BUNDLED: dict[str, tuple[tuple[str, str], ...]] = {
         ("GCC runtime library", "GPL-3.0-or-later WITH GCC-exception-3.1"),
         ("libquadmath (Linux wheels)", "LGPL-2.1-or-later"),
     ),
+    # ReportLab imports Pillow unconditionally; the libraries its wheels bundle (the Windows,
+    # Linux and macOS wheels together; none holds libimagequant, the one GPL component in
+    # Pillow's source SBOM).
+    "pillow": (
+        ("FreeType", "FreeType License (BSD-style, with attribution)"),
+        ("HarfBuzz", "MIT"),
+        ("libjpeg-turbo", "IJG; BSD-3-Clause"),
+        ("libpng", "libpng License (BSD-style)"),
+        ("libtiff", "libtiff License (BSD-style)"),
+        ("libwebp", "BSD-3-Clause"),
+        ("libavif", "BSD-2-Clause"),
+        ("OpenJPEG", "BSD-2-Clause"),
+        ("Little CMS 2", "MIT"),
+        ("zlib-ng", "Zlib"),
+        ("Brotli", "MIT"),
+        ("xz (liblzma)", "0BSD"),
+        ("Zstandard", "BSD-3-Clause"),
+        ("libxcb and libXau", "MIT"),
+    ),
     "soundfile": (
         ("libsndfile", "LGPL-2.1-or-later"),
         ("FLAC", "BSD-3-Clause"),

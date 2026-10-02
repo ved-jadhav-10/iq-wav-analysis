@@ -380,3 +380,19 @@ def test_a_sequence_hashes_every_file(tmp_path: Path, sigmf_path: Path) -> None:
     assert names == ["cap_1.cf32", "cap_2.cf32"]
     hashes = {f["name"]: f["sha256"] for f in load(results)["recording"]["files"]}
     assert hashes["cap_2.cf32"] == hashlib.sha256(second.read_bytes()).hexdigest()
+
+
+def test_analyse_pdf_writes_the_report_beside_the_results(tmp_path: Path, sigmf_path: Path) -> None:
+    import hashlib
+    import io
+
+    from pypdf import PdfReader
+
+    out = tmp_path / "out"
+    assert cli.main(["analyse", str(sigmf_path), "--out", str(out), "--pdf"]) == 0
+    pdf = (out / "rec.report.pdf").read_bytes()
+    assert pdf.startswith(b"%PDF")
+    text = "".join(page.extract_text() for page in PdfReader(io.BytesIO(pdf)).pages)
+    digest = hashlib.sha256((out / "rec.results.json").read_bytes()).hexdigest()
+    assert digest[:16] in text.replace(chr(10), "")
+    assert "rec.sigmf-data" in text

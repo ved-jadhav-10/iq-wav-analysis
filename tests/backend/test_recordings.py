@@ -1,6 +1,7 @@
 """Opening a recording and fetching its tiles over the API (PLAN §5 M2)."""
 
 import csv
+import hashlib
 import io
 import json
 import wave
@@ -628,6 +629,14 @@ def test_the_results_download_is_the_document_sanket_analyse_writes(
     assert "Signal 1 (signal_0), VERIFIED:" in as_text.text
     assert "pass their CRC" in as_text.text
 
+    as_pdf = client.get(url, params={"format": "pdf"})
+    assert as_pdf.headers["content-type"] == "application/pdf"
+    assert 'filename="framed.report.pdf"' in as_pdf.headers["content-disposition"]
+    assert as_pdf.content.startswith(b"%PDF")
+    # It cites the hash of the JSON the download above returned, so the two are one analysis.
+    digest = hashlib.sha256(as_json.content).hexdigest()
+    assert pdf_text(as_pdf.content).replace(chr(10), "").find(digest[:16]) >= 0
+
 
 def test_results_of_something_that_is_not_there_or_not_a_format_are_refused(
     client: TestClient, sigmf_path: Path
@@ -636,3 +645,9 @@ def test_results_of_something_that_is_not_there_or_not_a_format_are_refused(
     opened = open_and_finish(client, sigmf_path)
     url = f"/api/v1/recordings/{opened['id']}/results"
     assert client.get(url, params={"format": "xml"}).status_code == 422
+
+
+def pdf_text(data: bytes) -> str:
+    from pypdf import PdfReader
+
+    return "".join(page.extract_text() for page in PdfReader(io.BytesIO(data)).pages)

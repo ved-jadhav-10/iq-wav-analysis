@@ -11,6 +11,7 @@ do not edit by hand. Lists only what ships in Sanket, not development tools.
 | annotated-types | 0.8.0 | MIT |
 | anyio | 4.15.1 | MIT |
 | cffi | 2.1.1 | MIT-0 |
+| charset-normalizer | 3.5.2 | MIT |
 | click | 8.5.0 | BSD-3-Clause |
 | fastapi | 0.141.1 | MIT |
 | galois | 0.4.11 | MIT |
@@ -19,9 +20,11 @@ do not edit by hand. Lists only what ships in Sanket, not development tools.
 | llvmlite | 0.49.0 | BSD-2-Clause AND Apache-2.0 WITH LLVM-exception |
 | numba | 0.67.0 | BSD |
 | numpy | 2.5.3 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 |
+| pillow | 12.3.0 | MIT-CMU |
 | pycparser | 3.0 | BSD-3-Clause |
 | pydantic | 2.13.5 | MIT |
 | pydantic-core | 2.46.5 | MIT |
+| reportlab | 5.0.1 | BSD License |
 | scipy | 1.18.1 | BSD License |
 | soundfile | 0.14.0 | BSD 3-Clause License |
 | starlette | 1.7.0 | BSD-3-Clause |
@@ -49,6 +52,20 @@ do not edit by hand. Lists only what ships in Sanket, not development tools.
 | OpenBLAS | numpy | BSD-3-Clause |
 | LAPACK | numpy | BSD-3-Clause-Open-MPI |
 | GCC runtime library | numpy | GPL-3.0-or-later WITH GCC-exception-3.1 |
+| FreeType | pillow | FreeType License (BSD-style, with attribution) |
+| HarfBuzz | pillow | MIT |
+| libjpeg-turbo | pillow | IJG; BSD-3-Clause |
+| libpng | pillow | libpng License (BSD-style) |
+| libtiff | pillow | libtiff License (BSD-style) |
+| libwebp | pillow | BSD-3-Clause |
+| libavif | pillow | BSD-2-Clause |
+| OpenJPEG | pillow | BSD-2-Clause |
+| Little CMS 2 | pillow | MIT |
+| zlib-ng | pillow | Zlib |
+| Brotli | pillow | MIT |
+| xz (liblzma) | pillow | 0BSD |
+| Zstandard | pillow | BSD-3-Clause |
+| libxcb and libXau | pillow | MIT |
 | OpenBLAS | scipy | BSD-3-Clause |
 | LAPACK | scipy | BSD-3-Clause-Open-MPI |
 | GCC runtime library | scipy | GPL-3.0-or-later WITH GCC-exception-3.1 |

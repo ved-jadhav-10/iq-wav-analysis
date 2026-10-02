@@ -13,6 +13,7 @@ dev = [
  "jsonschema>=4.26.0",
  "pre-commit",
  "psutil>=6.0",
+ "pypdf>=6.19.0",
  "pyright",
  "pytest",
  "pytest-socket",

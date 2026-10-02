@@ -15,6 +15,7 @@ from dsp.detect import Detection, detection_parameters
 from dsp.evidence import CamelModel, Parameter
 from dsp.frame_table import MEDIA_TYPES, ExportFormat, render
 from dsp.report import DetectionReport
+from dsp.report_pdf import render_pdf
 from dsp.results import Assumptions
 from dsp.results_table import render_csv
 from dsp.summary import render_summary
@@ -337,7 +338,9 @@ def create_app(
         )
 
     @app.get(f"{API_PREFIX}/recordings/{{recording_id}}/results")
-    def get_results(recording_id: str, format: Literal["json", "csv", "txt"] = "json") -> Response:
+    def get_results(
+        recording_id: str, format: Literal["json", "csv", "txt", "pdf"] = "json"
+    ) -> Response:
         """The results document as a download: JSON is the schema-versioned document `sanket
         analyse` writes, CSV one row per reported value (`dsp.results_table`), text a
         plain-language summary (`dsp.summary`). Held back while
@@ -362,6 +365,7 @@ def create_app(
             "json": (results.to_json, "application/json", f"{stem}.results.json"),
             "csv": (lambda: render_csv(results), "text/csv", f"{stem}.results.csv"),
             "txt": (lambda: render_summary(results), "text/plain", f"{stem}.summary.txt"),
+            "pdf": (lambda: render_pdf(results), "application/pdf", f"{stem}.report.pdf"),
         }[format]
         return Response(
             content=content(),
