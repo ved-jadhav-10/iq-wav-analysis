@@ -1,7 +1,8 @@
 /**
  * The per-detection analysis report: mirrors `dsp/src/dsp/report.py`'s `DetectionReport`, which
- * the backend sends as `RecordingInfo.detections[i].analysis` and the demo data also follows.
+ * the backend sends as `RecordingInfo.detections[i].analysis`.
  */
+import type { Box } from './box'
 import type { EvidenceLevel, StageResult } from './evidence'
 
 export interface Hypothesis {
@@ -72,4 +73,11 @@ export interface DetectionReport {
   constellation: [number, number][]
   /** Present for a linear signal whose symbols were recovered; absent or null otherwise. */
   eye?: Eye | null
+}
+
+/** A detection as the panels use it: the report plus the stable `id` and the time/frequency
+ * `boxes` the waterfall needs to select and draw it. */
+export interface Detection extends DetectionReport {
+  id: number
+  boxes: Box[]
 }

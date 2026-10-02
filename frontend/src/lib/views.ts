@@ -1,6 +1,6 @@
 /**
  * The workspace's nav. A section decides which regions of the analysis are on screen and how
- * they're laid out, so a demo can give the waterfall the whole display without a route change or a
+ * they're laid out, so the waterfall can have the whole display without a route change or a
  * second window.
  *
  * Two of these are deliberately *not* page sections, because neither is a place you sit:
@@ -48,12 +48,20 @@ export const VIEWS = [
 
 export type ViewId = (typeof VIEWS)[number]['id']
 
-export const DEFAULT_VIEW: ViewId = 'survey'
+export const DEFAULT_VIEW: SectionId = 'survey'
 
 const IDS: readonly string[] = VIEWS.map((v) => v.id)
 
 export function isViewId(value: string): value is ViewId {
   return IDS.includes(value)
+}
+
+/** A nav item that switches the workspace. `assumptions` is not one: it opens a modal, so it is
+ * never the current section and is never stored (a stored one left the workspace blank). */
+export type SectionId = Exclude<ViewId, 'assumptions'>
+
+export function isSectionId(value: string): value is SectionId {
+  return isViewId(value) && value !== 'assumptions'
 }
 
 /** Next/previous section, wrapping. Used by the arrow keys and the nav group's roving focus. */
@@ -68,22 +76,22 @@ export function viewByDigit(digit: string): ViewId | undefined {
   return VIEWS.find((v) => v.digit === digit)?.id
 }
 
-/* localStorage keeps the section across reloads. A demo that reopens the tool on Survey and has to
- * be clicked back to Assumptions mid-talk costs a beat, and this build is local-only, so the try/catch
+/* localStorage keeps the section across reloads. An analyst who reopens the tool on Survey and has to
+ * click back to the section they were on costs a beat, and this build is local-only, so the try/catch
  * is for a browser with storage disabled rather than for a network failure. */
 
 const STORAGE_KEY = 'sanket.view.v1'
 
-export function loadStoredView(): ViewId {
+export function loadStoredView(): SectionId {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
-    return raw && isViewId(raw) ? raw : DEFAULT_VIEW
+    return raw && isSectionId(raw) ? raw : DEFAULT_VIEW
   } catch {
     return DEFAULT_VIEW
   }
 }
 
-export function storeView(view: ViewId): void {
+export function storeView(view: SectionId): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, view)
   } catch {

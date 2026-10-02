@@ -2,7 +2,7 @@ import { createElement, type ComponentProps } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { HistoryEntry } from '@/lib/api'
-import { CONFIRM_TEXT, EMPTY_DEMO_TEXT, EMPTY_TEXT, HistoryView } from './HistorySection'
+import { CONFIRM_TEXT, EMPTY_TEXT, HistoryView } from './HistorySection'
 
 const SHA_A = '0123456789abcdef'.repeat(4)
 const SHA_B = 'fedcba9876543210'.repeat(4)
@@ -33,7 +33,6 @@ function render(over: Partial<ComponentProps<typeof HistoryView>> = {}): string 
     createElement(HistoryView, {
       entries: [A, B],
       loadError: null,
-      demo: false,
       refreshing: false,
       confirming: null,
       deleting: null,
@@ -105,15 +104,8 @@ describe('HistoryView', () => {
     expect(html).toContain('Not deleted: no such analysis')
   })
 
-  it('says what makes an entry when the list is empty, and labels the demo', () => {
-    const empty = render({ entries: [] })
-    expect(empty).toContain(EMPTY_TEXT)
-    expect(empty).not.toContain('<table')
-    expect(empty).not.toContain('Synthetic demo')
-    const demo = render({ entries: [], demo: true })
-    expect(demo).toContain(EMPTY_DEMO_TEXT)
-    expect(demo).toContain('Synthetic demo')
-    expect(EMPTY_TEXT).toContain('finishes is kept in the workspace')
+  it('says what makes an entry when the list is empty', () => {
+    expect(render({ entries: [] })).toContain(EMPTY_TEXT)
   })
 
   it('reports a failed fetch and shows loading before the first answer', () => {

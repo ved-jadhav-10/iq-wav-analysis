@@ -1,5 +1,5 @@
 /** A time/frequency rectangle: seconds and hertz (delta-f from capture centre), the same units
- * `View` uses. Both the demo generator's boxes and the boxes computed from a real recording's
+ * `View` uses. The boxes computed from a real recording's
  * detections (PLAN §5 M2, `backend`'s `Box`) share this shape. */
 export interface Box {
   t0: number

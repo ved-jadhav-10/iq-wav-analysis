@@ -1,6 +1,11 @@
 import { expect, test, type Page } from '@playwright/test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 
+// The welcome dialog is a first-run thing; every test but the onboarding one starts past it.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript("window.localStorage.setItem('sanket.onboarding.v1', 'seen')")
+})
+
 test('workspace loads fully offline with no console errors', async ({ page, context, baseURL }) => {
   const origin = new URL(baseURL!).origin
   const external: string[] = []
@@ -21,8 +26,8 @@ test('workspace loads fully offline with no console errors', async ({ page, cont
 
   await page.goto('/')
   await expect(page).toHaveTitle(/Sanket/)
-  await expect(page.getByText('Synthetic demo', { exact: true })).toBeVisible()
-  await expect(page.locator('canvas').first()).toBeVisible()
+  await expect(page.getByTestId('start-screen')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Open sample/ }).first()).toBeVisible()
   await page.waitForLoadState('networkidle')
 
   expect(external).toEqual([])
@@ -75,7 +80,7 @@ test('a raw file with an unknown sample rate opens, asks for the rate, then anal
   // Opened, not refused: the waterfall is up in normalised units and the prompt is asking.
   const prompt = page.getByRole('region', { name: 'Sample rate needed' })
   await expect(prompt).toBeVisible()
-  await expect(page.getByText('Synthetic demo', { exact: true })).toBeHidden()
+  await expect(page.getByTestId('start-screen')).toBeHidden()
   await expect(page.getByText(/tile · rate unknown/)).toBeVisible()
   await expect(page.getByRole('button', { name: /^#1 / })).toHaveCount(0)
 
@@ -139,8 +144,8 @@ test('a real recording opens, then its analysis lands in the background', async 
 
   await openByPath(page, `${base}.sigmf-meta`)
 
-  // The recording replaces the demo as soon as tiles and boxes exist ...
-  await expect(page.getByText('Synthetic demo', { exact: true })).toBeHidden()
+  // The recording replaces the start screen as soon as tiles and boxes exist ...
+  await expect(page.getByTestId('start-screen')).toBeHidden()
   await expect(page.getByText('Opened from SigMF')).toBeVisible()
   await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
   // ... and the background analysis ends on its own: no "Analysing" status is left.
@@ -220,7 +225,7 @@ test('an unknown sample format is a question: the candidates are offered and the
   await openByPath(page, path)
   const prompt = page.getByRole('region', { name: 'Sample format needed' })
   await expect(prompt).toBeVisible()
-  await expect(page.getByText('Synthetic demo', { exact: true })).toBeVisible() // nothing was opened
+  await expect(page.getByTestId('start-screen')).toBeVisible() // nothing was opened
   await expect(prompt.getByRole('list', { name: 'Candidate sample formats' }).getByRole('button')).toHaveCount(4)
 
   // A bad type is refused with a message; a candidate opens the file, which then asks for the rate.
@@ -229,7 +234,7 @@ test('an unknown sample format is a question: the candidates are offered and the
   await expect(prompt.getByRole('alert')).toContainText('not a sample format')
   await prompt.getByRole('button', { name: 'ci16_le' }).click()
   await expect(prompt).toBeHidden()
-  await expect(page.getByText('Synthetic demo', { exact: true })).toBeHidden()
+  await expect(page.getByTestId('start-screen')).toBeHidden()
   await expect(page.getByRole('region', { name: 'Sample rate needed' })).toBeVisible()
 })
 
@@ -337,9 +342,9 @@ test('the results exports follow the recording: SigMF links for SigMF, Save as S
   // Wide enough that the downloads sit in the bar itself; narrower ones fold into a Results menu.
   await page.setViewportSize({ width: 1918, height: 950 })
 
-  // The synthetic demo has no recording behind it: no downloads at all.
+  // The start screen has no recording behind it: no downloads at all.
   await page.goto('/')
-  await expect(page.getByText('Synthetic demo', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('start-screen')).toBeVisible()
   await expect(bar.getByRole('link', { name: 'Run record' })).toHaveCount(0)
   await expect(bar.getByRole('button', { name: /^Results/ })).toHaveCount(0)
   await expect(bar.getByRole('button', { name: 'Save as SigMF' })).toHaveCount(0)
@@ -502,13 +507,13 @@ test('History fills the window and its table scrolls inside its own panel, in bo
     verified: i % 3,
     resultsSha256: (i + 1).toString(16).padStart(2, '0').repeat(32),
   }))
-  // The demo shows the section too: nothing is open, and the list is the server's.
+  // The start screen shows the section too: nothing is open, and the list is the server's.
   let served: typeof entries = entries
   await page.route('**/api/v1/history', (route) =>
     route.request().method() === 'GET' ? route.fulfill({ json: served }) : route.continue(),
   )
   await page.goto('/')
-  await expect(page.getByText('Synthetic demo', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('start-screen')).toBeVisible()
 
   const measure = async () =>
     (await page.evaluate(`(() => {
@@ -556,10 +561,10 @@ test('History fills the window and its table scrolls inside its own panel, in bo
       expect(m.pageOverflow, `${where}, confirming`).toBeLessThanOrEqual(0)
       await page.getByRole('button', { name: 'Cancel' }).click()
 
-      // The empty list, with the demo's own wording.
+      // The empty list says what makes an entry.
       served = []
       await page.getByRole('button', { name: 'Refresh' }).click()
-      await expect(page.getByText(/synthetic demo is generated in the browser/i)).toBeVisible()
+      await expect(page.getByText(/An analysis that finishes is kept in the workspace/)).toBeVisible()
       m = await measure()
       expect(m.scrollHeight, `${where}, empty`).toBeLessThanOrEqual(m.innerHeight)
       served = entries
@@ -606,10 +611,10 @@ test('the plain-language summary tops the Survey of a finished recording, never 
       bodyClient: number
     }
 
-  // The synthetic in-browser capture is labelled as such and has no summary.
+  // The start screen has no summary.
   await page.setViewportSize({ width: 1918, height: 950 })
   await page.goto('/')
-  await expect(page.getByText('Synthetic demo', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('start-screen')).toBeVisible()
   await expect(summary).toHaveCount(0)
 
   // A real recording: the summary appears once its analysis has finished, above the pipeline rail.
@@ -644,7 +649,7 @@ test('the plain-language summary tops the Survey of a finished recording, never 
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   await expect(text).toBeHidden()
   await page.reload()
-  await expect(page.getByText('Synthetic demo', { exact: true })).toBeVisible() // a reload opens nothing
+  await expect(page.getByTestId('start-screen')).toBeVisible() // a reload opens nothing
   await openByPath(page, `${base}.sigmf-meta`)
   await expect(toggle).toBeVisible({ timeout: 90_000 })
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
@@ -711,4 +716,123 @@ test('a summary that cannot be fetched says why, and Retry fetches it again', as
   await summary.getByRole('button', { name: 'Retry' }).click()
   await expect(summary.getByRole('region', { name: 'Summary text' })).toContainText('results summary')
   await expect(summary.getByRole('alert')).toHaveCount(0)
+})
+
+const SIZES = [
+  { width: 1918, height: 950 },
+  { width: 1440, height: 800 },
+]
+
+/** Whether the page scrolls as a whole, and by how much it overflows sideways. A string, not a
+ * function: the e2e project has no DOM types, and this runs in the page. */
+async function pageFit(page: Page) {
+  return (await page.evaluate(
+    '({ scrollHeight: document.documentElement.scrollHeight, innerHeight: window.innerHeight, overflowX: document.documentElement.scrollWidth - window.innerWidth })',
+  )) as { scrollHeight: number; innerHeight: number; overflowX: number }
+}
+
+test('the start screen offers the samples, fills the window and never scrolls the page, in both themes', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByTestId('start-screen')).toBeVisible()
+  // Four bundled samples, each labelled synthetic.
+  await expect(page.getByRole('button', { name: /Open sample/ })).toHaveCount(4)
+  await expect(page.getByText('Synthetic', { exact: true })).toHaveCount(4)
+  for (let pass = 0; pass < 2; pass++) {
+    for (const size of SIZES) {
+      await page.setViewportSize(size)
+      const fit = await pageFit(page)
+      expect(fit.scrollHeight, `${size.width} wide, pass ${pass}`).toBeLessThanOrEqual(fit.innerHeight)
+      expect(fit.overflowX, `${size.width} wide, pass ${pass}`).toBeLessThanOrEqual(0)
+    }
+    await page.getByRole('button', { name: /^Switch to (light|dark) theme$/ }).click()
+  }
+  // With nothing open, only the sections that have something to show are in the nav.
+  const nav = SECTION_NAV(page)
+  await expect(nav.getByRole('button', { name: 'Waterfall' })).toHaveCount(0)
+  await expect(nav.getByRole('button', { name: 'Assumptions' })).toHaveCount(0)
+})
+
+test('a sample opens from its card and its analysis reaches VERIFIED', async ({ page }) => {
+  test.setTimeout(180_000)
+  await page.goto('/')
+  await page.locator('[data-sample="scene_fsk"]').click()
+  await expect(page.getByTestId('start-screen')).toBeHidden()
+  await expect(page.getByText('Synthetic recording', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: /^Analysing signal/ })).toHaveCount(0, { timeout: 150_000 })
+  await expect(page.getByText('Verified', { exact: true }).first()).toBeVisible()
+  for (const size of SIZES) {
+    await page.setViewportSize(size)
+    const fit = await pageFit(page)
+    expect(fit.scrollHeight, `${size.width} wide`).toBeLessThanOrEqual(fit.innerHeight)
+  }
+})
+
+test('Alt+4 opens the Assumptions modal over the section instead of blanking the workspace', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.goto('/')
+  await page.locator('[data-sample="scene_fsk"]').click()
+  await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
+  await page.keyboard.press('Alt+4')
+  const dialog = page.getByRole('dialog', { name: /Assumptions/ })
+  await expect(dialog).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  // The section is still Survey, and a reload does not land on a blank page.
+  await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
+  await page.reload()
+  await expect(page.getByTestId('start-screen')).toBeVisible()
+})
+
+test('first run shows the welcome once; Skip remembers it and Help brings it back', async ({ page }) => {
+  // Only on the first load: the reload below must find what the dialog remembered.
+  await page.addInitScript(
+    "if (!window.sessionStorage.getItem('fresh')) { window.sessionStorage.setItem('fresh', '1'); window.localStorage.removeItem('sanket.onboarding.v1') }",
+  )
+  await page.goto('/')
+  const welcome = page.getByRole('dialog', { name: /Blind signal analysis/ })
+  await expect(welcome).toBeVisible()
+  // The five evidence levels, as glyph + word.
+  for (const level of ['Verified', 'Measured', 'Estimated', 'Hypothesis', 'Unknown']) {
+    await expect(welcome.getByText(level, { exact: true })).toBeVisible()
+  }
+  for (const size of SIZES) {
+    await page.setViewportSize(size)
+    const fit = await pageFit(page)
+    expect(fit.scrollHeight, `${size.width} wide`).toBeLessThanOrEqual(fit.innerHeight)
+  }
+  await page.keyboard.press('Escape')
+  await expect(welcome).toBeHidden()
+  expect(await page.evaluate("window.localStorage.getItem('sanket.onboarding.v1')")).toBe('seen')
+  await page.reload()
+  await expect(page.getByTestId('start-screen')).toBeVisible()
+  await expect(welcome).toBeHidden()
+  await page.getByRole('button', { name: /Help/ }).click()
+  await expect(welcome).toBeVisible()
+})
+
+test('the guided tour walks the real dashboard and the page never scrolls at any step', async ({ page }) => {
+  test.setTimeout(180_000)
+  await page.goto('/')
+  await page.locator('[data-sample="scene_fsk"]').click()
+  await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: /^Analysing signal/ })).toHaveCount(0, { timeout: 150_000 })
+  await page.getByRole('button', { name: /Help/ }).click()
+  await page.getByRole('button', { name: 'Take the tour' }).click()
+  const popover = page.locator('.driver-popover')
+  await expect(popover).toBeVisible()
+  for (let step = 0; step < 12; step++) {
+    const fit = await pageFit(page)
+    expect(fit.scrollHeight, `tour step ${step}`).toBeLessThanOrEqual(fit.innerHeight)
+    const box = await popover.boundingBox()
+    // The popover sits inside the viewport.
+    expect(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= fit.innerHeight * 4).toBeTruthy()
+    const done = popover.getByRole('button', { name: 'Done' })
+    if (await done.isVisible()) {
+      await done.click()
+      break
+    }
+    await popover.getByRole('button', { name: 'Next' }).click()
+  }
+  await expect(popover).toBeHidden()
 })

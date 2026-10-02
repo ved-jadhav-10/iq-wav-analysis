@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Maximize2, X } from 'lucide-react'
-import type { Detection } from '@/data/demoAnalysis'
-import type { DemoProducts } from '@/lib/demoSignal'
+import type { Detection } from '@/lib/analysis'
 import type { StageId } from '@/lib/evidence'
 import { BottomPanel } from './BottomPanel'
 import { EvidencePanel } from './EvidencePanel'
@@ -9,9 +8,11 @@ import { SymbolView } from './SymbolView'
 
 interface Props {
   detection: Detection
-  demo?: DemoProducts
   activeStage: StageId | null
   assumptionsPanel?: React.ReactNode
+  assumptionsCount?: number
+  /** The download link for the frame table in a format. */
+  frameExportUrl?: (format: string) => string
   onClose: () => void
 }
 
@@ -22,7 +23,7 @@ interface Props {
  * come back out to the survey. Giving it a section of its own would have meant the waterfall
  * losing a third of the display every time anyone wanted to look at a constellation.
  */
-export function SignalOverlay({ detection, demo, activeStage, assumptionsPanel, onClose }: Props) {
+export function SignalOverlay({ detection, activeStage, assumptionsPanel, assumptionsCount, frameExportUrl, onClose }: Props) {
   const closeRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -72,14 +73,19 @@ export function SignalOverlay({ detection, demo, activeStage, assumptionsPanel, 
           aria-label="Symbols and evidence"
           className="min-h-0 min-w-0 overflow-y-auto border-r bg-surface max-lg:border-r-0 max-lg:border-b"
         >
-          <SymbolView detection={detection} demo={demo} />
+          <SymbolView detection={detection} />
           <EvidencePanel detection={detection} activeStage={activeStage} />
         </section>
         <section
           aria-label="Search ledger"
           className="flex min-h-0 min-w-0 flex-col border-l bg-surface max-lg:border-l-0"
         >
-          <BottomPanel detection={detection} assumptionsPanel={assumptionsPanel} />
+          <BottomPanel
+            detection={detection}
+            assumptionsPanel={assumptionsPanel}
+            assumptionsCount={assumptionsCount}
+            frameExportUrl={frameExportUrl}
+          />
         </section>
       </div>
     </div>

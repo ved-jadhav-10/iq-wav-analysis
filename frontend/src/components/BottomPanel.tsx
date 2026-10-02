@@ -1,8 +1,8 @@
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { CircleSlash, ShieldCheck, X } from 'lucide-react'
-import { ASSUMPTIONS, type Detection } from '@/data/demoAnalysis'
-import { integer, sci } from '@/lib/format'
-import { EvidenceBadge } from './EvidenceBadge'
+import type { Detection } from '@/lib/analysis'
+import { hexToText, integer, sci } from '@/lib/format'
+import { InfoTip } from './InfoTip'
 
 const TABS = [
   { id: 'hypotheses', label: 'Hypotheses' },
@@ -18,10 +18,13 @@ function Empty({ children }: { children: string }) {
   return <p className="px-3 py-6 text-center text-xs text-muted-foreground">{children}</p>
 }
 
-function Stat({ label, value, note }: { label: string; value: string; note?: string }) {
+function Stat({ label, value, note, tip }: { label: string; value: string; note?: string; tip?: string }) {
   return (
     <div className="min-w-0">
-      <div className="eyebrow">{label}</div>
+      <div className="eyebrow flex items-center gap-1">
+        {label}
+        {tip && <InfoTip term={tip} />}
+      </div>
       <div className="num text-[13px] font-medium">{value}</div>
       {note && <div className="text-2xs text-muted-foreground">{note}</div>}
     </div>
@@ -38,6 +41,7 @@ function Hypotheses({ detection }: { detection: Detection }) {
       <div className="grid grid-cols-2 gap-x-6 gap-y-2 border-b px-3 py-2 sm:grid-cols-5">
         <Stat
           label="Tried"
+          tip="ledger"
           value={integer.format(s.tried)}
           note={
             s.blindSearched
@@ -45,10 +49,11 @@ function Hypotheses({ detection }: { detection: Detection }) {
               : 'every candidate counted'
           }
         />
-        <Stat label="Family-wise error" value={`α = ${s.alpha}`} note={`${s.correction} step-down`} />
-        <Stat label="Strictest threshold" value={sci(s.smallestThreshold)} />
+        <Stat label="Family-wise error" tip="fwer" value={`α = ${s.alpha}`} note={`${s.correction} step-down`} />
+        <Stat label="Strictest threshold" tip="threshold" value={sci(s.smallestThreshold)} />
         <Stat
           label="Shuffled-bit accepts"
+          tip="shuffled"
           value={s.shuffledRuns === 0 ? 'Not run' : `${s.shuffledAccepts} / ${integer.format(s.shuffledRuns)}`}
           note={
             s.shuffledRuns === 0
@@ -80,8 +85,16 @@ function Hypotheses({ detection }: { detection: Detection }) {
             <th className={TH}>Layer</th>
             <th className={TH}>Candidate</th>
             <th className={`${TH} max-lg:hidden`}>Statistic</th>
-            <th className={`${TH} text-right`}>p</th>
-            <th className={`${TH} text-right`}>Threshold</th>
+            <th className={`${TH} text-right`}>
+              <span className="inline-flex items-center justify-end gap-1">
+                p <InfoTip term="pvalue" />
+              </span>
+            </th>
+            <th className={`${TH} text-right`}>
+              <span className="inline-flex items-center justify-end gap-1">
+                Threshold <InfoTip term="threshold" />
+              </span>
+            </th>
             <th className={TH}>Why</th>
           </tr>
         </thead>
@@ -198,11 +211,20 @@ function Frames({ detection, exportUrl }: { detection: Detection; exportUrl?: (f
           <tr className="border-b">
             <th className={`${TH} text-right`}>#</th>
             <th className={`${TH} text-right`}>Start bit</th>
-            <th className={TH}>Sync word</th>
+            <th className={TH}>
+              <span className="inline-flex items-center gap-1">
+                Sync word <InfoTip term="asm" />
+              </span>
+            </th>
             <th className={`${TH} text-right`}>Length</th>
-            <th className={TH}>CRC</th>
+            <th className={TH}>
+              <span className="inline-flex items-center gap-1">
+                CRC <InfoTip term="crc" />
+              </span>
+            </th>
             <th className={TH}>Header</th>
-            <th className={TH}>Payload</th>
+            <th className={TH}>Payload (hex)</th>
+            <th className={`${TH} max-xl:hidden`}>As text</th>
           </tr>
         </thead>
         <tbody>
@@ -216,42 +238,12 @@ function Frames({ detection, exportUrl }: { detection: Detection; exportUrl?: (f
                 <CrcBadge crc={f.crc} />
               </td>
               <td className={`${TD} num tracking-wider`}>{f.headerHex}</td>
-              <td className={`${TD} num max-w-[16ch] truncate tracking-wider`} title={f.payloadHex || undefined}>
+              <td className={`${TD} num max-w-[34ch] truncate tracking-wider`} title={f.payloadHex || undefined}>
                 {f.payloadHex || '—'}
               </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-function Assumptions() {
-  return (
-    <div>
-      <p className="border-b px-3 py-2 text-xs text-muted-foreground">
-        Everything the analysis took as given about this file. Every export carries this block.
-      </p>
-      <table className="w-full text-xs">
-        <caption className="sr-only">Recording assumptions</caption>
-        <thead>
-          <tr className="border-b">
-            <th className={TH}>Item</th>
-            <th className={TH}>Value</th>
-            <th className={TH}>Level</th>
-            <th className={TH}>Basis</th>
-          </tr>
-        </thead>
-        <tbody>
-          {ASSUMPTIONS.map((a) => (
-            <tr key={a.item} className="border-b border-border/60">
-              <td className={`${TD} whitespace-nowrap`}>{a.item}</td>
-              <td className={`${TD} num whitespace-nowrap`}>{a.value}</td>
-              <td className={TD}>
-                <EvidenceBadge level={a.level} />
+              <td className={`${TD} num max-w-[24ch] truncate text-muted-foreground max-xl:hidden`} title={hexToText(f.payloadHex) || undefined}>
+                {hexToText(f.payloadHex) || '—'}
               </td>
-              <td className={`${TD} text-muted-foreground`}>{a.note}</td>
             </tr>
           ))}
         </tbody>
@@ -262,10 +254,10 @@ function Assumptions() {
 
 interface Props {
   detection: Detection
-  /** The Assumptions tab's content: the demo's hardcoded recording-level table by default, or a
-   * real recording's own `<RecordingAssumptionsPanel>` (App.tsx passes it in for that path so
-   * this component doesn't need to know about `lib/api`'s `Assumptions` shape). */
+  /** The Assumptions tab's content: the recording's own `<RecordingAssumptionsPanel>` (App.tsx
+   * passes it in so this component doesn't need to know about `lib/api`'s `Assumptions` shape). */
   assumptionsPanel?: ReactNode
+  /** How many assumptions the recording lists, shown on the tab. */
   assumptionsCount?: number
   /** The download link for the frame table in a format, for a real recording. */
   frameExportUrl?: (format: string) => string
@@ -278,7 +270,7 @@ export function BottomPanel({ detection, assumptionsPanel, assumptionsCount, fra
   const counts: Record<TabId, number | null> = {
     hypotheses: detection.search?.tried ?? null,
     frames: detection.frames.length,
-    assumptions: assumptionsCount ?? ASSUMPTIONS.length,
+    assumptions: assumptionsCount ?? null,
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
@@ -296,7 +288,7 @@ export function BottomPanel({ detection, assumptionsPanel, assumptionsCount, fra
   }
 
   return (
-    <section aria-label="Analysis details" className="flex min-h-0 flex-col border-t bg-surface">
+    <section aria-label="Analysis details" data-tour="bottom-tabs" className="flex min-h-0 flex-col border-t bg-surface">
       <div role="tablist" aria-label="Analysis details" className="flex shrink-0 gap-1 border-b px-2" onKeyDown={onKeyDown}>
         {TABS.map((t) => {
           const selected = t.id === tab
@@ -329,7 +321,7 @@ export function BottomPanel({ detection, assumptionsPanel, assumptionsCount, fra
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} tabIndex={0} className="min-h-0 flex-1 overflow-auto">
         {tab === 'hypotheses' && <Hypotheses detection={detection} />}
         {tab === 'frames' && <Frames detection={detection} exportUrl={frameExportUrl} />}
-        {tab === 'assumptions' && (assumptionsPanel ?? <Assumptions />)}
+        {tab === 'assumptions' && assumptionsPanel}
       </div>
     </section>
   )

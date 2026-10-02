@@ -1,7 +1,6 @@
 /**
  * Client for the `/api/v1/recordings` and `/api/v1/tiles` routes (PLAN §5 M2): opening a real
- * recording and fetching its server-computed tile pyramid, in place of the synthetic demo
- * texture. See `dsp/tiles.py` for the tile contract this matches (row-major, fftshifted,
+ * recording and fetching its server-computed tile pyramid, and the bundled sample recordings. See `dsp/tiles.py` for the tile contract this matches (row-major, fftshifted,
  * uint8-quantised dB) and `backend/src/backend/app.py` for the routes themselves.
  */
 import type { DetectionReport } from './analysis'
@@ -125,6 +124,27 @@ export async function openRecording(path: string, sequence = false, datatype?: s
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path, sequence, datatype }),
   })
+  return asJson<RecordingInfo>(response)
+}
+
+/** A bundled sample recording (`GET /api/v1/samples`): always synthetic, with exact ground truth. */
+export interface SampleInfo {
+  id: string
+  title: string
+  description: string
+  synthetic: boolean
+  signals: number
+  sizeBytes: number
+}
+
+/** The sample recordings the server can open, in the order a first-time visitor should try them. */
+export async function listSamples(): Promise<SampleInfo[]> {
+  return asJson<SampleInfo[]>(await fetch('/api/v1/samples'))
+}
+
+/** Opens a bundled sample as a recording; the analysis then runs in the background as for any file. */
+export async function openSample(id: string): Promise<RecordingInfo> {
+  const response = await fetch(`/api/v1/samples/${encodeURIComponent(id)}/open`, { method: 'POST' })
   return asJson<RecordingInfo>(response)
 }
 

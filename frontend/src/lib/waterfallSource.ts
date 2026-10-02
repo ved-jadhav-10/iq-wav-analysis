@@ -1,7 +1,6 @@
 import type { LevelInfo, RecordingInfo } from './api'
 
-/** What `Waterfall` and `PsdPlot` need, whichever of the demo generator or a real recording it
- * came from - `DemoProducts` already has every one of these fields (PLAN §5 M2). */
+/** What `Waterfall` and `PsdPlot` need, taken from a real recording's tile grid (`sourceFromRecording`). */
 export interface WaterfallSource {
   fs: number
   fftSize: number

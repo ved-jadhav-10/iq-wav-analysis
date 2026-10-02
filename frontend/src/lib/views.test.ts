@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { DEFAULT_VIEW, isViewId, stepView, VIEWS, viewByDigit, type ViewId } from './views'
+import { describe, expect, it, vi } from 'vitest'
+import { DEFAULT_VIEW, isSectionId, isViewId, loadStoredView, stepView, VIEWS, viewByDigit, type ViewId } from './views'
 
 // The per-detection deep dive is an overlay, not a section, so it must not appear in this list.
 const OVERLAY_VIEWS = ['signal']
@@ -54,5 +54,16 @@ describe('views', () => {
     for (const v of VIEWS) expect(viewByDigit(v.digit)).toBe(v.id)
     expect(viewByDigit('9')).toBeUndefined()
     expect(viewByDigit('')).toBeUndefined()
+  })
+
+  it('never treats the Assumptions modal as a section to land on or to remember', () => {
+    expect(isViewId('assumptions')).toBe(true)
+    expect(isSectionId('assumptions')).toBe(false)
+    expect(isSectionId('survey')).toBe(true)
+    // Alt+4 used to store it, which left the workspace blank on every reload.
+    const store: Record<string, string> = { 'sanket.view.v1': 'assumptions' }
+    vi.stubGlobal('window', { localStorage: { getItem: (k: string) => store[k] ?? null } })
+    expect(loadStoredView()).toBe(DEFAULT_VIEW)
+    vi.unstubAllGlobals()
   })
 })

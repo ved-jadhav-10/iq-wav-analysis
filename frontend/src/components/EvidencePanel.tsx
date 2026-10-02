@@ -1,10 +1,13 @@
 import { useEffect } from 'react'
 import { ChevronRight, TriangleAlert } from 'lucide-react'
-import type { Detection } from '@/data/demoAnalysis'
+import type { Detection } from '@/lib/analysis'
 import type { Parameter, StageId } from '@/lib/evidence'
 import { EvidenceBadge } from './EvidenceBadge'
 import { formatValue } from '@/lib/format'
 import { LEVEL_FILL } from './levelStyles'
+import { InfoTip } from './InfoTip'
+import { glossaryKeyFor } from '@/lib/glossary'
+import { isPending, plainHeadline } from '@/lib/plainHeadline'
 
 function Confidence({ value, level }: { value: number; level: Parameter['level'] }) {
   const pct = Math.round(value * 100)
@@ -27,10 +30,14 @@ function Confidence({ value, level }: { value: number; level: Parameter['level']
 
 export function ParameterCard({ param }: { param: Parameter }) {
   const hasDetails = param.evidence.length > 0 || param.alternatives.length > 0
+  const tip = glossaryKeyFor(param.name)
   return (
     <article className="rounded-md border bg-surface px-3 py-2.5">
       <div className="flex items-start justify-between gap-2">
-        <h4 className="text-xs text-muted-foreground">{param.name}</h4>
+        <div className="flex min-w-0 items-center gap-1">
+          <h4 className="text-xs text-muted-foreground">{param.name}</h4>
+          {tip && <InfoTip term={tip} />}
+        </div>
         <EvidenceBadge level={param.level} />
       </div>
       <p className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5">
@@ -103,8 +110,14 @@ export function EvidencePanel({ detection, activeStage }: { detection: Detection
   }, [activeStage, detection.id])
 
   return (
-    <div className="space-y-5 px-3 py-3">
+    <div data-tour="evidence" className="space-y-5 px-3 py-3">
       <h2 className="sr-only">Evidence for detection {detection.id}</h2>
+      <div>
+        {!isPending(detection) && <p className="text-[13px] leading-snug font-medium">{plainHeadline(detection)}</p>}
+        <p className="mt-1 text-xs text-muted-foreground">
+          Every value shows how sure Sanket is, how it was found, and what would settle it if it is unknown.
+        </p>
+      </div>
       {detection.stages.map((s) => (
         <section
           key={s.id}
@@ -113,7 +126,10 @@ export function EvidencePanel({ detection, activeStage }: { detection: Detection
           className={`scroll-mt-3 rounded-md transition-shadow ${s.id === activeStage ? 'ring-1 ring-primary/50 ring-offset-4 ring-offset-surface' : ''}`}
         >
           <header className="mb-1.5 flex items-center justify-between gap-2">
-            <h3 className="eyebrow">{s.name}</h3>
+            <div className="flex items-center gap-1">
+              <h3 className="eyebrow">{s.name}</h3>
+              {glossaryKeyFor(s.name) && <InfoTip term={glossaryKeyFor(s.name) as string} />}
+            </div>
           </header>
           {s.status === 'not-applicable' ? (
             <p className="text-xs text-subtle-foreground italic">Not applicable — {s.summary.toLowerCase()}.</p>

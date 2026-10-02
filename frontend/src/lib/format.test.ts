@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatRate, formatValue, niceTicks, parseFrequency, parseRate, sci, signed } from './format'
+import { formatRate, formatValue, hexToText, niceTicks, parseFrequency, parseRate, sci, signed } from './format'
 
 describe('parseRate', () => {
   it('reads plain, exponent and SI-suffixed rates', () => {
@@ -82,5 +82,14 @@ describe('formatValue', () => {
     expect(formatValue(1234567)).toBe('1,234,567')
     expect(formatValue(0.12345678)).toBe('0.123457')
     expect(formatValue('IQ')).toBe('IQ')
+  })
+})
+
+describe('hexToText', () => {
+  it('shows printable ASCII as text and anything else as a dot', () => {
+    expect(hexToText('53414e4b4554')).toBe('SANKET')
+    expect(hexToText('00ff0a7f41')).toBe('····A')
+    expect(hexToText('')).toBe('')
+    expect(hexToText('4')).toBe('')
   })
 })

@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Detection } from '@/data/demoAnalysis'
-import type { Eye } from '@/lib/analysis'
-import { DEMO_CONFIG, type DemoProducts } from '@/lib/demoSignal'
+import type { Detection, Eye } from '@/lib/analysis'
 import { integer, signed } from '@/lib/format'
 import { cssVar, useTheme } from '@/hooks/theme'
+import { InfoTip } from './InfoTip'
 
 const FONT = '10px "IBM Plex Mono", monospace'
 
@@ -73,28 +72,6 @@ function drawConstellationAxes(ctx: CanvasRenderingContext2D, size: number, rang
   ctx.fillText('I', size - 4, cy - 4)
   ctx.textAlign = 'left'
   ctx.fillText('Q', cx + 4, 11)
-}
-
-/** The demo's own (larger, phase-jittered) point cloud: interleaved I, Q. */
-function drawConstellation(ctx: CanvasRenderingContext2D, size: number, points: Float32Array, dark: boolean) {
-  const range = 1.6
-  const pad = 18
-  const scale = (size - pad * 2) / (2 * range)
-  const cx = size / 2
-  const cy = size / 2
-  const X = (v: number) => cx + v * scale
-  const Y = (v: number) => cy - v * scale
-
-  drawConstellationAxes(ctx, size, range, scale)
-
-  ctx.fillStyle = cssVar('--primary')
-  ctx.globalCompositeOperation = dark ? 'lighter' : 'source-over'
-  ctx.globalAlpha = dark ? 0.3 : 0.22
-  for (let i = 0; i < points.length; i += 2) {
-    ctx.fillRect(X(points[i]) - 1, Y(points[i + 1]) - 1, 2, 2)
-  }
-  ctx.globalCompositeOperation = 'source-over'
-  ctx.globalAlpha = 1
 }
 
 /** A real detection's `analysis.constellation`: symbol-spaced [I, Q] points, unit RMS. */
@@ -194,55 +171,6 @@ function drawEye(ctx: CanvasRenderingContext2D, w: number, h: number, eye: Eye, 
   }
 }
 
-function drawInstFreq(ctx: CanvasRenderingContext2D, w: number, h: number, values: Float32Array) {
-  const lim = 15_000
-  const nBins = 90
-  const counts = new Float64Array(nBins)
-  for (const v of values) {
-    const b = Math.floor(((v + lim) / (2 * lim)) * nBins)
-    if (b >= 0 && b < nBins) counts[b]++
-  }
-  const max = Math.max(...counts)
-  const padX = 10
-  const padTop = 14
-  const padBottom = 20
-  const plotW = w - padX * 2
-  const plotH = h - padTop - padBottom
-  const X = (f: number) => padX + ((f + lim) / (2 * lim)) * plotW
-
-  ctx.strokeStyle = cssVar('--plot-grid')
-  ctx.fillStyle = cssVar('--subtle-foreground')
-  ctx.font = FONT
-  ctx.textAlign = 'center'
-  for (let f = -15_000; f <= 15_000; f += 5_000) {
-    ctx.beginPath()
-    ctx.moveTo(X(f), padTop)
-    ctx.lineTo(X(f), padTop + plotH)
-    ctx.stroke()
-    ctx.fillText(signed(f / 1000, 0), X(f), h - 6)
-  }
-
-  ctx.fillStyle = cssVar('--primary')
-  const barW = plotW / nBins
-  for (let b = 0; b < nBins; b++) {
-    const bh = (counts[b] / max) * plotH
-    ctx.fillRect(padX + b * barW + 0.5, padTop + plotH - bh, Math.max(1, barW - 1), bh)
-  }
-
-  const dev = DEMO_CONFIG.fsk.deviation
-  ctx.strokeStyle = cssVar('--ev-estimated')
-  ctx.fillStyle = cssVar('--ev-estimated')
-  ctx.setLineDash([3, 3])
-  for (const f of [-dev, dev]) {
-    ctx.beginPath()
-    ctx.moveTo(X(f), padTop - 4)
-    ctx.lineTo(X(f), padTop + plotH)
-    ctx.stroke()
-    ctx.fillText(`${signed(f / 1000, 1)} kHz`, X(f), padTop - 5)
-  }
-  ctx.setLineDash([])
-}
-
 function emptyMessage(detection: Detection): string {
   if (detection.kind === 'cw') {
     return 'No symbols to plot: this is a steady carrier. Its frequency, drift and C/N0 are in the evidence below.'
@@ -260,12 +188,9 @@ function emptyMessage(detection: Detection): string {
   )
 }
 
-/** Symbol-domain view for the selected detection: constellation for PSK, tone histogram for FSK
- * (demo only - a real FSK detection carries no plot data yet), nothing to plot otherwise. `demo` is only
- * present on the demo path, whose synthetic constellation/instantaneous-frequency arrays have
- * more points and simulated timing/carrier recovery than the contract's `constellation` field
- * carries for a real detection. */
-export function SymbolView({ detection, demo }: { detection: Detection; demo?: DemoProducts }) {
+/** Symbol-domain view for the selected detection: the constellation (or, on the toggle, the eye
+ * diagram) for a linear signal, and the honest reason there is nothing to plot for the rest. */
+export function SymbolView({ detection }: { detection: Detection }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [width, setWidth] = useState(0)
@@ -281,49 +206,37 @@ export function SymbolView({ detection, demo }: { detection: Detection; demo?: D
   }, [])
 
   const kind = detection.kind
-  const hasFskHistogram = kind === 'fsk' && !!demo
-  const hasCanvas = kind === 'psk' || hasFskHistogram
-  // A real detection may carry an eye; the demo path has none.
-  const eye = !demo && kind === 'psk' ? (detection.eye ?? null) : null
+  const hasCanvas = kind === 'psk' && detection.constellation.length > 0
+  // A real detection may carry an eye.
+  const eye = kind === 'psk' ? (detection.eye ?? null) : null
   const showEye = eye !== null && view === 'eye'
   const height = showEye ? 180 : kind === 'psk' ? Math.min(width, 300) : 150
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || width === 0 || !hasCanvas) return
-    const canvasW = kind === 'psk' && !showEye ? height : width
+    const canvasW = !showEye ? height : width
     const ctx = setupCanvas(canvas, canvasW, height)
     if (!ctx) return
-    if (showEye && eye) {
-      drawEye(ctx, width, height, eye, theme === 'dark')
-    } else if (kind === 'psk') {
-      if (demo) drawConstellation(ctx, height, demo.constellation, theme === 'dark')
-      else drawConstellationPoints(ctx, height, detection.constellation, theme === 'dark')
-    } else if (hasFskHistogram && demo) {
-      drawInstFreq(ctx, width, height, demo.fskInstFreqHz)
-    }
-  }, [kind, width, height, demo, theme, hasCanvas, hasFskHistogram, detection.constellation, showEye, eye])
+    if (showEye && eye) drawEye(ctx, width, height, eye, theme === 'dark')
+    else drawConstellationPoints(ctx, height, detection.constellation, theme === 'dark')
+  }, [width, height, theme, hasCanvas, detection.constellation, showEye, eye])
 
-  const symbols = demo ? demo.constellation.length / 2 : detection.constellation.length
-  const title = showEye ? 'Eye diagram' : kind === 'psk' ? 'Constellation' : hasFskHistogram ? 'Instantaneous frequency' : 'Symbols'
-  const subtitle = demo
-    ? kind === 'psk'
-      ? `${integer.format(symbols)} symbols after matched filter, Gardner timing and Costas loop`
-      : hasFskHistogram
-        ? `Channelised to ${DEMO_CONFIG.fskChannel.fs / 1000} kS/s · dashed lines are the estimated tones`
-        : 'Unmodulated carrier'
-    : showEye
-      ? `${integer.format(eye?.i.length ?? 0)} symbols overlaid, one symbol either side of the instant, after phase correction`
-      : kind === 'psk'
-        ? `${integer.format(symbols)} symbols after sync and phase correction`
-        : detection.headline
+  const symbols = detection.constellation.length
+  const title = showEye ? 'Eye diagram' : kind === 'psk' ? 'Constellation' : 'Symbols'
+  const subtitle = showEye
+    ? `${integer.format(eye?.i.length ?? 0)} symbols overlaid, one symbol either side of the instant, after phase correction`
+    : kind === 'psk' && hasCanvas
+      ? `${integer.format(symbols)} symbols after sync and phase correction`
+      : detection.headline
 
   return (
-    <section aria-labelledby="symview-title" className="border-b px-3 pt-3 pb-3">
+    <section aria-labelledby="symview-title" data-tour="symbols" className="border-b px-3 pt-3 pb-3">
       <div className="mb-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <h2 id="symview-title" className="text-[13px] font-semibold">
+          <h2 id="symview-title" className="flex items-center gap-1.5 text-[13px] font-semibold">
             {title}
+            {kind === 'psk' && <InfoTip term={showEye ? 'eye' : 'constellation'} />}
           </h2>
           <p className="text-xs text-muted-foreground">{subtitle}</p>
         </div>
@@ -347,25 +260,18 @@ export function SymbolView({ detection, demo }: { detection: Detection; demo?: D
             ))}
           </div>
         )}
-        {kind === 'psk' && demo && (
-          <span className="num shrink-0 rounded-[3px] bg-surface-2 px-1.5 py-0.5 text-2xs text-muted-foreground">
-            EVM {(demo.evm * 100).toFixed(1)}&nbsp;%
-          </span>
-        )}
       </div>
       <div ref={wrapRef} className="flex justify-center w-full min-w-0 overflow-hidden">
         {hasCanvas ? (
           <canvas
             ref={canvasRef}
-            style={{ width: kind === 'psk' && !showEye ? height : width, height, maxWidth: '100%' }}
+            style={{ width: !showEye ? height : width, height, maxWidth: '100%' }}
             className="block"
             role="img"
             aria-label={
               showEye
                 ? `${detection.label} eye diagram, I and Q, ${eye?.i.length ?? 0} traces`
-                : kind === 'psk'
-                ? `${detection.label} constellation, ${symbols} symbols`
-                : 'Histogram of instantaneous frequency with two peaks at the FSK tones'
+                : `${detection.label} constellation, ${symbols} symbols`
             }
           />
         ) : (

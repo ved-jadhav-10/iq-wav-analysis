@@ -153,3 +153,103 @@
 .uplot .u-legend {
   display: none;
 }
+
+/* Onboarding tour (driver.js) */
+.driver-popover.sanket-tour {
+  background: var(--surface);
+  color: var(--foreground);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 14px 16px;
+  min-width: 260px;
+  max-width: min(340px, calc(100vw - 24px));
+  font-family: var(--font-sans);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.35);
+}
+.driver-popover.sanket-tour .driver-popover-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--foreground);
+}
+.driver-popover.sanket-tour .driver-popover-description {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+.driver-popover.sanket-tour .driver-popover-close-btn {
+  color: var(--muted-foreground);
+}
+.driver-popover.sanket-tour .driver-popover-close-btn:hover,
+.driver-popover.sanket-tour .driver-popover-close-btn:focus {
+  color: var(--foreground);
+}
+.driver-popover.sanket-tour .driver-popover-footer {
+  margin-top: 12px;
+  gap: 8px;
+}
+.driver-popover.sanket-tour .driver-popover-progress-text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--subtle-foreground);
+}
+.driver-popover.sanket-tour .driver-popover-footer-btn {
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  padding: 4px 10px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-shadow: none;
+}
+.driver-popover.sanket-tour .driver-popover-footer-btn:hover,
+.driver-popover.sanket-tour .driver-popover-footer-btn:focus {
+  background: var(--surface-2);
+  color: var(--foreground);
+}
+.driver-popover.sanket-tour .driver-popover-footer-btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.driver-popover.sanket-tour .driver-popover-footer .driver-popover-next-btn {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+}
+.driver-popover.sanket-tour .driver-popover-footer .driver-popover-next-btn:hover,
+.driver-popover.sanket-tour .driver-popover-footer .driver-popover-next-btn:focus {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  filter: brightness(1.1);
+}
+.driver-popover.sanket-tour .driver-popover-arrow {
+  border-color: var(--surface);
+}
+.driver-popover.sanket-tour .driver-popover-arrow-side-left.driver-popover-arrow {
+  border-top-color: transparent;
+  border-bottom-color: transparent;
+  border-right-color: transparent;
+  border-left-color: var(--surface);
+}
+.driver-popover.sanket-tour .driver-popover-arrow-side-right.driver-popover-arrow {
+  border-top-color: transparent;
+  border-bottom-color: transparent;
+  border-left-color: transparent;
+  border-right-color: var(--surface);
+}
+.driver-popover.sanket-tour .driver-popover-arrow-side-top.driver-popover-arrow {
+  border-left-color: transparent;
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  border-top-color: var(--surface);
+}
+.driver-popover.sanket-tour .driver-popover-arrow-side-bottom.driver-popover-arrow {
+  border-left-color: transparent;
+  border-right-color: transparent;
+  border-top-color: transparent;
+  border-bottom-color: var(--surface);
+}

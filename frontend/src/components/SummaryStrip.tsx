@@ -39,7 +39,7 @@ function SummaryText({ text }: { text: string }) {
  * a long summary never grows the strip past the cap or the page past the window. */
 export function SummaryView({ state, open, onToggle, onRetry }: ViewProps) {
   return (
-    <section aria-label="Plain-language summary" className="flex shrink-0 flex-col border-b bg-surface">
+    <section aria-label="Plain-language summary" data-tour="summary" className="flex shrink-0 flex-col border-b bg-surface">
       <button
         type="button"
         onClick={onToggle}

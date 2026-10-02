@@ -52,6 +52,7 @@ do not edit by hand. Lists only what ships in Sanket, not development tools.
 | @fontsource/ibm-plex-mono | 5.3.0 | OFL-1.1 |
 | @fontsource/ibm-plex-sans | 5.3.0 | OFL-1.1 |
 | @fontsource/ibm-plex-sans-devanagari | 5.3.0 | OFL-1.1 |
+| driver.js | 1.8.0 | MIT |
 | lucide-react | 1.48.0 | ISC |
 | react | 19.3.0 | MIT |
 | react-dom | 19.3.0 | MIT |

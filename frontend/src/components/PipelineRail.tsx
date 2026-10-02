@@ -1,7 +1,10 @@
-import { Minus } from 'lucide-react'
-import type { Detection } from '@/data/demoAnalysis'
+import { Loader2, Minus } from 'lucide-react'
+import type { Detection } from '@/lib/analysis'
 import { LEVEL_INFO, type EvidenceLevel, type StageId } from '@/lib/evidence'
+import { glossaryKeyFor } from '@/lib/glossary'
+import { isPending, plainHeadline } from '@/lib/plainHeadline'
 import { EvidenceBadge } from './EvidenceBadge'
+import { InfoTip } from './InfoTip'
 import { LEVEL_ICON, LEVEL_TEXT } from './levelStyles'
 
 function StageGlyph({ level }: { level: EvidenceLevel | null }) {
@@ -26,13 +29,14 @@ interface Props {
 
 export function PipelineRail({ detections, selected, onSelectDetection, activeStage, onSelectStage }: Props) {
   return (
-    <nav aria-label="Detections and pipeline" className="flex flex-col border-r bg-surface max-md:border-r-0 max-md:border-b xl:min-h-0 xl:overflow-y-auto">
+    <nav aria-label="Detections and pipeline" data-tour="detections" className="flex flex-col border-r bg-surface max-md:border-r-0 max-md:border-b xl:min-h-0 xl:overflow-y-auto">
       <div className="px-3 pt-3 pb-2">
         <h2 className="eyebrow">Detections</h2>
       </div>
       <ul className="space-y-px px-1.5">
         {detections.map((d) => {
           const active = d.id === selected.id
+          const pending = isPending(d)
           return (
             <li key={d.id}>
               <button
@@ -46,9 +50,23 @@ export function PipelineRail({ detections, selected, onSelectDetection, activeSt
                   <span className="text-[13px] font-medium">
                     <span className="num text-subtle-foreground">#{d.id}</span> {d.label}
                   </span>
-                  <EvidenceBadge level={d.level} />
+                  {pending ? (
+                    <span className="inline-flex shrink-0 items-center gap-1 text-2xs font-medium text-muted-foreground" role="status">
+                      <Loader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden />
+                      Analysing…
+                    </span>
+                  ) : (
+                    <EvidenceBadge level={d.level} />
+                  )}
                 </div>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">{d.headline}</p>
+                {!pending && (
+                  <>
+                    <p className="mt-0.5 line-clamp-2 text-xs text-foreground">{plainHeadline(d)}</p>
+                    <p title={d.headline} className="num mt-0.5 truncate text-2xs text-subtle-foreground">
+                      {d.headline}
+                    </p>
+                  </>
+                )}
               </button>
             </li>
           )
@@ -62,8 +80,9 @@ export function PipelineRail({ detections, selected, onSelectDetection, activeSt
         {selected.stages.map((s, i) => {
           const na = s.status === 'not-applicable'
           const active = s.id === activeStage
+          const tip = glossaryKeyFor(s.name)
           return (
-            <li key={s.id}>
+            <li key={s.id} className="relative">
               <button
                 type="button"
                 onClick={() => onSelectStage(s.id)}
@@ -84,6 +103,11 @@ export function PipelineRail({ detections, selected, onSelectDetection, activeSt
                   </span>
                 </span>
               </button>
+              {tip && (
+                <span className="absolute top-2 right-2.5 inline-flex">
+                  <InfoTip term={tip} />
+                </span>
+              )}
             </li>
           )
         })}

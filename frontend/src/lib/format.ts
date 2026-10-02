@@ -92,3 +92,14 @@ export function formatValue(value: string | number): string {
   if (Number.isInteger(value)) return integer.format(value)
   return String(Number(value.toPrecision(6)))
 }
+
+/** The payload bytes as printable ASCII, a dot for anything else: random data reads as noise, a
+ * text payload (a NAVTEX or POCSAG message, a banner) reads as words. */
+export function hexToText(hex: string): string {
+  let out = ''
+  for (let i = 0; i + 1 < hex.length; i += 2) {
+    const byte = Number.parseInt(hex.slice(i, i + 2), 16)
+    out += byte >= 0x20 && byte < 0x7f ? String.fromCharCode(byte) : '·'
+  }
+  return out
+}

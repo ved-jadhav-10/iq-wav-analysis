@@ -10,8 +10,6 @@ export const CONFIRM_TEXT = 'Delete this analysis and everything derived from it
 /** What makes an entry; the empty list says it so nobody has to guess how to fill it. */
 export const EMPTY_TEXT =
   'Nothing kept yet. An analysis that finishes is kept in the workspace and listed here, and it survives a restart of the server.'
-export const EMPTY_DEMO_TEXT =
-  'The synthetic demo is generated in the browser, so nothing of it is kept. Open a recording (by path, Upload or drop): an analysis that finishes is kept in the workspace and listed here.'
 
 const LINKS = resultLinks('none')
 
@@ -19,8 +17,6 @@ interface ViewProps {
   entries: HistoryEntry[] | null
   /** Why the list could not be fetched, in the server's words. */
   loadError: string | null
-  /** The synthetic in-browser capture is on screen: no recording behind it. */
-  demo: boolean
   refreshing: boolean
   /** The entry whose inline delete confirmation is open. */
   confirming: string | null
@@ -153,11 +149,6 @@ export function HistoryView(view: ViewProps) {
     <main aria-label="History" className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex h-8 shrink-0 items-center gap-2 border-b bg-surface px-3">
         <h2 className="eyebrow">History</h2>
-        {view.demo && (
-          <span className="rounded-[3px] border border-dashed border-border-strong px-1.5 text-2xs font-medium text-muted-foreground uppercase">
-            Synthetic demo
-          </span>
-        )}
         {entries && (
           <span className="num text-2xs text-subtle-foreground">
             {entries.length} kept {entries.length === 1 ? 'analysis' : 'analyses'}
@@ -187,7 +178,7 @@ export function HistoryView(view: ViewProps) {
         )
       ) : entries.length === 0 ? (
         <p className="max-w-2xl px-3 py-4 text-xs text-muted-foreground italic">
-          {view.demo ? EMPTY_DEMO_TEXT : EMPTY_TEXT}
+          {EMPTY_TEXT}
         </p>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto">
@@ -219,7 +210,7 @@ function without(errors: Record<string, string>, id: string): Record<string, str
 
 /** The History section: the server's kept analyses, fetched when the section opens and again
  * whenever `refreshKey` changes (an analysis has finished). Deleting asks first, in the row. */
-export function HistorySection({ demo, refreshKey }: { demo: boolean; refreshKey: number }) {
+export function HistorySection({ refreshKey }: { refreshKey: number }) {
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -278,7 +269,6 @@ export function HistorySection({ demo, refreshKey }: { demo: boolean; refreshKey
     <HistoryView
       entries={entries}
       loadError={loadError}
-      demo={demo}
       refreshing={refreshing}
       confirming={confirming}
       deleting={deleting}

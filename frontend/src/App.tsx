@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, Maximize2, PanelRightClose, X } from 'lucide-react'
 import { BRAND } from '@/brand'
-import { DETECTIONS, RECORDING, type Detection } from '@/data/demoAnalysis'
-import { useDemoProducts } from '@/hooks/useDemoProducts'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import {
   ApiError,
@@ -10,6 +8,7 @@ import {
   getRecording,
   listInputs,
   openRecording,
+  openSample,
   putAssumptions,
   saveAsSigmf,
   uploadFiles,
@@ -18,14 +17,15 @@ import {
   type InputInfo,
   type RecordingInfo,
 } from '@/lib/api'
-import type { DetectionReport } from '@/lib/analysis'
-import type { DemoProducts } from '@/lib/demoSignal'
+import type { Detection, DetectionReport } from '@/lib/analysis'
 import type { StageId } from '@/lib/evidence'
 import { integer } from '@/lib/format'
 import { fullView } from '@/lib/view'
 import { summaryTarget } from '@/lib/summary'
-import { loadStoredView, storeView, viewByDigit, type ViewId } from '@/lib/views'
+import { loadStoredView, storeView, viewByDigit, type SectionId } from '@/lib/views'
 import { sourceFromRecording, type WaterfallSource } from '@/lib/waterfallSource'
+import { hasSeenOnboarding, markOnboardingSeen } from '@/lib/onboarding'
+import { startTour } from '@/lib/tour'
 import { BatchChooser } from '@/components/BatchChooser'
 import { BottomPanel } from '@/components/BottomPanel'
 import { EvidenceBadge } from '@/components/EvidenceBadge'
@@ -38,20 +38,21 @@ import { SampleRatePrompt } from '@/components/SampleRatePrompt'
 import { RecordingAssumptionsPanel } from '@/components/RecordingAssumptionsPanel'
 import { SignalOverlay } from '@/components/SignalOverlay'
 import { SplitPane } from '@/components/SplitPane'
+import { StartScreen } from '@/components/StartScreen'
 import { SummaryStrip } from '@/components/SummaryStrip'
 import { SymbolView } from '@/components/SymbolView'
 import { TopBar } from '@/components/TopBar'
 import { Waterfall } from '@/components/Waterfall'
+import { Welcome } from '@/components/Welcome'
 
 /** When, after an analysis reports done, the History list is fetched again (the server keeps the
  * finished analysis on its worker thread, just after the state turns). */
 const KEPT_REFETCH_MS = [200, 2000]
 
-type Mode ={ kind: 'demo'; demo: DemoProducts } | { kind: 'recording'; info: RecordingInfo; source: WaterfallSource }
+type Opened = { info: RecordingInfo; source: WaterfallSource }
 
-/** A real detection's `analysis` (the `DetectionReport` contract) plus the `id`/`boxes` the
- * waterfall and the pipeline rail need - the same shape the demo path's `Detection` already is
- * (see data/demoAnalysis.ts), so both feed the same panels unchanged. */
+/** A detection's `analysis` (the `DetectionReport` contract) plus the `id`/`boxes` the waterfall
+ * and the pipeline rail need. */
 function toDetection(info: RecordingInfo['detections'][number], index: number): Detection {
   return { ...(info.analysis ?? pendingReport(info)), id: index + 1, boxes: [info.box] }
 }
@@ -151,41 +152,49 @@ function Workspace({
   onEnterAssumptions,
   historyTick,
 }: {
-  mode: Mode
-  view: ViewId
+  mode: Opened
+  view: SectionId
   railOpen: boolean
   onRailOpenChange: (open: boolean) => void
   onEnterAssumptions: (values: AssumptionValues) => Promise<void>
   /** Changes whenever an analysis finishes, so the History list is fetched again. */
   historyTick: number
 }) {
-  const demo = mode.kind === 'demo' ? mode.demo : undefined
-  const source = mode.kind === 'demo' ? mode.demo : mode.source
+  const source = mode.source
   const full = useMemo(() => fullView(source.rows, source.hop, source.fs), [source])
   // `view` is the section; the waterfall's zoom window is `zoom`, which belongs to the recording.
   const [zoom, setZoom] = useState(full)
-  const [selectedId, setSelectedId] = useState(DETECTIONS[0].id)
+  // Null until the analyst picks a signal: then the first one the analysis has reached is shown.
+  const [pickedId, setPickedId] = useState<number | null>(null)
   const [activeStage, setActiveStage] = useState<StageId | null>(null)
   const [fullScreen, setFullScreen] = useState(false)
 
   // The split only applies where there's room for two panes; below xl the grid stacks.
   const splittable = useMediaQuery('(min-width: 1280px)')
 
-  const rateUnknown = mode.kind === 'recording' && Boolean(mode.source.normalised)
-  const detections: Detection[] =
-    mode.kind === 'demo' ? DETECTIONS : mode.info.detections.map(toDetection)
-  // selectedId can be stale (left over from the demo, or a recording with fewer signals than the
-  // last one) - clamped to the first detection, same as the demo path's own fallback below.
+  const rateUnknown = Boolean(mode.source.normalised)
+  const detections: Detection[] = mode.info.detections.map(toDetection)
+  const firstReached = mode.info.detections.findIndex((d) => d.analysis !== null)
   const selected =
-    detections.find((d) => d.id === selectedId) ?? (detections.length > 0 ? detections[0] : undefined)
+    detections.find((d) => d.id === pickedId) ??
+    (detections.length > 0 ? detections[Math.max(firstReached, 0)] : undefined)
 
   function selectDetection(id: number) {
-    setSelectedId(id)
+    setPickedId(id)
     setActiveStage(null)
   }
 
-  const assumptionsPanel =
-    mode.kind === 'recording' ? <RecordingAssumptionsPanel assumptions={mode.info.assumptions} captureQuality={mode.info.captureQuality} onEnter={onEnterAssumptions} /> : undefined
+  const assumptionsPanel = (
+    <RecordingAssumptionsPanel
+      assumptions={mode.info.assumptions}
+      captureQuality={mode.info.captureQuality}
+      onEnter={onEnterAssumptions}
+    />
+  )
+  const assumptionsCount = Object.values(mode.info.assumptions).filter((p) => p !== null).length
+  const frameExportUrl = selected
+    ? (format: string) => `/api/v1/recordings/${mode.info.id}/detections/${selected.id - 1}/frames?format=${format}`
+    : undefined
 
   const waterfall = (
     <Waterfall
@@ -212,7 +221,7 @@ function Workspace({
   // spectrum and a large empty gap. As a grid item in Survey, `flex-1` is inert and `align-self`
   // stretches it, so the same class works in both places.
   const plotColumn = (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div data-tour="waterfall" className="flex min-h-0 min-w-0 flex-1 flex-col">
       {waterfall}
       {psd}
       {view === 'survey' && (
@@ -221,15 +230,12 @@ function Workspace({
             <BottomPanel
               detection={selected}
               assumptionsPanel={assumptionsPanel}
-              frameExportUrl={
-                mode.kind === 'recording'
-                  ? (format) => `/api/v1/recordings/${mode.info.id}/detections/${selected.id - 1}/frames?format=${format}`
-                  : undefined
-              }
+              assumptionsCount={assumptionsCount}
+              frameExportUrl={frameExportUrl}
             />
-          ) : mode.kind === 'recording' ? (
-            <RecordingAssumptionsPanel assumptions={mode.info.assumptions} captureQuality={mode.info.captureQuality} onEnter={onEnterAssumptions} />
-          ) : null}
+          ) : (
+            assumptionsPanel
+          )}
         </div>
       )}
     </div>
@@ -266,7 +272,7 @@ function Workspace({
             )}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <SymbolView detection={selected} demo={demo} />
+            <SymbolView detection={selected} />
             <EvidencePanel detection={selected} activeStage={activeStage} />
           </div>
         </>
@@ -283,9 +289,8 @@ function Workspace({
   // The rail is its own grid cell, so hiding it has to change the template, not just skip a child.
   const showRail = splittable ? railOpen : true
 
-  // The plain-language summary belongs to a real recording whose analysis has finished; the
-  // synthetic in-browser capture has no summary to show.
-  const summaryId = summaryTarget(mode.kind === 'recording' ? mode.info : null)
+  // The plain-language summary belongs to a recording whose analysis has finished.
+  const summaryId = summaryTarget(mode.info)
 
   return (
     <>
@@ -347,9 +352,7 @@ function Workspace({
 
       {/* The kept analyses are the server's, not this recording's: the section sits in the
           Workspace only so that zoom and selection survive a visit to it. */}
-      {view === 'history' && <HistorySection demo={mode.kind === 'demo'} refreshKey={historyTick} />}
-
-      {/* Removed separate assumptions view, using modal below */}
+      {view === 'history' && <HistorySection refreshKey={historyTick} />}
 
       {!showRail && view === 'survey' && (
         <button
@@ -366,9 +369,10 @@ function Workspace({
       {fullScreen && selected && (
         <SignalOverlay
           detection={selected}
-          demo={demo}
           activeStage={activeStage}
           assumptionsPanel={assumptionsPanel}
+          assumptionsCount={assumptionsCount}
+          frameExportUrl={frameExportUrl}
           onClose={() => setFullScreen(false)}
         />
       )}
@@ -376,33 +380,26 @@ function Workspace({
   )
 }
 
-function StatusBar({ mode }: { mode: Mode | null }) {
+function StatusBar({ opened }: { opened: Opened | null }) {
   return (
     <footer className="num flex h-6 shrink-0 items-center gap-3 border-t bg-surface px-3 text-2xs text-subtle-foreground">
       <span>
         {BRAND.name} {BRAND.version}
       </span>
       <span className="max-sm:hidden">
-        {mode?.kind === 'recording'
-          ? `Opened from ${mode.info.container}`
-          : 'Demo data generated in the browser from a fixed seed'}
+        {opened ? `Opened from ${opened.info.container}` : 'Offline · nothing leaves this machine'}
       </span>
-      {mode?.kind === 'recording' && mode.info.analysis.state === 'running' && (
+      {opened?.info.analysis.state === 'running' && (
         <span role="status" className="text-foreground">
-          Analysing signal {Math.min(mode.info.analysis.done + 1, mode.info.analysis.total)} of{' '}
-          {mode.info.analysis.total}…
+          Analysing signal {Math.min(opened.info.analysis.done + 1, opened.info.analysis.total)} of{' '}
+          {opened.info.analysis.total}…
         </span>
       )}
-      {mode && (
+      {opened && (
         <span className="ml-auto max-md:hidden">
-          {integer.format(mode.kind === 'demo' ? mode.demo.rows : mode.source.rows)} ×{' '}
-          {mode.kind === 'demo' ? mode.demo.bins : mode.source.bins} tile ·{' '}
-          {mode.kind === 'recording' && mode.source.normalised
-            ? 'rate unknown'
-            : `${integer.format(mode.kind === 'demo' ? RECORDING.sampleRateHz : mode.source.fs)} S/s`}{' '}
-          · FFT{' '}
-          {mode.kind === 'demo' ? mode.demo.fftSize : mode.source.fftSize}, hop{' '}
-          {integer.format(Math.round(mode.kind === 'demo' ? mode.demo.hop : mode.source.hop))}
+          {integer.format(opened.source.rows)} × {opened.source.bins} tile ·{' '}
+          {opened.source.normalised ? 'rate unknown' : `${integer.format(opened.source.fs)} S/s`} · FFT{' '}
+          {opened.source.fftSize}, hop {integer.format(Math.round(opened.source.hop))}
         </span>
       )}
     </footer>
@@ -410,11 +407,12 @@ function StatusBar({ mode }: { mode: Mode | null }) {
 }
 
 export default function App() {
-  const { products, error } = useDemoProducts()
-  const [recording, setRecording] = useState<{ info: RecordingInfo; source: WaterfallSource } | null>(null)
+  const [recording, setRecording] = useState<Opened | null>(null)
   const [opening, setOpening] = useState(false)
+  // Which bundled sample is being opened, for its card's spinner.
+  const [openingSample, setOpeningSample] = useState<string | null>(null)
   const [openError, setOpenError] = useState<string | null>(null)
-  const [view, setView] = useState<ViewId>(loadStoredView)
+  const [view, setView] = useState<SectionId>(loadStoredView)
   const [railOpen, setRailOpen] = useState(true)
   const [assumptionsModalOpen, setAssumptionsModalOpen] = useState(false)
   // A folder that holds several recordings, until the analyst picks one.
@@ -426,27 +424,34 @@ export default function App() {
   // A raw file whose sample format is UNKNOWN, until the analyst chooses one.
   const [formatNeeded, setFormatNeeded] = useState<{ item: InputInfo; candidates: string[] } | null>(null)
 
-  const changeView = useCallback((next: ViewId) => {
+  // With nothing open only the start screen (Survey) and History have anything to show.
+  const shownView: SectionId = recording || view === 'history' ? view : 'survey'
+  const hasRecording = recording !== null
+
+  const changeView = useCallback((next: SectionId) => {
     setView(next)
     storeView(next)
   }, [])
 
   // Alt+1..4 jumps between sections without leaving the waterfall's keyboard handling. A bare 1..4
-  // would fight the demo worker's inputs and any future numeric field.
+  // would fight numeric fields. Assumptions is a modal over the current section, never a section.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!e.altKey || e.ctrlKey || e.metaKey) return
       const target = e.target as HTMLElement | null
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
       const next = viewByDigit(e.key)
-      if (next) {
-        e.preventDefault()
+      if (!next) return
+      e.preventDefault()
+      if (next === 'assumptions') {
+        if (hasRecording) setAssumptionsModalOpen(true)
+      } else if (hasRecording || next === 'survey' || next === 'history') {
         changeView(next)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [changeView])
+  }, [changeView, hasRecording])
 
   async function upload(files: File[]) {
     if (opening) return
@@ -521,6 +526,26 @@ export default function App() {
     setRecording({ info, source: sourceFromRecording(info, level, grid) })
   }
 
+  /** A bundled sample opens like any recording: tiles and boxes now, the analysis in the background. */
+  async function openSampleById(id: string) {
+    if (opening) return
+    setOpening(true)
+    setOpeningSample(id)
+    setOpenError(null)
+    try {
+      const info = await openSample(id)
+      const level = info.levels[0]
+      if (!level) throw new ApiError(`${info.name} has no spectrogram levels to show`)
+      const grid = await fetchLevelGrid(info.id, level)
+      setRecording({ info, source: sourceFromRecording(info, level, grid) })
+    } catch (e) {
+      setOpenError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setOpening(false)
+      setOpeningSample(null)
+    }
+  }
+
   async function openFromBatch(item: InputInfo) {
     setBatch(null)
     setOpening(true)
@@ -569,22 +594,72 @@ export default function App() {
     setRun((n) => n + 1)
   }
 
-  const mode: Mode | null = recording
-    ? { kind: 'recording', info: recording.info, source: recording.source }
-    : products
-      ? { kind: 'demo', demo: products }
-      : null
+  // First run: the welcome dialog, once. Help in the top bar brings it back.
+  const [welcomeOpen, setWelcomeOpen] = useState(() => !hasSeenOnboarding())
+  // "Take the tour" with nothing open opens the first sample and waits for its first result.
+  const tourWaiting = useRef(false)
+
+  function closeWelcome() {
+    markOnboardingSeen()
+    setWelcomeOpen(false)
+  }
+
+  function runTour() {
+    // After the next paint, so the sections the tour points at are in the DOM.
+    requestAnimationFrame(() => startTour({ onDone: markOnboardingSeen }))
+  }
+
+  const reachedFirst = recording ? recording.info.analysis.done >= 1 || recording.info.analysis.state === 'done' : false
+  useEffect(() => {
+    if (!tourWaiting.current || !reachedFirst) return
+    tourWaiting.current = false
+    runTour()
+  }, [reachedFirst])
+
+  function takeTour() {
+    closeWelcome()
+    if (recording) runTour()
+    else {
+      tourWaiting.current = true
+      void openSampleById('scene')
+    }
+  }
+
+  function trySample() {
+    closeWelcome()
+    if (recording) void openSampleById('scene')
+    else setTimeout(() => document.querySelector<HTMLElement>('[data-sample]')?.focus(), 0)
+  }
+
+  // Escape closes the Assumptions modal, and focus returns to what opened it.
+  const modalOpener = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!assumptionsModalOpen) return
+    modalOpener.current = document.activeElement as HTMLElement | null
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setAssumptionsModalOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      modalOpener.current?.focus()
+    }
+  }, [assumptionsModalOpen])
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       <TopBar
-        fileName={recording ? recording.info.name : RECORDING.fileName}
-        isDemo={!recording}
+        fileName={recording ? recording.info.name : null}
         synthetic={recording?.info.synthetic ?? false}
         opening={opening}
-        openError={openError}
-        view={view}
+        progress={
+          recording?.info.analysis.state === 'running'
+            ? { done: recording.info.analysis.done, total: recording.info.analysis.total }
+            : undefined
+        }
+        view={shownView}
         onViewChange={changeView}
+        onHelp={() => setWelcomeOpen(true)}
         onOpen={(path, sequence) => void openPath(path, false, sequence)}
         onUpload={(files) => void upload(files)}
         onOpenSettings={() => setAssumptionsModalOpen(true)}
@@ -596,6 +671,22 @@ export default function App() {
         sigmf={recording?.info.sigmf}
         onSaveSigmf={recording ? () => saveAsSigmf(recording.info.id) : undefined}
       />
+      {openError && (
+        <div
+          role="alert"
+          className="flex shrink-0 items-start gap-2 border-b border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs text-destructive"
+        >
+          <span className="min-w-0 flex-1 break-words">{openError}</span>
+          <button
+            type="button"
+            onClick={() => setOpenError(null)}
+            aria-label="Dismiss the error"
+            className="shrink-0 rounded-sm hover:text-foreground"
+          >
+            <X className="size-3.5" aria-hidden />
+          </button>
+        </div>
+      )}
       {formatNeeded && (
         <FormatPrompt
           name={formatNeeded.item.name}
@@ -610,51 +701,65 @@ export default function App() {
           onSubmit={(rate) => enterAssumptions({ sampleRate: rate })}
         />
       )}
-      {mode ? (
-        /* Keyed by recording (and its units - entering a sample rate changes them) so opening a different one - or switching back to the demo - remounts
-           Workspace with fresh zoom/selection state, instead of carrying over the previous
-           recording's zoom and (numerically coincidental) selected id. Section and rail state live
-           above this key, so they survive the switch. */
+      {recording ? (
+        /* Keyed by recording (and its units - entering a sample rate changes them) so opening a
+           different one remounts Workspace with fresh zoom/selection state, instead of carrying
+           over the previous recording's zoom and (numerically coincidental) selected id. Section
+           and rail state live above this key, so they survive the switch. */
         <Workspace
-          key={
-            mode.kind === 'recording'
-              ? `${mode.info.id}:${mode.source.normalised ? 'norm' : 'hz'}:${mode.info.assumptions.iqOrder?.value ?? ''}`
-              : 'demo'
-          }
-          mode={mode}
-          view={view}
+          key={`${recording.info.id}:${recording.source.normalised ? 'norm' : 'hz'}:${recording.info.assumptions.iqOrder?.value ?? ''}`}
+          mode={recording}
+          view={shownView}
           railOpen={railOpen}
           onRailOpenChange={setRailOpen}
           onEnterAssumptions={enterAssumptions}
           historyTick={historyTick}
         />
+      ) : shownView === 'history' ? (
+        <HistorySection refreshKey={historyTick} />
       ) : (
-        <div className="grid flex-1 place-items-center" role={error ? 'alert' : 'status'}>
-          <p className="text-sm text-muted-foreground">{error ?? 'Generating the demo capture…'}</p>
-        </div>
+        <StartScreen
+          opening={opening}
+          openingSample={openingSample}
+          onUpload={(files) => void upload(files)}
+          onOpenSample={(id) => void openSampleById(id)}
+        />
       )}
-      
-      {/* Settings / Assumptions Overlay Modal */}
-      {assumptionsModalOpen && mode && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-md border border-border-strong bg-surface shadow-2xl">
+
+      {/* Assumptions modal: over whatever section is on screen. */}
+      {assumptionsModalOpen && recording && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setAssumptionsModalOpen(false)
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="assumptions-title"
+            className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-md border border-border-strong bg-surface shadow-2xl"
+          >
             <div className="flex items-center justify-between border-b border-border bg-surface-2 px-4 py-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-primary">Configuration & Assumptions</h2>
-              <button 
+              <h2 id="assumptions-title" className="text-sm font-semibold tracking-wider text-primary uppercase">
+                Configuration &amp; Assumptions
+              </h2>
+              <button
                 type="button"
                 aria-label="Close"
+                autoFocus
                 onClick={() => setAssumptionsModalOpen(false)}
-                className="rounded-md p-1 text-muted-foreground hover:bg-surface-2 hover:text-foreground transition-colors"
+                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
               >
                 <X className="size-4" />
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              {mode.kind === 'recording' ? (
-                <RecordingAssumptionsPanel assumptions={mode.info.assumptions} captureQuality={mode.info.captureQuality} onEnter={enterAssumptions} />
-              ) : (
-                <p className="text-sm text-muted-foreground">The synthetic demo capture has no assumptions or capture-quality measurements: it is generated in the browser, not read from a file.</p>
-              )}
+              <RecordingAssumptionsPanel
+                assumptions={recording.info.assumptions}
+                captureQuality={recording.info.captureQuality}
+                onEnter={enterAssumptions}
+              />
             </div>
           </div>
         </div>
@@ -664,7 +769,9 @@ export default function App() {
         <BatchChooser source={batch.source} items={batch.items} onOpen={(item) => void openFromBatch(item)} onClose={() => setBatch(null)} />
       )}
 
-      <StatusBar mode={mode} />
+      {welcomeOpen && <Welcome onTrySample={trySample} onTakeTour={takeTour} onSkip={closeWelcome} />}
+
+      <StatusBar opened={recording} />
     </div>
   )
 }
