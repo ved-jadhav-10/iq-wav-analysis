@@ -52,7 +52,7 @@ from dsp.demod import (
     rotations,
 )
 from dsp.detect import Detection, detection_parameters
-from dsp.estimate.offset import OffsetRate, offset_symbol_rate
+from dsp.estimate.offset import OffsetRate, msk_symbol_rate, offset_symbol_rate
 from dsp.estimate.params import (
     SymbolRate,
     cumulants,
@@ -203,7 +203,7 @@ def analyse(
     if analog is not None and analog[0] == "fm":
         # Noisy tones (M-FSK at moderate SNR) pull the frequency kurtosis toward FM's, so a
         # tone-transition comb gets its chance: a CRC-verified FSK decode outranks the rule.
-        candidates = [r for r in fsk_symbol_rates(x) if r.normalised_rate * len(x) >= MIN_SYMBOLS]
+        candidates = _fsk_candidates(x)
         tried = _fsk_report(detect_stage, detection, units, x, candidates)
         if tried is not None and tried.level is E.VERIFIED:
             return tried
@@ -231,7 +231,14 @@ def analyse(
         # Constant envelope and not analog, or discrete tones (a bimodal instantaneous
         # frequency; PSK's is spiky, well above 0) even where the channel filter has trimmed
         # the tones' skirts into envelope ripple: try 2-FSK, whose rate is in the transitions.
-        candidates = [r for r in fsk_symbol_rates(x) if r.normalised_rate * len(x) >= MIN_SYMBOLS]
+        candidates = _fsk_candidates(x)
+        if any(c.assumption for c in candidates):
+            # The pair of lines behind an index-0.5 candidate is also what offset QPSK makes
+            # (twice its symbol rate apart): that reading gets its decode first, and wins only
+            # if a CRC proves it.
+            proven = offset_report()
+            if proven is not None and proven.level is E.VERIFIED:
+                return proven
         report = _fsk_report(detect_stage, detection, units, x, candidates)
         if report is not None:
             return report
@@ -293,6 +300,23 @@ def analyse(
         search,
         x,
     )
+
+
+def _fsk_candidates(x: Any) -> list[SymbolRate]:
+    """The symbol rates a 2-FSK trial should try: the tone-transition comb's, and, when the pair
+    of lines in x² that MSK and GMSK make is not already explained by one of them, that pair's
+    spacing (an index-0.5 hypothesis, stated on the candidate). The comb needs sharp
+    transitions, which GMSK's Gaussian filter takes away; the pair does not need them. A pair
+    whose spacing is a candidate's rate (index 0.5) or twice it (index 1) is that candidate."""
+    comb = [r for r in fsk_symbol_rates(x) if r.normalised_rate * len(x) >= MIN_SYMBOLS]
+    msk = msk_symbol_rate(x)
+    if msk is None or msk.normalised_rate * len(x) < MIN_SYMBOLS:
+        return comb
+    for r in comb:
+        for factor in (1.0, 0.5):  # the pair's spacing is R (index 0.5) or 2 R (index 1)
+            if abs(msk.normalised_rate * factor / r.normalised_rate - 1) < 0.03:
+                return comb
+    return [*comb, msk]
 
 
 def _offset_report(
@@ -1412,6 +1436,37 @@ def _report(
     )
 
 
+def _fsk_rate_parameter(
+    rate: SymbolRate, value: float, unit: str, scale: float, proof: Proof | None
+) -> Parameter:
+    """The FSK symbol rate: ESTIMATED from the tone-transition comb, or a HYPOTHESIS naming the
+    index-0.5 convention when it came from the MSK line pair (promoted by a proof, which settles
+    the convention on this recording)."""
+    if rate.assumption is None:
+        return Parameter(
+            id="symbol_rate",
+            name="Symbol rate",
+            value=value,
+            unit=unit,
+            uncertainty=rate.uncertainty * scale,
+            level=E.ESTIMATED,
+            method="Tone-transition comb: lowest significant line in the discriminator's "
+            "edge energy",
+        )
+    parameter = Parameter(
+        id="symbol_rate",
+        name="Symbol rate",
+        value=value,
+        unit=unit,
+        uncertainty=rate.uncertainty * scale,
+        level=E.HYPOTHESIS,
+        method="Spacing of the pair of lines in x² (MSK and GMSK; no tone-transition comb "
+        "survives a Gaussian filter)",
+        convention=rate.assumption,
+    )
+    return promote(parameter, proof) if proof else parameter
+
+
 def _fsk_report(
     detect_stage: StageReport,
     detection: Detection,
@@ -1481,16 +1536,7 @@ def _fsk_report(
         f"{_fmt_rate(rate_value, rate_unit)}, tones {shift_value:.4g} {shift_unit} apart",
         E.ESTIMATED,
         (
-            Parameter(
-                id="symbol_rate",
-                name="Symbol rate",
-                value=rate_value,
-                unit=rate_unit,
-                uncertainty=rate.uncertainty * rate_scale,
-                level=E.ESTIMATED,
-                method="Tone-transition comb: lowest significant line in the discriminator's "
-                "edge energy",
-            ),
+            _fsk_rate_parameter(rate, rate_value, rate_unit, rate_scale, proof),
             Parameter(
                 id="tone_spacing",
                 name="Tone spacing",

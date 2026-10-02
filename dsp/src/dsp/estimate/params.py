@@ -211,6 +211,9 @@ class SymbolRate:
     normalised_rate: float  # cycles per channelised sample
     uncertainty: float
     ratio: float  # the line's strength over the local spectrum level
+    # Set when the rate rests on a convention rather than a measurement alone (MSK's index of
+    # 0.5): the convention, in words.
+    assumption: str | None = None
 
 
 def symbol_rate(x: Complex, low: float = 0.01, high: float = 0.5) -> SymbolRate | None:

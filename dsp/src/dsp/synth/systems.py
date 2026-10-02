@@ -12,6 +12,12 @@ these streams, only by its own checks (35 four-of-seven codes per set, the contr
 POCSAG (ITU-R M.584-2): a 576-bit preamble of alternating bits, then batches of a synchronisation
 codeword and 8 frames of 2 codewords; a codeword is 21 data bits, 10 BCH(31,21) check bits and an
 even-parity bit.
+
+AIS (ITU-R M.1371-6): packets of a 24-bit training sequence (0101...), the HDLC flag 01111110,
+the message bits and a CRC-16/X.25 frame check sequence (low byte first, each byte least
+significant bit first) with a 0 stuffed after five 1s, and a closing flag; the whole stream NRZI
+coded (a 0 changes level). Written here from the Recommendation, with its own CRC and stuffing,
+independent of `dsp.systems.ais`.
 """
 
 from dataclasses import dataclass
@@ -244,6 +250,89 @@ class Dsc:
     def stream(self, needed: int, rng: np.random.Generator) -> tuple[NDArray[np.uint8], Bits, Bits]:
         one = self.transmission()
         clean = np.tile(one, -(-needed // len(one)))
+        sent = clean.copy()
+        if self.corrupt:
+            sent ^= (rng.random(len(sent)) < self.corrupt).astype(np.uint8)
+        return np.zeros((0, 0), np.uint8), clean, sent
+
+
+def _crc16_x25(data: bytes) -> int:
+    register = 0xFFFF
+    for byte in data:
+        register ^= byte
+        for _ in range(8):
+            register = (register >> 1) ^ 0x8408 if register & 1 else register >> 1
+    return register ^ 0xFFFF
+
+
+def _stuffed(bits: list[int]) -> list[int]:
+    out: list[int] = []
+    run = 0
+    for bit in bits:
+        out.append(bit)
+        run = run + 1 if bit else 0
+        if run == 5:
+            out.append(0)
+            run = 0
+    return out
+
+
+@dataclass(frozen=True)
+class Ais:
+    """AIS position reports (message type 1, 168 bits) from the given MMSIs, in turn, repeated to
+    fill a recording. The other 130 message bits are drawn at random: nothing in the check
+    depends on them. `corrupt` flips that fraction of the transmitted bits."""
+
+    mmsis: tuple[int, ...] = (227006760, 366999712, 235099999)
+    corrupt: float = 0.0
+    seed: int = 1
+
+    def packets(self, count: int) -> list[Bits]:
+        """`count` packets' message bits (field order, MSB first), type 1 and the MMSI set."""
+        rng = np.random.default_rng(self.seed)
+        out: list[Bits] = []
+        for i in range(count):
+            mmsi = self.mmsis[i % len(self.mmsis)]
+            fixed = np.concatenate([int_bits(1, 6), int_bits(0, 2), int_bits(mmsi, 30)])
+            out.append(np.concatenate([fixed, rng.integers(0, 2, 130, dtype=np.uint8)]))
+        return out
+
+    def packet_bits(self, message: Bits) -> Bits:
+        """Training sequence, flag, stuffed message and FCS, flag, before NRZI coding."""
+        data = bytes(
+            int(sum(int(b) << k for k, b in enumerate(message[i : i + 8])))
+            for i in range(0, len(message), 8)
+        )
+        fcs = _crc16_x25(data)
+        fcs_bytes = fcs.to_bytes(2, "little")
+        fcs_bits = [(byte >> k) & 1 for byte in fcs_bytes for k in range(8)]
+        body = _stuffed([int(b) for b in message] + fcs_bits)
+        flag = [0, 1, 1, 1, 1, 1, 1, 0]
+        return np.array([0, 1] * 12 + flag + body + flag, np.uint8)
+
+    def transmission(self, count: int = 8) -> Bits:
+        stream = np.concatenate([self.packet_bits(m) for m in self.packets(count)])
+        # NRZI: a 0 toggles the level, a 1 holds it.
+        level = np.cumsum(1 - stream) % 2
+        return level.astype(np.uint8)
+
+    def truth(self) -> dict[str, object]:
+        return {
+            "system": "AIS",
+            "messageType": 1,
+            "mmsis": list(self.mmsis),
+            "messageBits": 168,
+            "corrupt": self.corrupt,
+        }
+
+    def stream(self, needed: int, rng: np.random.Generator) -> tuple[NDArray[np.uint8], Bits, Bits]:
+        one = self.transmission()
+        # Each repetition restarts from level 0 at a packet boundary: `one` ends at some level,
+        # so successive repeats are NRZI-continuous only if the level is carried: re-encode the
+        # whole run from the packet bits instead.
+        reps = -(-needed // len(one))
+        raw = np.concatenate([self.packet_bits(m) for m in self.packets(8 * reps)])
+        clean = (np.cumsum(1 - raw) % 2).astype(np.uint8)
         sent = clean.copy()
         if self.corrupt:
             sent ^= (rng.random(len(sent)) < self.corrupt).astype(np.uint8)

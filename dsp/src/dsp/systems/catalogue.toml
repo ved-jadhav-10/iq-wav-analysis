@@ -2,7 +2,7 @@
 # document that ran Match. An entry is data about a public specification; the check that verifies
 # it is code in this package (`check` names it) and must pass on the recording itself. No entry
 # holds samples, and none is copied from another project's source.
-version = "0.1.0"
+version = "0.2.0"
 
 [[system]]
 id = "ccsds-tm"
@@ -66,3 +66,16 @@ tone_spacing_hz = 170.0
 codes = ["Uncoded"]                  # the ten-bit error-detecting code and time diversity are the check
 sync = "phasing sequence"
 frame_check = "ten-bit characters repeated five slots later; error-check character"
+
+[[system]]
+id = "ais"
+name = "AIS"
+specification = "ITU-R M.1371-6 (AIS technical characteristics); HDLC framing and CRC-16/X.25 as in ISO/IEC 13239"
+licence = "Public ITU-R Recommendation; parameters restated, no code copied"
+check = "ais"
+modulations = ["2FSK"]                # GMSK, an index-0.5 2-FSK to the chain
+symbol_rates = [9600.0]
+tone_spacing_hz = 4800.0              # the index of 0.5; reported when it differs, not a condition
+codes = ["Uncoded"]                   # NRZI and HDLC bit stuffing are the system's own check
+sync = "HDLC flag"
+frame_check = "CRC-16/X.25"

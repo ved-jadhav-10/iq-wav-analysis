@@ -26,7 +26,7 @@ from numpy.typing import NDArray
 from dsp.evidence import Alternative, EvidenceLevel, Parameter, Proof
 from dsp.framing import MAX_SYNC_ERRORS, FrameResult, binomial_tail
 from dsp.report import Frame, Hypothesis, StageReport
-from dsp.systems import ccir476, dsc, pocsag
+from dsp.systems import ais, ccir476, dsc, pocsag
 from dsp.systems.catalogue import CATALOGUE, RATE_TOLERANCE, TONE_TOLERANCE, SystemEntry
 from dsp.systems.ccsds import HEADER_BYTES, TM_VERSION, parse_header
 
@@ -210,6 +210,8 @@ def match(
             runs += _navtex_runs(entry, candidates)
         elif entry.check == "dsc":
             runs += _dsc_runs(entry, candidates)
+        elif entry.check == "ais":
+            runs += _ais_runs(entry, candidates)
         elif entry.check == "ccsds-tm":
             runs.append(_ccsds_run(entry, accepted, candidates))
     # A run with no p-value never ran a check (the entry needs a chain the blind search did not
@@ -633,6 +635,119 @@ def _navtex_runs(entry: SystemEntry, candidates: list[Candidate]) -> list[_Run]:
             )
         )
     return runs
+
+
+def _ais_runs(entry: SystemEntry, candidates: list[Candidate]) -> list[_Run]:
+    runs: list[_Run] = []
+    needed = ais.MIN_PASSES * (ais.MIN_FRAME_BITS + 2 * len(ais.FLAG))
+    for cand in candidates:
+        conflicts, notes = fit(entry, cand.findings)
+        if conflicts:
+            runs.append(
+                _Run(
+                    entry, cand.label, "conflict", None, "Parameters conflict", "; ".join(conflicts)
+                )
+            )
+            continue
+        if cand.bits is None or len(cand.bits) < needed:
+            n = 0 if cand.bits is None else len(cand.bits)
+            runs.append(
+                _Run(
+                    entry,
+                    cand.label,
+                    "not-run",
+                    None,
+                    "Too few bits to check",
+                    f"{n} bits; the check needs {ais.MIN_PASSES} whole packets ({needed})",
+                    notes=tuple(notes),
+                )
+            )
+            continue
+        found = ais.scan(cand.bits)
+        if found is None:
+            runs.append(
+                _Run(
+                    entry,
+                    cand.label,
+                    "failed",
+                    1.0,
+                    f"Fewer than {ais.MIN_PASSES} HDLC frames pass CRC-16/X.25",
+                    "No frame between flags in the NRZI-decoded stream passes the CRC-16/X.25 "
+                    f"check on at least {ais.MIN_PASSES} packets",
+                    notes=tuple(notes),
+                )
+            )
+            continue
+        reason = (
+            f"{found.passes} of {found.candidates} HDLC frames between flags pass CRC-16/X.25 "
+            "after NRZI decoding and removing bit stuffing"
+        )
+        runs.append(
+            _Run(
+                entry,
+                cand.label,
+                "verified",
+                found.p_value,
+                f"{found.passes}/{found.candidates} frames pass CRC-16/X.25",
+                reason,
+                proof=Proof(
+                    kind="crc",
+                    detail=f"CRC-16/X.25 passes on {found.passes} of {found.candidates} HDLC "
+                    f"frames; a random frame passes with probability 2^-16",
+                ),
+                evidence=(
+                    reason,
+                    f"Chance of this many CRC passes in a random stream: {found.p_value:.1e}",
+                    "NRZI decoding looks only at level changes, so the bit polarity and a "
+                    "mirrored spectrum do not matter",
+                ),
+                notes=tuple(notes),
+                frames=_ais_frames(found),
+                key=cand.key,
+                extra=_ais_messages_parameter(found),
+            )
+        )
+    return runs
+
+
+def _ais_frames(found: ais.AisScan) -> tuple[Frame, ...]:
+    """One frame per candidate packet: the flag as its sync word, the first five bytes (message
+    type, repeat indicator and MMSI) as its header and the rest of the message as its payload."""
+    out: list[Frame] = []
+    for i, p in enumerate(found.packets[:MAX_FRAMES]):
+        out.append(
+            Frame(
+                index=i + 1,
+                start_bit=p.start_bit,
+                sync_word="7E",
+                length_bits=p.length_bits,
+                crc="pass" if p.passes else "fail",
+                header_hex=" ".join(f"{b:02X}" for b in p.data[:5]),
+                payload_hex=p.data[5:].hex().upper(),
+            )
+        )
+    return tuple(out)
+
+
+def _ais_messages_parameter(found: ais.AisScan) -> tuple[Parameter, ...]:
+    shown = found.passing[:MAX_PAGES_SHOWN]
+    return (
+        Parameter(
+            id="ais_messages",
+            name="AIS messages",
+            value=f"{found.passes} packet{'s' if found.passes != 1 else ''}, "
+            f"{len({p.mmsi for p in found.passing})} MMSI(s)",
+            level=E.HYPOTHESIS,
+            method="Message type, repeat indicator and MMSI read from the first 38 bits of each "
+            "packet that passed its CRC",
+            evidence=tuple(f"type {p.message_type}, MMSI {p.mmsi:09d}" for p in shown),
+            convention=(
+                "The first 38 message bits read as message type (6), repeat indicator (2) and "
+                "MMSI (30), most significant bit first, as ITU-R M.1371-6 lays them out; the "
+                "CRC does not depend on this reading and the rest of the message is not decoded"
+            ),
+        ),
+    )
 
 
 def _diversity_frames(found: ccir476.Ccir476Scan) -> tuple[Frame, ...]:

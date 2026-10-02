@@ -57,7 +57,7 @@ def test_catalogue_entries_are_complete_and_unique() -> None:
     assert len(ids) == len(set(ids)) >= 2
     for e in CATALOGUE.entries:
         assert e.specification and e.licence and e.modulations and e.frame_check
-        assert e.check in {"pocsag", "ccsds-tm", "navtex", "dsc"}
+        assert e.check in {"pocsag", "ccsds-tm", "navtex", "dsc", "ais"}
 
 
 def test_holm_steps_down_and_stops_at_the_first_failure() -> None:
@@ -220,7 +220,7 @@ def test_match_accepts_the_catalogued_rates_within_tolerance(rate: float) -> Non
     [
         ("QPSK", 1200.0, "modulation"),
         ("2FSK", 300.0, "symbol rate"),
-        ("2FSK", 9600.0, "symbol rate"),
+        ("2FSK", 4800.0, "symbol rate"),  # 9,600 Bd is AIS's, whose check would run and fail
     ],
 )
 def test_match_does_not_run_a_check_on_bits_demodulated_for_something_else(

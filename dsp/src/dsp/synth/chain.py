@@ -53,7 +53,7 @@ from dsp.synth.modulate import (
     pulse_shape_offset,
 )
 from dsp.synth.modulate import resample as resample_
-from dsp.synth.systems import Dsc, Navtex, Pocsag
+from dsp.synth.systems import Ais, Dsc, Navtex, Pocsag
 
 Complex = NDArray[np.complex128]
 GENERATOR_VERSION = "0.1.0"
@@ -89,7 +89,7 @@ class SignalSpec:
     frame: FrameSpec | None = field(default_factory=FrameSpec)
     # A known system's own transmission in place of the frame/code chain below (which then
     # does not apply): its bits are the coded stream.
-    system: Pocsag | Navtex | Dsc | None = None
+    system: Pocsag | Navtex | Dsc | Ais | None = None
     scrambler: str | None = None
     outer: fec_.ReedSolomon | None = None
     byte_interleaver: il.Convolutional | None = None
