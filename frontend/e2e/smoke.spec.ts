@@ -568,3 +568,147 @@ test('History fills the window and its table scrolls inside its own panel, in bo
     await page.getByRole('button', { name: /^Switch to (light|dark) theme$/ }).click()
   }
 })
+
+test('the plain-language summary tops the Survey of a finished recording, never of the demo, and never scrolls the page', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(180_000)
+  mkdirSync(testInfo.outputDir, { recursive: true })
+  const summary = page.getByRole('region', { name: 'Plain-language summary' })
+  const toggle = summary.getByRole('button', { name: /^Summary/ })
+  const text = summary.getByRole('region', { name: 'Summary text' })
+  const metrics = async () =>
+    (await page.evaluate(`(() => {
+      const strip = document.querySelector('section[aria-label="Plain-language summary"]')
+      const body = strip && strip.querySelector('[aria-label="Summary text"]')
+      const rail = document.querySelector('nav[aria-label="Detections and pipeline"]')
+      const r = strip && strip.getBoundingClientRect()
+      return {
+        scrollHeight: document.documentElement.scrollHeight,
+        innerHeight: window.innerHeight,
+        pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        stripHeight: r ? Math.round(r.height) : 0,
+        stripBottom: r ? Math.round(r.bottom) : 0,
+        railTop: rail ? Math.round(rail.getBoundingClientRect().top) : 0,
+        bodyScroll: body ? body.scrollHeight : 0,
+        bodyClient: body ? body.clientHeight : 0,
+        wide: Array.from(document.querySelectorAll('body *')).filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1 && e.getClientRects().length > 0).slice(0, 4).map((e) => e.tagName + '.' + String(e.className).slice(0, 50) + ':' + Math.round(e.getBoundingClientRect().right)),
+      }
+    })()`)) as {
+      wide: string[]
+      scrollHeight: number
+      innerHeight: number
+      pageOverflow: number
+      stripHeight: number
+      stripBottom: number
+      railTop: number
+      bodyScroll: number
+      bodyClient: number
+    }
+
+  // The synthetic in-browser capture is labelled as such and has no summary.
+  await page.setViewportSize({ width: 1918, height: 950 })
+  await page.goto('/')
+  await expect(page.getByText('Synthetic demo', { exact: true })).toBeVisible()
+  await expect(summary).toHaveCount(0)
+
+  // A real recording: the summary appears once its analysis has finished, above the pipeline rail.
+  // With nothing remembered it starts collapsed in a short window (it would leave the waterfall
+  // about 90px) and open in a tall one.
+  const base = testInfo.outputPath('tone')
+  writeSigmf(base)
+  await page.setViewportSize({ width: 1440, height: 800 })
+  await page.goto('/')
+  await openByPath(page, `${base}.sigmf-meta`)
+  await expect(page.getByRole('banner').getByRole('button', { name: /^Results/ })).toBeVisible({ timeout: 90_000 })
+  await expect(summary).toBeVisible()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await page.setViewportSize({ width: 1918, height: 950 })
+  await page.reload()
+  await openByPath(page, `${base}.sigmf-meta`)
+  await expect(page.getByRole('banner').getByRole('link', { name: 'Run record' })).toBeVisible({ timeout: 90_000 })
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(text).toContainText('results summary')
+  await expect(text).toContainText('Taken as given about the recording:')
+  await expect(text).toContainText('Not proved:')
+  await expect(text).toContainText('Results SHA-256')
+  const served = await page.request.get(`${(await page.getByRole('banner').getByRole('link', { name: 'Summary' }).getAttribute('href'))!}`)
+  expect(served.status()).toBe(200)
+  expect(await text.innerText()).toContain((await served.text()).split('\n')[0]!)
+  let m = await metrics()
+  expect(m.stripBottom, 'the strip sits above the pipeline rail').toBeLessThanOrEqual(m.railTop)
+
+  // Keyboard: the toggle is reachable, Enter collapses it, and the choice survives a reload.
+  await toggle.focus()
+  await page.keyboard.press('Enter')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(text).toBeHidden()
+  await page.reload()
+  await expect(page.getByText('Synthetic demo', { exact: true })).toBeVisible() // a reload opens nothing
+  await openByPath(page, `${base}.sigmf-meta`)
+  await expect(toggle).toBeVisible({ timeout: 90_000 })
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(text).toBeVisible()
+
+  // A long summary scrolls inside its own panel; the page never scrolls, collapsed or open, at
+  // both widths and in both themes.
+  const long = ['Sanket test results summary', ...Array.from({ length: 300 }, (_, i) => `  - line ${i}: a value (estimated)`)].join('\n')
+  await page.route('**/results?format=txt', (route) => route.fulfill({ contentType: 'text/plain', body: long }))
+  await page.reload()
+  await openByPath(page, `${base}.sigmf-meta`)
+  await expect(text).toContainText('line 299', { timeout: 90_000 })
+  for (let pass = 0; pass < 2; pass++) {
+    for (const size of [
+      { width: 1918, height: 950 },
+      { width: 1440, height: 800 },
+    ]) {
+      await page.setViewportSize(size)
+      // The top bar folds its downloads into a menu below 1536 a moment after the resize.
+      const bar = page.getByRole('banner')
+      await expect(
+        size.width < 1536 ? bar.getByRole('button', { name: /^Results/ }) : bar.getByRole('link', { name: 'Run record' }),
+      ).toBeVisible()
+      for (const open of [true, false]) {
+        if ((await toggle.getAttribute('aria-expanded')) !== String(open)) await toggle.click()
+        const where = `${size.width} wide, ${open ? 'expanded' : 'collapsed'}, pass ${pass}`
+        m = await metrics()
+        expect(m.scrollHeight, where).toBeLessThanOrEqual(m.innerHeight)
+        expect(m.pageOverflow, where + JSON.stringify(m.wide)).toBeLessThanOrEqual(0)
+        expect(m.stripBottom, where).toBeLessThanOrEqual(m.railTop)
+        if (open) {
+          expect(m.bodyScroll, where).toBeGreaterThan(m.bodyClient) // the text scrolls in its panel ...
+          expect(m.stripHeight, where).toBeLessThanOrEqual(28 + 160 + 8) // ... and the panel is bounded
+        } else {
+          expect(m.stripHeight, where).toBeLessThanOrEqual(30)
+        }
+      }
+    }
+    await page.getByRole('button', { name: /^Switch to (light|dark) theme$/ }).click()
+  }
+  await page.unroute('**/results?format=txt')
+})
+
+test('a summary that cannot be fetched says why, and Retry fetches it again', async ({ page }, testInfo) => {
+  test.setTimeout(180_000)
+  mkdirSync(testInfo.outputDir, { recursive: true })
+  const base = testInfo.outputPath('tone')
+  writeSigmf(base)
+  let failing = true
+  await page.setViewportSize({ width: 1918, height: 950 })
+  await page.route('**/results?format=txt', (route) =>
+    failing
+      ? route.fulfill({ status: 500, contentType: 'application/json', body: '{"detail":"the report broke"}' })
+      : route.continue(),
+  )
+  await openByPath(page, `${base}.sigmf-meta`)
+  const summary = page.getByRole('region', { name: 'Plain-language summary' })
+  await expect(summary.getByRole('alert')).toContainText('Could not load the summary: the report broke', {
+    timeout: 90_000,
+  })
+  failing = false
+  await summary.getByRole('button', { name: 'Retry' }).click()
+  await expect(summary.getByRole('region', { name: 'Summary text' })).toContainText('results summary')
+  await expect(summary.getByRole('alert')).toHaveCount(0)
+})

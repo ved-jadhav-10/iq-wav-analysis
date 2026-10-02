@@ -99,9 +99,9 @@ export function TopBar({
 
       <div className="h-5 w-px bg-border max-xl:hidden" aria-hidden />
 
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         <FileAudio className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <span className="num max-w-28 truncate text-xs xl:max-w-64" title={fileName}>{fileName}</span>
+        <span className="num min-w-0 max-w-28 truncate text-xs xl:max-w-64" title={fileName}>{fileName}</span>
         <span className="shrink-0 rounded-[3px] border border-dashed border-border-strong px-1.5 text-2xs font-medium text-muted-foreground uppercase">
           {isDemo ? 'Synthetic demo' : synthetic ? 'Synthetic recording' : 'Real recording'}
         </span>

@@ -27,7 +27,7 @@ zoom and selection — those are genuinely different lifetimes.
 
 | Nav item | Layout | Shows |
 |---|---|---|
-| **Survey** | Detections + pipeline rail, then the plot column, then the resizable evidence panel | Everything at once. The default. |
+| **Survey** | The plain-language summary strip (a finished real recording only), then detections + pipeline rail, the plot column and the resizable evidence panel | Everything at once. The default. |
 | **Waterfall** | Detection chips in a strip, then the plot column full width | The spectrogram and its power spectrum, nothing competing for the display |
 | **History** | A header strip, then one table that fills the rest and scrolls inside its own panel | The analyses the server kept in its workspace (they survive a restart): see below |
 | **Assumptions** | A modal, not a section | Everything the analysis took as given, over whatever is on screen |
@@ -57,6 +57,7 @@ Before a file is opened, the workspace runs on a synthetic capture generated in 
 - **Evidence cards:** each value with its level, method, evidence, alternatives and warnings; UNKNOWN cards say why and what would settle it (e.g. how many FEC hypotheses were tried).
 - **Hypotheses tab (ledger):** *Tried* counts every cell of the search grid (modulation × rotation × code × alignment, interleaver × alignment, RS grid × sync word × CRC), including cells never run. The threshold is corrected for that count, and the best chains that pass it are re-run on shuffled bits: one that also passes there is blocked, shown as rejected with that reason, and counted in the "Shuffled-bit accepts" tile.
 - **Frames tab:** start bit, sync word, CRC result, header and payload hex; for a real recording, download links for the table as JSON, CSV, hex and bits.
+- **Summary strip (Survey only):** `GET /api/v1/recordings/{id}/results?format=txt` shown above the pipeline rail, see below. Absent for the demo and while the analysis runs.
 - **Results download (top bar):** for a recording whose analysis has finished, a `Results` label with `JSON`, `CSV` and `Summary` links (the results document; one row per value with its level and proof; a plain-language text summary). Absent for the demo and while the analysis runs.
 - **Assumptions (modal):** container, datatype, sample rate, centre frequency, IQ order and everything else taken as given, each with its level; above them, entry fields for the centre frequency and the IQ order (a swap has the server tile the recording again). Opening a folder lists its recordings in a dialog to pick from; a raw file whose sample format is UNKNOWN opens a prompt strip with the sniffer's candidates; "Join numbered files" beside the path reads `rec_000`, `rec_001`, … as one recording.
 
@@ -81,6 +82,34 @@ an `alert()`.
   `min-h-0 flex-1 overflow-auto` panel with a sticky header. Measured (e2e, 40 rows, both themes): the
   page's `scrollHeight` equals `innerHeight` at 1918x950 and 1440x800, the panel's content is 1429px in a
   846px / 696px panel, and nothing overflows horizontally.
+
+## The Summary strip
+
+`components/SummaryStrip.tsx` shows the server's plain-language summary (`dsp/summary.py`, a fixed template
+over the results document) as it was written: what was proved, what was only estimated, what is unknown
+and what would settle it, what rests on a convention. Each line is kept verbatim, in the monospace
+tabular face (`num`), with the title, the unindented headings and the Proved / Not proved / Still unknown
+subheadings in heavier weights. Levels are in the text's own words, so nothing is colour-only.
+
+- It is mounted by `Workspace` only in the Survey section, for a real recording whose analysis state is
+  `done` (`lib/summary.ts` `summaryTarget`); the synthetic in-browser capture, a running analysis and the
+  other sections have no strip. A new finish remounts it, so the text is fetched afresh. A recording the
+  file itself calls synthetic still has one (the top bar labels it *Synthetic recording*).
+- `hooks/useSummary.ts` fetches once per mount. A 409 (the server's state lags the stream's `done` by a
+  moment) is retried after 250, 500, 1000 and 2000 ms, then shown; any other failure is shown at once,
+  in the server's words, with a Retry button that fetches again.
+- The header is one 28px button (`aria-expanded`, `aria-controls`), reachable by Tab, Enter and Space.
+  Open or collapsed is remembered in `localStorage` (`sanket.summary.v1`, try/catch). With nothing
+  remembered it opens in a window at least 880px tall and starts collapsed below that, because open it
+  takes the waterfall's height (1440x800: the waterfall would be left about 94px).
+- Layout: a `shrink-0` `section` above the Survey `main` (a direct child of the shell column, outside
+  `SplitPane`, so the split's measurement is unaffected). Its text panel is `max-h-[min(22vh,160px)]
+  overflow-y-auto` and focusable (`tabindex=0`), so a long summary scrolls inside it and the strip never
+  exceeds 29px collapsed or 189px open; `main` is `min-h-0 flex-1` and takes the rest.
+- Measured (e2e and a probe, light and dark, a 300-line summary): `scrollHeight` equals `innerHeight` and
+  there is no horizontal overflow at 1918x950 and 1440x800, collapsed and open; the strip is 29px / 189px,
+  the text panel scrolls 569px of text in 160px, and the waterfall canvas equals its container (1918:
+  412px collapsed, 252px open; 1440: 254px collapsed, 94px open).
 
 ## The Signal overlay
 
@@ -176,6 +205,7 @@ wide display.
 | `hooks/useSplit.ts` | Drag, arrow keys, clamping, persistence |
 | `hooks/useMediaQuery.ts` | Where the split applies and where the grid stacks |
 | `components/SignalOverlay.tsx` | The full-screen deep dive |
+| `components/SummaryStrip.tsx` | The plain-language summary strip and its toggle (`hooks/useSummary.ts`: the fetch; `lib/summary.ts`: when it shows, 409 retries, line kinds, the remembered state) |
 | `components/HistorySection.tsx` | The History table, its inline delete confirmation and its fetching (`lib/history.ts`: row formatting and download URLs) |
 | `App.tsx` | Section branching, the plot column, the evidence rail |
 | `TopBar.tsx` | The section nav, the open box, the theme toggle |

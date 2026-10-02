@@ -23,6 +23,7 @@ import type { DemoProducts } from '@/lib/demoSignal'
 import type { StageId } from '@/lib/evidence'
 import { integer } from '@/lib/format'
 import { fullView } from '@/lib/view'
+import { summaryTarget } from '@/lib/summary'
 import { loadStoredView, storeView, viewByDigit, type ViewId } from '@/lib/views'
 import { sourceFromRecording, type WaterfallSource } from '@/lib/waterfallSource'
 import { BatchChooser } from '@/components/BatchChooser'
@@ -37,6 +38,7 @@ import { SampleRatePrompt } from '@/components/SampleRatePrompt'
 import { RecordingAssumptionsPanel } from '@/components/RecordingAssumptionsPanel'
 import { SignalOverlay } from '@/components/SignalOverlay'
 import { SplitPane } from '@/components/SplitPane'
+import { SummaryStrip } from '@/components/SummaryStrip'
 import { SymbolView } from '@/components/SymbolView'
 import { TopBar } from '@/components/TopBar'
 import { Waterfall } from '@/components/Waterfall'
@@ -281,8 +283,14 @@ function Workspace({
   // The rail is its own grid cell, so hiding it has to change the template, not just skip a child.
   const showRail = splittable ? railOpen : true
 
+  // The plain-language summary belongs to a real recording whose analysis has finished; the
+  // synthetic in-browser capture has no summary to show.
+  const summaryId = summaryTarget(mode.kind === 'recording' ? mode.info : null)
+
   return (
     <>
+      {view === 'survey' && summaryId && <SummaryStrip key={summaryId} recordingId={summaryId} />}
+
       {view === 'survey' &&
         (splittable ? (
           <SplitPane
