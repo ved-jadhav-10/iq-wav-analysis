@@ -11,6 +11,7 @@ results document is assembled by `backend.analysis` (used by `sanket analyse`), 
 
 import json
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -22,7 +23,7 @@ from dsp.evidence import Parameter
 from dsp.ingest.dispatch import AnyRecording
 from dsp.quality import capture_quality
 from dsp.report import DetectionReport
-from dsp.results import Assumptions
+from dsp.results import Assumptions, Results
 from dsp.tiles import Pyramid, build_pyramid
 
 from .analysis import (
@@ -32,7 +33,9 @@ from .analysis import (
     infer_sample_rate,
     numeric_rate,
     rate_note,
+    results_of,
 )
+from .identity import recording_identity
 from .inputs import RecordingError, expand, open_input
 from .jobs import AnalysisJob, run_analysis
 from .runrecord import Phase, PhaseTimer
@@ -112,12 +115,30 @@ class Recording:
         return (self.recorder or "").startswith(SYNTH_RECORDER)
 
 
+def results_for(recording: Recording) -> Results:
+    """The results document of a recording whose analysis has finished (every detection has its
+    report); the same one `sanket analyse` writes, byte for byte."""
+    reports = [r for r in recording.analyses if r is not None]
+    return results_of(
+        recording.assumptions,
+        recording_identity(
+            recording.container, recording.num_samples, recording.files, recording.source
+        ),
+        len(recording.detections),
+        reports,
+        recording.quality,
+    )
+
+
 class RecordingStore:
     """Recordings opened this server run, by id. Not thread-per-request safe beyond the lock
     around registration; reads of an already-built `Recording` are safe (only its job fills in,
     behind its own lock)."""
 
-    def __init__(self) -> None:
+    def __init__(self, on_done: Callable[[Recording], None] | None = None) -> None:
+        # `on_done` runs on the worker thread when a recording's analysis finishes (not when it is
+        # cancelled by a new assumption).
+        self._on_done = on_done
         self._lock = RLock()
         self._recordings: dict[str, Recording] = {}
         # One worker: the chain is CPU-bound, and running one recording's detections in order
@@ -233,8 +254,14 @@ class RecordingStore:
         with self._lock:
             self._recordings[recording.id] = recording
         if job.total:
-            self._executor.submit(run_analysis, job, job.total, analyse_one)
+            self._executor.submit(self._run, recording, analyse_one)
         return recording
+
+    def _run(self, recording: Recording, analyse_one: Callable[[int], DetectionReport]) -> None:
+        job = recording.job
+        run_analysis(job, job.total, analyse_one)
+        if self._on_done is not None and job.state == "done":
+            self._on_done(recording)
 
     def get(self, recording_id: str) -> Recording | None:
         return self._recordings.get(recording_id)

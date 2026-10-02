@@ -1,6 +1,8 @@
+import datetime
 import json
+import logging
 import re
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
 from importlib.metadata import version
 from pathlib import Path
@@ -22,10 +24,9 @@ from dsp.results_table import render_csv
 from dsp.sigmf_out import render_meta
 from dsp.summary import render_summary
 
-from .analysis import results_of
-from .identity import recording_identity
+from .history import History
 from .inputs import FormatUnknownError, RecordingError, expand
-from .recordings import Recording, RecordingStore
+from .recordings import Recording, RecordingStore, results_for
 from .runrecord import Phase, run_record
 from .sigmf_export import NotDescribable, annotated_meta, save_beside
 from .uploads import DEFAULT_MAX_UPLOAD_BYTES, UploadError, UploadStore
@@ -123,6 +124,16 @@ class AnalysisProgress(CamelModel):
     total: int
 
 
+class HistoryEntry(CamelModel):
+    id: str
+    created_utc: str
+    name: str
+    container: str
+    signals: int
+    verified: int  # signals whose headline is VERIFIED
+    results_sha256: str
+
+
 class SavedSigmf(CamelModel):
     path: str  # where the metadata file was written, beside the raw file
 
@@ -210,13 +221,27 @@ def create_app(
     workspace: Path | None = None,
     max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES,
 ) -> FastAPI:
-    store = RecordingStore()
+    # Kept analyses persist in the workspace when one is named; otherwise they live in memory.
+    history = History(workspace / "history.sqlite3" if workspace else None)
+
+    def keep(recording: Recording) -> None:
+        """Keep a finished analysis. A failure here must never stop the analysis worker."""
+        try:
+            results = results_for(recording)
+            run = run_record(results, results.sanket_version, _phases_of(recording))
+            now = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+            history.save(recording.name, results, run.to_json(), now)
+        except Exception:  # the worker must survive a failed save
+            logging.getLogger("sanket").exception("could not keep the finished analysis")
+
+    store = RecordingStore(on_done=keep)
     uploads = UploadStore(workspace or default_workspace(), max_upload_bytes)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         yield
         store.close()
+        history.close()
 
     # Swagger UI and ReDoc load their assets from a CDN, which the offline rule forbids.
     app = FastAPI(
@@ -369,18 +394,9 @@ def create_app(
         recording = store.get(recording_id)
         if recording is None:
             raise HTTPException(status_code=404, detail="no such recording")
-        reports = recording.analyses
-        if any(report is None for report in reports):
+        if any(report is None for report in recording.analyses):
             raise HTTPException(status_code=409, detail="the analysis has not finished")
-        results = results_of(
-            recording.assumptions,
-            recording_identity(
-                recording.container, recording.num_samples, recording.files, recording.source
-            ),
-            len(recording.detections),
-            [report for report in reports if report is not None],
-            recording.quality,
-        )
+        results = results_for(recording)
         return recording, results
 
     @app.get(f"{API_PREFIX}/recordings/{{recording_id}}/results")
@@ -393,23 +409,48 @@ def create_app(
         the decode chain is still running, so a download is never a partial analysis."""
         recording, results = _finished_results(recording_id)
         stem = re.sub(r"[^A-Za-z0-9._-]+", "_", recording.path.stem) or "recording"
+        return _download(
+            format,
+            results,
+            stem,
+            run=lambda: run_record(
+                results, results.sanket_version, _phases_of(recording)
+            ).to_json(),
+            sigmf=lambda: render_meta(annotated_meta(results, recording.files, recording.source)),
+        )
+
+    def _download(
+        format: str,
+        results: Results,
+        stem: str,
+        *,
+        run: Callable[[], str | None],
+        sigmf: Callable[[], str] | None = None,
+    ) -> Response:
+        """One rendering of a results document as a download; shared by a live recording and a
+        kept analysis, so both give the same bytes."""
+
+        def need(make: Callable[[], str] | None) -> Callable[[], str | bytes]:
+            def call() -> str | bytes:
+                if make is None:
+                    raise NotDescribable("this export is not kept with a finished analysis")
+                return make()
+
+            return call
+
+        def run_or_refuse() -> str:
+            text = run()
+            if text is None:
+                raise NotDescribable("no run record was kept for this analysis")
+            return text
+
         content, media_type, name = {
             "json": (results.to_json, "application/json", f"{stem}.results.json"),
             "csv": (lambda: render_csv(results), "text/csv", f"{stem}.results.csv"),
             "txt": (lambda: render_summary(results), "text/plain", f"{stem}.summary.txt"),
             "pdf": (lambda: render_pdf(results), "application/pdf", f"{stem}.report.pdf"),
-            "sigmf": (
-                lambda: render_meta(annotated_meta(results, recording.files, recording.source)),
-                "application/json",
-                f"{stem}.sanket.sigmf-meta",
-            ),
-            "run": (
-                lambda: run_record(
-                    results, results.sanket_version, _phases_of(recording)
-                ).to_json(),
-                "application/json",
-                f"{stem}.run.json",
-            ),
+            "sigmf": (need(sigmf), "application/json", f"{stem}.sanket.sigmf-meta"),
+            "run": (run_or_refuse, "application/json", f"{stem}.run.json"),
         }[format]
         try:
             body = content()
@@ -420,6 +461,42 @@ def create_app(
             media_type=media_type,
             headers={"Content-Disposition": f'attachment; filename="{name}"'},
         )
+
+    @app.get(f"{API_PREFIX}/history", response_model=list[HistoryEntry])
+    def list_history() -> list[HistoryEntry]:
+        """Finished analyses kept in the workspace, newest first."""
+        return [
+            HistoryEntry(
+                id=e.id,
+                created_utc=e.created_utc,
+                name=e.name,
+                container=e.container,
+                signals=e.signals,
+                verified=e.verified,
+                results_sha256=e.results_sha256,
+            )
+            for e in history.entries()
+        ]
+
+    @app.get(f"{API_PREFIX}/history/{{entry_id}}/results")
+    def get_history_results(
+        entry_id: str, format: Literal["json", "csv", "txt", "pdf", "run"] = "json"
+    ) -> Response:
+        """A kept analysis as a download, in the formats a finished one has (not SigMF, which
+        needs the recording's files); the JSON is the document as it was first produced."""
+        kept = history.get(entry_id)
+        if kept is None:
+            raise HTTPException(status_code=404, detail="no such analysis")
+        entry, results, run_json = kept
+        stem = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(entry.name).stem) or "recording"
+        return _download(format, results, stem, run=lambda: run_json)
+
+    @app.delete(f"{API_PREFIX}/history/{{entry_id}}", status_code=204)
+    def delete_history(entry_id: str) -> Response:
+        """Delete a kept analysis and everything derived from it."""
+        if not history.delete(entry_id):
+            raise HTTPException(status_code=404, detail="no such analysis")
+        return Response(status_code=204)
 
     @app.post(f"{API_PREFIX}/recordings/{{recording_id}}/sigmf", response_model=SavedSigmf)
     def save_as_sigmf(recording_id: str) -> SavedSigmf:
