@@ -66,53 +66,19 @@ export function StartScreen({ opening, openingSample, onUpload, onOpenSample }: 
       data-testid="start-screen"
       className="min-h-0 flex-1 overflow-y-auto bg-background"
     >
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-8 max-sm:px-4">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-6 max-sm:px-4">
         <header className="flex items-start gap-4">
-          <Logo className="size-12 shrink-0" />
+          <Logo className="size-11 shrink-0" />
           <div className="min-w-0">
             <p className="eyebrow">{BRAND.tagline}</p>
-            <h1 className="mt-0.5 text-2xl font-semibold tracking-tight">What is in this recording?</h1>
-            <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">
+            <h1 className="mt-0.5 text-xl font-semibold tracking-tight">What is in this recording?</h1>
+            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
               Give Sanket an unknown radio recording. It works out how the signal was sent (rate, modulation,
               interleaving, error correction, framing), undoes each layer to recover the bits, and shows the
               evidence for every claim.
             </p>
           </div>
         </header>
-
-        <section aria-labelledby="start-open" className="rounded-lg border border-dashed border-border-strong bg-surface p-5">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="min-w-0 flex-1">
-              <h2 id="start-open" className="text-[15px] font-semibold">
-                Open your own recording
-              </h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                .iq / raw, .wav, SigMF, .npy and more. Drop files anywhere on this window, choose them here, or paste
-                a path into the box at the top. Nothing leaves this machine.
-              </p>
-            </div>
-            <label
-              className={`flex shrink-0 items-center gap-2 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-surface ${
-                opening ? 'opacity-50' : 'cursor-pointer hover:opacity-90'
-              }`}
-            >
-              <Upload className="size-4" aria-hidden />
-              Choose files
-              <input
-                type="file"
-                multiple
-                disabled={opening}
-                className="sr-only"
-                aria-label="Choose recording files"
-                onChange={(e) => {
-                  const files = Array.from(e.target.files ?? [])
-                  e.target.value = '' // so choosing the same file again fires change
-                  if (files.length > 0) onUpload(files)
-                }}
-              />
-            </label>
-          </div>
-        </section>
 
         <section aria-labelledby="start-samples">
           <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -153,7 +119,7 @@ export function StartScreen({ opening, openingSample, onUpload, onOpenSample }: 
                       onClick={() => onOpenSample(s.id)}
                       disabled={opening}
                       data-sample={s.id}
-                      className="group flex w-full flex-col gap-2.5 rounded-lg border bg-surface p-4 text-left transition-colors enabled:hover:border-primary/60 enabled:hover:bg-surface-2/60 disabled:opacity-60"
+                      className="group flex w-full flex-col gap-2 rounded-lg border bg-surface p-3.5 text-left transition-colors enabled:hover:border-primary/60 enabled:hover:bg-surface-2/60 disabled:opacity-60"
                     >
                       <span className="flex items-start justify-between gap-2">
                         <span className="text-sm font-semibold">{s.title}</span>
@@ -195,6 +161,40 @@ export function StartScreen({ opening, openingSample, onUpload, onOpenSample }: 
               })}
             </ul>
           )}
+        </section>
+
+        <section aria-labelledby="start-open" className="rounded-lg border border-dashed border-border-strong bg-surface p-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="min-w-0 flex-1">
+              <h2 id="start-open" className="text-[15px] font-semibold">
+                Open your own recording
+              </h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                .iq / raw, .wav, SigMF, .npy and more. Drop files anywhere on this window, choose them here, or paste
+                a path into the box at the top. Nothing leaves this machine.
+              </p>
+            </div>
+            <label
+              className={`flex shrink-0 items-center gap-2 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-surface ${
+                opening ? 'opacity-50' : 'cursor-pointer hover:opacity-90'
+              }`}
+            >
+              <Upload className="size-4" aria-hidden />
+              Choose files
+              <input
+                type="file"
+                multiple
+                disabled={opening}
+                className="sr-only"
+                aria-label="Choose recording files"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? [])
+                  e.target.value = '' // so choosing the same file again fires change
+                  if (files.length > 0) onUpload(files)
+                }}
+              />
+            </label>
+          </div>
         </section>
 
         <footer className="flex flex-col gap-3 border-t pt-5">

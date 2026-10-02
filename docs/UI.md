@@ -48,7 +48,7 @@ behaviour cannot drift apart. Its definitions, digit mapping and wrap-around ste
 
 ## What each view shows
 
-Before a file is opened, the workspace runs on a synthetic capture generated in the browser and labelled *Synthetic demo* (PLAN M7 replaces it with bundled sample recordings). Once a recording is open, every view shows real engine output:
+Before a recording is open the workspace shows the **start screen** (`components/StartScreen.tsx`): one primary action (Choose files; dropping files on the window and the path box work too), the bundled sample recordings as cards (`GET /api/v1/samples`, each labelled *Synthetic*, with what to look for in it) and the five evidence levels. Only Survey (which is the start screen then) and History are in the nav until something is open. Every view then shows real engine output:
 
 - **Waterfall:** one box per detection, placed in time and frequency. Frequency is relative to the capture centre when the centre frequency is unknown; levels are relative, not calibrated.
 - **Detections list:** each detection's overall level as glyph + word, never colour alone.
@@ -57,8 +57,8 @@ Before a file is opened, the workspace runs on a synthetic capture generated in 
 - **Evidence cards:** each value with its level, method, evidence, alternatives and warnings; UNKNOWN cards say why and what would settle it (e.g. how many FEC hypotheses were tried).
 - **Hypotheses tab (ledger):** *Tried* counts every cell of the search grid (modulation × rotation × code × alignment, interleaver × alignment, RS grid × sync word × CRC), including cells never run. The threshold is corrected for that count, and the best chains that pass it are re-run on shuffled bits: one that also passes there is blocked, shown as rejected with that reason, and counted in the "Shuffled-bit accepts" tile.
 - **Frames tab:** start bit, sync word, CRC result, header and payload hex; for a real recording, download links for the table as JSON, CSV, hex and bits.
-- **Summary strip (Survey only):** `GET /api/v1/recordings/{id}/results?format=txt` shown above the pipeline rail, see below. Absent for the demo and while the analysis runs.
-- **Results download (top bar):** for a recording whose analysis has finished, a `Results` label with `JSON`, `CSV` and `Summary` links (the results document; one row per value with its level and proof; a plain-language text summary). Absent for the demo and while the analysis runs.
+- **Summary strip (Survey only):** `GET /api/v1/recordings/{id}/results?format=txt` shown above the pipeline rail, see below. Absent while the analysis runs.
+- **Results download (top bar):** for a recording whose analysis has finished, a `Results` label with `JSON`, `CSV` and `Summary` links (the results document; one row per value with its level and proof; a plain-language text summary). Absent while the analysis runs.
 - **Assumptions (modal):** container, datatype, sample rate, centre frequency, IQ order and everything else taken as given, each with its level; above them, entry fields for the centre frequency and the IQ order (a swap has the server tile the recording again). Opening a folder lists its recordings in a dialog to pick from; a raw file whose sample format is UNKNOWN opens a prompt strip with the sniffer's candidates; "Join numbered files" beside the path reads `rec_000`, `rec_001`, … as one recording.
 
 ## The History section
@@ -75,8 +75,8 @@ an `alert()`.
 - The list is fetched when the section opens, when an analysis finishes (App bumps `historyTick` when the
   recording's state turns `done`, at once and again about two seconds later, because the server keeps the
   analysis on its worker thread just after the state turns) and from the Refresh control.
-- An empty list says what makes an entry. The demo (no recording open) shows the section with its own
-  wording and a *Synthetic demo* label; it still lists whatever the server holds.
+- An empty list says what makes an entry. With nothing open the section still lists whatever the server
+  holds.
 - The section renders inside `Workspace`, not beside it, so zoom and selection survive a visit. Layout: a
   `main` that is `flex min-h-0 flex-1 flex-col overflow-hidden`, a fixed 32px strip, and the table in a
   `min-h-0 flex-1 overflow-auto` panel with a sticky header. Measured (e2e, 40 rows, both themes): the
@@ -110,6 +110,28 @@ subheadings in heavier weights. Levels are in the text's own words, so nothing i
   there is no horizontal overflow at 1918x950 and 1440x800, collapsed and open; the strip is 29px / 189px,
   the text panel scrolls 569px of text in 160px, and the waterfall canvas equals its container (1918:
   412px collapsed, 252px open; 1440: 254px collapsed, 94px open).
+
+## Onboarding and plain language
+
+- **Welcome** (`Welcome.tsx`): a modal on first run (and from the Help button): three plain sentences, the five levels
+  as glyph + word + meaning, *Try a sample* (focuses the first sample card, or opens `scene` when a recording is
+  open), *Take the tour*, *Skip* (Esc). Remembered under `sanket.onboarding.v1` (try/catch). The e2e `beforeEach`
+  sets it so the other tests start past it.
+- **Tour** (`lib/tour.ts`, driver.js bundled, no network): steps are anchored on `data-tour` attributes (`open`,
+  `section-nav`, `waterfall`, `detections`, `evidence`, `symbols`, `bottom-tabs`, `summary`, `export`,
+  `assumptions`); a step whose anchor is not on screen is skipped. With nothing open, *Take the tour* opens
+  `scene` and starts when its first result lands. Animation is off under reduced motion; the popover is styled
+  from the tokens (`.sanket-tour` in `styles/index.css`).
+- **Plain headline** (`lib/plainHeadline.ts`): one sentence per signal built from the structured report, never
+  firmer than its level; the engine's own headline stays under it in small mono type.
+- **Glossary and InfoTips** (`lib/glossary.ts`, `InfoTip.tsx`): a focusable ? beside jargon (Es/N0, EVM, CRC, sync
+  word, ledger, p, threshold, family-wise error, shuffled-bit check, constellation, eye); the popover is portalled
+  to `body`, clamped inside the viewport and closes on Esc or blur.
+- **Progress:** a 2 px bar under the top bar (done of total signals), a spinner and *Analysing…* on each signal card
+  until its report lands, and the first finished signal is selected unless the analyst has picked one.
+- **Sections:** Alt+4 (and the Assumptions nav item) opens the modal over the current section; `assumptions` is
+  never the current section and is never stored (`lib/views.ts` `SectionId`). The modal closes on Esc or a click
+  outside it and returns focus to what opened it.
 
 ## The Signal overlay
 
@@ -207,5 +229,6 @@ wide display.
 | `components/SignalOverlay.tsx` | The full-screen deep dive |
 | `components/SummaryStrip.tsx` | The plain-language summary strip and its toggle (`hooks/useSummary.ts`: the fetch; `lib/summary.ts`: when it shows, 409 retries, line kinds, the remembered state) |
 | `components/HistorySection.tsx` | The History table, its inline delete confirmation and its fetching (`lib/history.ts`: row formatting and download URLs) |
+| `components/StartScreen.tsx`, `Welcome.tsx`, `InfoTip.tsx` | The start screen with the sample cards, the welcome dialog, the glossary popover (`lib/tour.ts`, `lib/onboarding.ts`, `lib/glossary.ts`, `lib/plainHeadline.ts`) |
 | `App.tsx` | Section branching, the plot column, the evidence rail |
 | `TopBar.tsx` | The section nav, the open box, the theme toggle |

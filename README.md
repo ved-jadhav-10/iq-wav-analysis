@@ -67,7 +67,7 @@ npx playwright install chromium && npm run e2e   # offline smoke test against sa
 
 ### Sample recordings
 
-`uv run python tools/make_demo.py` writes synthetic SigMF recordings with exact ground truth to `data/demo/`, and checks every decoded frame against the transmitted bytes. Open one by pasting its full path into the path box in the top bar. The UI labels them "Synthetic recording".
+`uv run python tools/make_demo.py` writes synthetic SigMF recordings with exact ground truth to `data/demo/`, and checks every decoded frame against the transmitted bytes. They are bundled in the desktop build and shown as cards on the start screen (click one to open it); from a checkout, paste a file's full path into the path box in the top bar instead. The UI labels them "Synthetic recording".
 
 | File | Contents | What Sanket shows |
 |---|---|---|
