@@ -139,6 +139,9 @@ class RecordingInfo(CamelModel):
     psd_db: tuple[float, ...]
     levels: tuple[LevelInfo, ...]
     assumptions: Assumptions
+    # What the samples say about the capture (`dsp.quality`): clipping, DC offset, I/Q imbalance
+    # (complex recordings), gaps; one UNKNOWN when the file is empty.
+    capture_quality: tuple[Parameter, ...]
     analysis: AnalysisProgress
     # Empty alongside sample_rate: a box in seconds/Hz needs a known rate, same as freqs_hz.
     detections: tuple[DetectionInfo, ...]
@@ -249,6 +252,7 @@ def create_app(
                 for i, lv in enumerate(rec.pyramid.levels)
             ),
             assumptions=rec.assumptions,
+            capture_quality=rec.quality,
             analysis=_progress(rec),
             detections=detections,
         )
@@ -349,6 +353,7 @@ def create_app(
             recording.num_samples,
             len(recording.detections),
             [report for report in reports if report is not None],
+            recording.quality,
         )
         stem = re.sub(r"[^A-Za-z0-9._-]+", "_", recording.path.stem) or "recording"
         content, media_type, name = {

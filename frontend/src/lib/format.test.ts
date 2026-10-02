@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatRate, niceTicks, parseFrequency, parseRate, sci, signed } from './format'
+import { formatRate, formatValue, niceTicks, parseFrequency, parseRate, sci, signed } from './format'
 
 describe('parseRate', () => {
   it('reads plain, exponent and SI-suffixed rates', () => {
@@ -73,5 +73,14 @@ describe('signed', () => {
     expect(signed(-40, 1)).toBe('−40.0')
     expect(signed(40, 0)).toBe('+40')
     expect(signed(-0.0001, 1)).toBe('0.0')
+  })
+})
+
+describe('formatValue', () => {
+  it('shows a negative zero without a sign, groups integers and keeps 6 significant figures', () => {
+    expect(formatValue(-0)).toBe('0')
+    expect(formatValue(1234567)).toBe('1,234,567')
+    expect(formatValue(0.12345678)).toBe('0.123457')
+    expect(formatValue('IQ')).toBe('IQ')
   })
 })

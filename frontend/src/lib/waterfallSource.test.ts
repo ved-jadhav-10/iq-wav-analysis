@@ -34,6 +34,7 @@ function recording(overrides: Partial<RecordingInfo> = {}): RecordingInfo {
     psdDb: [-70, -60, -70],
     levels: [{ level: 0, rows: 128, cols: 1024, rowSpan: 1 }],
     assumptions,
+    captureQuality: [],
     analysis: { state: 'done', done: 0, total: 0 },
     detections: [],
     ...overrides,

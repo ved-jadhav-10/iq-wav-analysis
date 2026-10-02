@@ -75,6 +75,37 @@ def test_opening_a_recording_returns_its_assumptions_and_pyramid_shape(
     assert abs(body["hop"] * rows - body["numSamples"]) <= body["fftSize"]
 
 
+def test_a_complex_recording_reports_its_capture_quality(
+    client: TestClient, sigmf_path: Path
+) -> None:
+    body = client.post("/api/v1/recordings", json={"path": str(sigmf_path)}).json()
+    quality = {p["id"]: p for p in body["captureQuality"]}
+    assert list(quality) == [
+        "clipping",
+        "dc_offset",
+        "iq_gain_imbalance",
+        "iq_phase_imbalance",
+        "gaps",
+    ]
+    assert quality["clipping"]["level"] == "MEASURED" and quality["clipping"]["warnings"] == []
+    assert quality["gaps"]["value"] == 0
+    assert all(p["method"] and p["evidence"] for p in quality.values())
+
+
+def test_a_real_recording_has_no_iq_imbalance_in_its_capture_quality(
+    client: TestClient, tmp_path: Path, samples: NDArray[np.complex128]
+) -> None:
+    path = tmp_path / "audio.wav"
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(48_000)
+        w.writeframes(SampleFormat.parse("ri16_le").encode(samples.real / np.max(samples.real)))
+    body = client.post("/api/v1/recordings", json={"path": str(path)}).json()
+    assert body["real"] is True
+    assert [p["id"] for p in body["captureQuality"]] == ["clipping", "dc_offset", "gaps"]
+
+
 def test_an_unknown_sample_rate_omits_hz_rather_than_guessing_one(
     client: TestClient, tmp_path: Path
 ) -> None:

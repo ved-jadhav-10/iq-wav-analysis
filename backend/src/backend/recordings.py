@@ -20,6 +20,7 @@ from typing import Literal
 from dsp.detect import Detection, detect
 from dsp.evidence import Parameter
 from dsp.ingest.dispatch import AnyRecording
+from dsp.quality import capture_quality
 from dsp.report import DetectionReport
 from dsp.results import Assumptions
 from dsp.tiles import Pyramid, build_pyramid
@@ -38,14 +39,17 @@ from .jobs import AnalysisJob, run_analysis
 
 def _survey(
     source: AnyRecording, *, real: bool, swap_iq: bool
-) -> tuple[Pyramid, tuple[Detection, ...]]:
-    """The tile pyramid and the detections, each one streaming pass over the samples. Detection
-    has its own FFT sizes, independent of the pyramid's: PLAN §5 M2's "first tile <= 2 s" item
-    is still open partly because of this second pass."""
+) -> tuple[Pyramid, tuple[Detection, ...], tuple[Parameter, ...]]:
+    """The tile pyramid, the detections and the capture-quality parameters, each one streaming
+    pass over the samples. Detection has its own FFT sizes, independent of the pyramid's: PLAN §5
+    M2's "first tile <= 2 s" item is still open partly because of this second pass."""
     with source.reader(swap_iq=swap_iq) as reader:
         pyramid = build_pyramid(reader, real=real)
     with source.reader(swap_iq=swap_iq) as reader:
-        return pyramid, detect(reader, real=real).detections
+        detections = detect(reader, real=real).detections
+    with source.reader(swap_iq=swap_iq) as reader:
+        quality = capture_quality(reader)
+    return pyramid, detections, quality
 
 
 SYNTH_RECORDER = "sanket dsp.synth"
@@ -79,6 +83,8 @@ class Recording:
     entered: Entries = ()
     # A sample rate the structural test supports for a file that states none (`infer_sample_rate`).
     inferred_rate: Parameter | None = None
+    # What the samples say about the capture (`dsp.quality`), measured when the file was opened.
+    quality: tuple[Parameter, ...] = ()
 
     @property
     def swap_iq(self) -> bool:
@@ -135,7 +141,7 @@ class RecordingStore:
         fmt = opened.recording.sample_format
         assert fmt is not None  # open_input raised for an UNKNOWN format
         real = not fmt.is_complex
-        pyramid, detections = _survey(opened.recording, real=real, swap_iq=False)
+        pyramid, detections, quality = _survey(opened.recording, real=real, swap_iq=False)
         recording = Recording(
             id=str(uuid.uuid4()),
             path=path,
@@ -149,6 +155,7 @@ class RecordingStore:
             job=AnalysisJob(0),
             recorder=sigmf_recorder(path),
             inferred_rate=infer_sample_rate(opened.recording, detections),
+            quality=quality,
         )
         return self._start(recording)
 
@@ -183,8 +190,10 @@ class RecordingStore:
                 changes["iq_order"] = iq_order
             updated = replace(current, entered=tuple(changes.items()))
             if updated.swap_iq != current.swap_iq:
-                pyramid, detections = _survey(updated.source, real=False, swap_iq=updated.swap_iq)
-                updated = replace(updated, pyramid=pyramid, detections=detections)
+                pyramid, detections, quality = _survey(
+                    updated.source, real=False, swap_iq=updated.swap_iq
+                )
+                updated = replace(updated, pyramid=pyramid, detections=detections, quality=quality)
             return self._start(updated)
 
     def _start(self, recording: Recording) -> Recording:

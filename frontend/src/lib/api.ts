@@ -68,6 +68,9 @@ export interface RecordingInfo {
   psdDb: number[]
   levels: LevelInfo[]
   assumptions: Assumptions
+  /** What the samples say about the capture (clipping, DC offset, I/Q imbalance for a complex
+   * recording, gaps), or one UNKNOWN when the file is empty. */
+  captureQuality: Parameter[]
   analysis: AnalysisProgress
   /** Empty alongside sampleRate: a box in seconds/Hz needs a known rate, same as freqsHz. */
   detections: DetectionInfo[]

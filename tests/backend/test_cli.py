@@ -80,8 +80,17 @@ def test_analyse_writes_the_results_document_for_a_recording(
     assert cli.main(["analyse", str(sigmf_path), "--out", str(out)]) == 0
     data = load(out / "rec.results.json")
     assert data["assumptions"]["sampleRate"]["value"] == RATE
-    assert [s["id"] for s in data["stages"]] == ["ingest", "detect"]
-    assert data["stages"][1]["summary"] == "1 signal(s) found"
+    assert [s["id"] for s in data["stages"]] == ["ingest", "capture", "detect"]
+    assert data["stages"][2]["summary"] == "1 signal(s) found"
+    capture = data["stages"][1]
+    assert {p["id"] for p in capture["parameters"]} == {
+        "clipping",
+        "dc_offset",
+        "iq_gain_imbalance",
+        "iq_phase_imbalance",
+        "gaps",
+    }
+    assert all(p["level"] in ("MEASURED", "ESTIMATED") for p in capture["parameters"])
     assert data["signals"][0]["id"] == "signal_0"
     assert {"detect", "estimate", "sync", "classify", "demod"} <= {
         s["id"] for s in data["signals"][0]["stages"]
@@ -108,7 +117,7 @@ def test_analyse_takes_entries_for_what_the_file_lacks(tmp_path: Path, sigmf_pat
     # No rate: the bands are found and not analysed, and the results say so.
     assert unknown["assumptions"]["sampleRate"]["value"] is None
     assert unknown["signals"] == []
-    assert "sample rate is UNKNOWN" in unknown["stages"][1]["summary"]
+    assert "sample rate is UNKNOWN" in unknown["stages"][-1]["summary"]
 
     entered = tmp_path / "entered"
     assert cli.main(["analyse", str(raw), "--out", str(entered), "--sample-rate", "1M"]) == 0

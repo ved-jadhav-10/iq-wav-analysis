@@ -284,8 +284,12 @@ def markdown(results: dict[str, Any]) -> str:
         "scenes, mostly at low SNR; a wrong value that still cleared significance is possible "
         "at the estimator's own false-alarm rate and shows up as an outlier, not a missing row.",
         "",
-        "SNR is not scored for M-FSK: `snr_psd`'s occupied-bandwidth fit assumes one continuous "
-        "spectral lobe, and M-FSK's several separated tones aren't that (PLAN §5 M2, "
+        "SNR here is `snr_psd`'s: the signal's power over the noise power in its own "
+        "noise-equivalent bandwidth, which for an RRC pulse is the symbol rate over "
+        "(1 - rolloff / 4), so it reads about 0.4 dB below the Es/N0 the scenes are drawn at "
+        "(the analysis reports Es/N0 itself, from the same moments over the measured symbol "
+        "rate, without that offset). It is not scored for M-FSK: the separated tones are not "
+        "one lobe, and their noise-equivalent bandwidth is not the symbol rate's (PLAN §5 M2, "
         "`dsp.estimate.params.snr_psd`'s Limits).",
         "",
         "The false-detection rate is dominated by M-FSK, not linear modulations (see the split "

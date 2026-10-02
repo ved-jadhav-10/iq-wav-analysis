@@ -2,6 +2,7 @@ import type { Assumptions, AssumptionValues } from '@/lib/api'
 import type { Parameter } from '@/lib/evidence'
 import { integer } from '@/lib/format'
 import { AssumptionEntry } from './AssumptionEntry'
+import { CaptureQualitySection } from './CaptureQualitySection'
 import { ParameterCard } from './EvidencePanel'
 
 /** The backend sends a bare number; every other number in the workspace is thousands-grouped. */
@@ -14,9 +15,12 @@ function withFormattedValue(p: Parameter): Parameter {
  * honesty rules (UNKNOWN states why, a convention is named, nothing is silently defaulted). */
 export function RecordingAssumptionsPanel({
   assumptions,
+  captureQuality,
   onEnter,
 }: {
   assumptions: Assumptions
+  /** What the samples say about the capture, shown beneath the assumptions. */
+  captureQuality: readonly Parameter[]
   /** Sends values the analyst entered; rejects with a message the form shows. */
   onEnter: (values: AssumptionValues) => Promise<void>
 }) {
@@ -41,6 +45,7 @@ export function RecordingAssumptionsPanel({
           <ParameterCard key={p.id} param={p} />
         ))}
       </div>
+      <CaptureQualitySection parameters={captureQuality} />
     </section>
   )
 }

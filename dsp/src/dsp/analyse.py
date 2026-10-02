@@ -58,6 +58,7 @@ from dsp.estimate.params import (
     cumulants,
     fsk_symbol_rates,
     rolloff_fit,
+    snr_m2m4,
     snr_psd,
     symbol_rate,
 )
@@ -280,6 +281,7 @@ def analyse(
         timing,
         ranked,
         search,
+        x,
     )
 
 
@@ -316,6 +318,7 @@ def _offset_report(
         timing,
         ranked,
         search,
+        x,
         offset,
     )
 
@@ -1104,6 +1107,68 @@ def _early(chain: _Chain) -> bool:
     return chain.modulation == OFFSET_QPSK_I_LATE
 
 
+# Kurtosis E|s|^4 / E|s|^2^2 of each constellation, for the M2M4 estimator.
+KURTOSIS = {"BPSK": 1.0, "QPSK": 1.0, "8PSK": 1.0, "16QAM": 1.32, "64QAM": 1.381}
+# The Es/N0 range (dB) each estimator is trusted over, from the detection bench's scenes: the PSD
+# moments need the symbol rate and read within 0.8 dB from 3 dB up, M2M4's scatter grows toward
+# 0 dB and again above about 18 dB (a difference of nearly equal moments), and the EVM of the
+# demapped constellation reads high below about 8 dB (decisions fall on the nearest point).
+TRUST = {"PSD moments": (3.0, 40.0), "M2M4": (3.0, 18.0), "EVM": (8.0, 40.0)}
+
+
+def _esn0_parameter(x: Any, timing: Timing, modulation: str, evm: float) -> Parameter:
+    """Es/N0 from up to three estimators: the PSD's moments over the symbol rate (`snr_psd`),
+    M2M4 on the recovered symbols (`snr_m2m4`) and the constellation's EVM. The value is the PSD
+    reading when there is one (the most accurate over the whole range), else the EVM; the other
+    readings are evidence, and the agreement of those inside their trusted range is the
+    confidence (1 / (1 + spread in dB): a ranking of agreement, not a probability)."""
+    readings: dict[str, float | None] = {"PSD moments": None, "M2M4": None, "EVM": None}
+    try:
+        est = snr_psd(x)
+        readings["PSD moments"] = 10 * math.log10(
+            est.signal_power / (est.noise_density * timing.rate)
+        )
+    except ValueError:
+        pass
+    readings["M2M4"] = snr_m2m4(timing.symbols, KURTOSIS.get(base_modulation(modulation), 1.0))
+    readings["EVM"] = -20 * math.log10(max(evm, 1e-3))
+    primary = readings["PSD moments"]
+    method = "PSD moments over the symbol rate"
+    if primary is None:
+        primary, method = readings["EVM"], "EVM of the recovered constellation"
+    assert primary is not None
+    # Trust is judged on the primary reading, not each estimator's own: the EVM of a noisy
+    # constellation reads high (decisions fall on the nearest point), so its own value says
+    # nothing about whether it can be believed.
+    counted = {
+        name: v
+        for name, v in readings.items()
+        if v is not None and TRUST[name][0] <= primary <= TRUST[name][1]
+    }
+    spread = max(counted.values()) - min(counted.values()) if len(counted) > 1 else None
+    lines: list[str] = []
+    for name, v in readings.items():
+        if v is None:
+            lines.append(f"{name}: no result")
+        elif name in counted:
+            lines.append(f"{name}: {v:.1f} dB")
+        else:
+            lines.append(f"{name}: {v:.1f} dB (outside its trusted range, not in the agreement)")
+    if spread is not None:
+        lines.append(f"Trusted estimators agree to within {spread:.1f} dB.")
+    return Parameter(
+        id="esn0",
+        name="Es/N0",
+        value=round(primary, 1),
+        unit="dB",
+        uncertainty=0.5 if primary >= 3.0 and method.startswith("PSD") else 1.5,
+        level=E.ESTIMATED,
+        confidence=None if spread is None else round(1 / (1 + spread), 2),
+        method=f"{method}; other estimators listed as evidence, their agreement as confidence",
+        evidence=tuple(lines),
+    )
+
+
 def _shown(modulation: str) -> str:
     """The modulation as the reader sees it: both offset-QPSK pairings are `OFFSET_QPSK`."""
     return (
@@ -1137,6 +1202,7 @@ def _report(
     timing: Timing,
     ranked: tuple[tuple[str, float], ...],
     search: _Search,
+    x: Any,
     offset: OffsetRate | None = None,
 ) -> DetectionReport:
     acc = search.accepted
@@ -1146,7 +1212,8 @@ def _report(
     carrier = search.carriers[modulation]
     symbols = rotate(carrier.symbols, acc.rotation if acc else 0)
     soft = demap(symbols, modulation)
-    esn0 = -20 * math.log10(max(soft.evm, 1e-3))
+    esn0_param = _esn0_parameter(x, timing, modulation, soft.evm)
+    esn0 = float(esn0_param.value or 0.0)
     # per input sample; offset QPSK also had `timing.cfo` (per channel sample) removed up front
     cfo_cycles = (carrier.cfo * timing.rate + timing.cfo) / units.channel.decimation
     carrier_value, carrier_unit, carrier_scale = units.frequency(units.channel.centre + cfo_cycles)
@@ -1199,15 +1266,7 @@ def _report(
             else "Detection centre plus the x² pair's offset and the 4th-power residual",
             evidence=("Relative to the capture centre.",),
         ),
-        Parameter(
-            id="esn0",
-            name="Es/N0",
-            value=round(esn0, 1),
-            unit="dB",
-            uncertainty=1.0,
-            level=E.ESTIMATED,
-            method="From the EVM of the recovered constellation (reads low below about 8 dB)",
-        ),
+        esn0_param,
     )
     estimate = _stage(
         "estimate",

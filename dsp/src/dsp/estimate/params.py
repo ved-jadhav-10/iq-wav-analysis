@@ -82,49 +82,100 @@ def occupied_bandwidth(
 class SnrEstimate:
     snr_db: float
     method: str
-    signal_power: float  # over the occupied band; comparable to noise_density * bandwidth
+    signal_power: float  # the signal's total power, over the noise floor
     noise_density: float  # per unit normalised frequency
+    bandwidth: float = 0.0  # the signal's noise-equivalent bandwidth, cycles/sample
 
 
-def snr_psd(x: NDArray[Any], nfft: int = 1024, obw: OccupiedBandwidth | None = None) -> SnrEstimate:
-    """SNR from the PSD: power inside the occupied band, over the noise density outside it.
+SNR_BAND = 0.4  # the |frequency| the SNR estimate reads: a channelised signal is flat out to here
+SNR_FLOOR_RANK = 0.4  # percentile of the in-band PSD bins taken as the noise floor
 
-    This is an in-band-power-over-noise-power ratio, not exactly Es/N0: the occupied band (99 %
-    of the energy) misses some of the roll-off's tails, so it reads a little (roughly
-    10 log10(1 + rolloff) at low SNR) below the true Es/N0 - within the tolerances below, but
-    don't mix it with an Es/N0 computed a different way.
 
-    Needs a guard band with more noise than signal; a channel with none (an unusually wide
-    channelisation margin, or `obw` covering nearly the whole Nyquist band) gives no result.
+def _refined_floor(p: Float, floor: float, dof: float) -> float:
+    """The noise floor as the mean of the bins that sit off the signal. The percentile that
+    starts the estimate is pulled up by the signal's bins (at 0 dB they are a fifth of the band,
+    above the median of the rest), so the bins whose smoothed level stands above the floor are
+    dropped, with a margin of their own width, and the rest averaged. Keeps the percentile when
+    less than a quarter of the bins are left."""
+    m = max(8, len(p) // 64)
+    smooth = np.convolve(p, np.ones(m) / m, mode="same")
+    above = smooth > floor * (1 + 3.0 / math.sqrt(dof * m))
+    grown = np.convolve(above.astype(float), np.ones(2 * m + 1), mode="same") > 0
+    kept = p[~grown]
+    return float(kept.mean()) if len(kept) >= len(p) // 4 else floor
 
-    Limits: this is one of the three estimators PLAN §5 M2 calls for (PSD in-band vs guard);
-    M2M4 and eigenvalue/MDL are not yet implemented, so there is no cross-check by agreement
-    yet, and this estimator alone degrades below about 10 dB Es/N0, where the occupied
-    bandwidth it depends on is itself harder to measure. A real (not complex-baseband) signal
-    off-centre keeps only one of its two mirrored lobes (see `welch`), and reads a few dB low
-    as a result; it has no finite occupied bandwidth to measure at all for an undamped tone,
-    which this method is not meant to estimate an SNR for.
+
+def snr_psd(x: NDArray[Any], nfft: int = 1024) -> SnrEstimate:
+    """SNR from the PSD's moments: the signal's power over the noise power in its own
+    noise-equivalent bandwidth.
+
+    With the noise density N0 taken from a low percentile of the PSD (corrected for the
+    averaging behind it, `welch_dof`), the signal power is S = sum(PSD - N0) and its
+    noise-equivalent bandwidth B = S^2 / sum((PSD - N0)^2), less the part of that second sum the
+    PSD's own scatter adds (a bin of mean m scatters by m / sqrt(dof)). The SNR is S / (N0 B).
+    Unlike a threshold-defined occupied band, no step depends on where the signal ends, so it
+    holds down to 0 dB: on RRC-shaped linear signals it reads within 0.6 dB of the in-symbol-rate
+    SNR from 0 to 30 dB (`bench/results/bench-v0-detect.md`), and B is about R / (1 - rolloff / 4)
+    for symbol rate R, so it sits roughly 0.4 dB below Es/N0 for a roll-off of 0.35.
+
+    Limits: the signal must fill less than the lower SNR_FLOOR_RANK of the |f| < SNR_BAND bins
+    (channelisation leaves it about a sixth), and be one continuous lobe: M-FSK's separated tones
+    give a B of their own, which is not the symbol rate's, so the bench does not score it. A real
+    (one-sided) recording keeps one of the two mirrored lobes. One of the three estimators PLAN
+    §5 M2 calls for (M2M4 on the recovered symbols is `snr_m2m4`; eigenvalue/MDL is not built).
     """
     real = not np.iscomplexobj(x)
     psd = welch(x, nfft)
     freqs = welch_freqs(len(x), nfft, real)
-    obw = obw or occupied_bandwidth(psd, freqs, dof=welch_dof(len(x), nfft))
-    inside = (freqs >= obw.low) & (freqs <= obw.high)
-    if not inside.any() or inside.all():
-        raise ValueError("no guard band outside the occupied bandwidth to measure noise from")
-    noise_density = float(np.median(psd[~inside]))
-    signal_density = float(np.mean(psd[inside])) - noise_density
-    # A bin spans this much of the unit band (freqs is a uniform grid regardless of nfft
-    # clipping or a real signal's one-sided slice), so bins_in * bin_width is a physical power,
-    # on the same footing as noise_density itself.
-    bin_width = float(freqs[1] - freqs[0]) if len(freqs) > 1 else 1.0
-    bandwidth_in = int(inside.sum()) * bin_width
-    signal_power = max(signal_density, 0.0) * bandwidth_in
-    noise_power = noise_density * bandwidth_in
-    snr = signal_power / noise_power if noise_power > 0 else math.inf
+    dof = welch_dof(len(x), nfft)
+    inside = np.abs(freqs) <= SNR_BAND
+    if int(inside.sum()) < 16:
+        raise ValueError("too few bins inside the passband to estimate a noise floor")
+    p = psd[inside]
+    width = float(freqs[1] - freqs[0]) if len(freqs) > 1 else 1.0
+    floor = float(np.percentile(p, 100 * SNR_FLOOR_RANK)) / _scipy.gamma_ppf(SNR_FLOOR_RANK, dof)
+    floor = _refined_floor(p, floor, dof)
+    excess = p - floor
+    power = float(excess.sum()) * width
+    spread = float(np.sum(excess**2 - p**2 / dof)) * width
+    if power <= 0 or spread <= 0:
+        raise ValueError("no signal stands above the noise floor")
+    bandwidth = power * power / spread
+    snr = power / (floor * bandwidth)
     return SnrEstimate(
-        10 * math.log10(max(snr, 1e-12)), "PSD in-band vs guard band", signal_power, noise_density
+        10 * math.log10(snr),
+        "PSD moments: signal power over the noise floor in its noise-equivalent bandwidth",
+        power,
+        floor,
+        bandwidth,
     )
+
+
+def snr_m2m4(symbols: Complex, kurtosis: float = 1.0) -> float | None:
+    """Es/N0 in dB from the second and fourth moments of recovered symbols (M2M4, Matzner 1993).
+
+    With M2 = E|y|^2 and M4 = E|y|^4 of signal s in circular Gaussian noise w, and the signal's
+    kurtosis ka = E|s|^4 / E|s|^2^2 (the noise's is 2): M2 = S + N and M4 = (ka - 2) S^2 + 2 M2^2,
+    so S = sqrt((2 M2^2 - M4) / (2 - ka)) and N = M2 - S.
+
+    `kurtosis` is the constellation's: 1 for BPSK/QPSK/8PSK, 1.32 for 16QAM, 1.381 for 64QAM.
+    Needs symbol-spaced samples (a residual carrier does not matter, the moments are
+    phase-blind); biased by intersymbol interference and timing error, and its scatter grows
+    quickly toward 0 dB. Returns None when the moments admit no solution (noise alone, or fewer
+    than 256 symbols)."""
+    y = np.asarray(symbols, np.complex128)
+    if len(y) < 256 or kurtosis >= 2.0:
+        return None
+    m2 = float(np.mean(np.abs(y) ** 2))
+    m4 = float(np.mean(np.abs(y) ** 4))
+    square = (2 * m2 * m2 - m4) / (2 - kurtosis)
+    if square <= 0:
+        return None
+    s = math.sqrt(square)
+    n = m2 - s
+    if n <= 0:
+        return None
+    return 10 * math.log10(s / n)
 
 
 @dataclass(frozen=True)

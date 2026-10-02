@@ -174,7 +174,7 @@ function Workspace({
   }
 
   const assumptionsPanel =
-    mode.kind === 'recording' ? <RecordingAssumptionsPanel assumptions={mode.info.assumptions} onEnter={onEnterAssumptions} /> : undefined
+    mode.kind === 'recording' ? <RecordingAssumptionsPanel assumptions={mode.info.assumptions} captureQuality={mode.info.captureQuality} onEnter={onEnterAssumptions} /> : undefined
 
   const waterfall = (
     <Waterfall
@@ -217,7 +217,7 @@ function Workspace({
               }
             />
           ) : mode.kind === 'recording' ? (
-            <RecordingAssumptionsPanel assumptions={mode.info.assumptions} onEnter={onEnterAssumptions} />
+            <RecordingAssumptionsPanel assumptions={mode.info.assumptions} captureQuality={mode.info.captureQuality} onEnter={onEnterAssumptions} />
           ) : null}
         </div>
       )}
@@ -616,9 +616,9 @@ export default function App() {
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               {mode.kind === 'recording' ? (
-                <RecordingAssumptionsPanel assumptions={mode.info.assumptions} onEnter={enterAssumptions} />
+                <RecordingAssumptionsPanel assumptions={mode.info.assumptions} captureQuality={mode.info.captureQuality} onEnter={enterAssumptions} />
               ) : (
-                <p className="text-sm text-muted-foreground">No assumptions for generated demo.</p>
+                <p className="text-sm text-muted-foreground">The synthetic demo capture has no assumptions or capture-quality measurements: it is generated in the browser, not read from a file.</p>
               )}
             </div>
           </div>

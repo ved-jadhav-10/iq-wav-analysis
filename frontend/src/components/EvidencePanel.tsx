@@ -41,6 +41,9 @@ export function ParameterCard({ param }: { param: Parameter }) {
         ) : (
           <span className="num text-[15px] font-medium">{formatValue(param.value)}</span>
         )}
+        {param.uncertainty != null && (
+          <span className="num text-xs text-muted-foreground">± {formatValue(param.uncertainty)}</span>
+        )}
         {param.unit && <span className="num text-xs text-muted-foreground">{param.unit}</span>}
       </p>
       {param.confidence !== null && <Confidence value={param.confidence} level={param.level} />}

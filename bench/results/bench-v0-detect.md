@@ -8,14 +8,14 @@ One signal per scene, centred at a random offset, clean AWGN only (no impairment
 
 | SNR (dB) | Recall | False detections/scene (linear / M-FSK) | Rate error (median %, coverage) | SNR error (median / max abs, dB, coverage) | CFO error (median %, coverage) |
 |---|---|---|---|---|---|
-| 0 | 100.0% | 0.20 (0.00 / 0.54) | 4.694 (15/64) | -8.72 / 12.90 (40/40) | 0.000 (4/16) |
-| 3 | 100.0% | 0.17 (0.20 / 0.12) | 0.001 (43/64) | -8.56 / 9.38 (40/40) | 0.000 (5/16) |
-| 6 | 100.0% | 0.19 (0.20 / 0.17) | 0.000 (45/64) | -8.19 / 8.95 (40/40) | 0.000 (13/16) |
-| 10 | 100.0% | 0.06 (0.00 / 0.17) | 0.000 (58/64) | -6.64 / 7.52 (40/40) | 0.000 (16/16) |
-| 15 | 100.0% | 0.22 (0.05 / 0.50) | 0.000 (64/64) | -0.86 / 0.99 (40/40) | 0.000 (16/16) |
-| 20 | 100.0% | 0.25 (0.20 / 0.33) | 0.000 (64/64) | -0.76 / 0.81 (40/40) | 0.000 (16/16) |
-| 25 | 100.0% | 0.53 (0.17 / 1.12) | 0.000 (64/64) | -0.74 / 0.79 (40/40) | 0.000 (16/16) |
-| 30 | 100.0% | 0.48 (0.00 / 1.29) | 0.000 (64/64) | -0.73 / 0.80 (40/40) | 0.000 (16/16) |
+| 0 | 100.0% | 0.20 (0.00 / 0.54) | 4.694 (15/64) | -0.45 / 0.68 (40/40) | 0.000 (4/16) |
+| 3 | 100.0% | 0.17 (0.20 / 0.12) | 0.001 (43/64) | -0.42 / 0.65 (40/40) | 0.000 (5/16) |
+| 6 | 100.0% | 0.19 (0.20 / 0.17) | 0.000 (45/64) | -0.38 / 0.48 (40/40) | 0.000 (13/16) |
+| 10 | 100.0% | 0.06 (0.00 / 0.17) | 0.000 (58/64) | -0.41 / 0.48 (40/40) | 0.000 (16/16) |
+| 15 | 100.0% | 0.22 (0.05 / 0.50) | 0.000 (64/64) | -0.40 / 0.46 (40/40) | 0.000 (16/16) |
+| 20 | 100.0% | 0.25 (0.20 / 0.33) | 0.000 (64/64) | -0.40 / 0.48 (40/40) | 0.000 (16/16) |
+| 25 | 100.0% | 0.53 (0.17 / 1.12) | 0.000 (64/64) | -0.40 / 0.47 (40/40) | 0.000 (16/16) |
+| 30 | 100.0% | 0.58 (0.00 / 1.54) | 0.000 (64/64) | -0.40 / 0.47 (40/40) | 0.000 (16/16) |
 
 Coverage is scenes with a value, over scenes where one could apply (rate: all modulations; SNR: linear modulations only, see the note below; CFO: BPSK/QPSK only, PLAN §5 M2). A symbol-rate or CFO estimate below its coverage total means the estimator correctly abstained (no significant line) rather than guessing on some scenes, mostly at low SNR; a wrong value that still cleared significance is possible at the estimator's own false-alarm rate and shows up as an outlier, not a missing row.
 

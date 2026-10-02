@@ -88,6 +88,7 @@ export function formatRate(rate: number): string {
  * (the unrounded value stays in the results document), strings as they are. */
 export function formatValue(value: string | number): string {
   if (typeof value === 'string') return value
+  if (value === 0) return '0' // JSON carries a rounded -0.00 as -0.0; show no sign
   if (Number.isInteger(value)) return integer.format(value)
   return String(Number(value.toPrecision(6)))
 }

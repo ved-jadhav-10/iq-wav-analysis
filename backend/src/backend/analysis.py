@@ -18,6 +18,7 @@ from dsp.ingest.dispatch import AnyRecording
 from dsp.ingest.rate import structural_parameter, structural_test
 from dsp.ingest.raw import RawRecording
 from dsp.ingest.recording import entered
+from dsp.quality import capture_quality
 from dsp.report import DetectionReport, StageReport, cap_digital_labels, note_rate_basis
 from dsp.results import Assumptions, Results, Signal, StageResult
 
@@ -234,6 +235,8 @@ def analyse_recording(
     with source.reader(swap_iq=swap_iq) as reader:
         samples = reader.num_samples
         detections = detect(reader, real=real).detections
+    with source.reader(swap_iq=swap_iq) as reader:
+        quality = capture_quality(reader)
     inferred = (
         None
         if dict(entries).get("sample_rate")
@@ -255,7 +258,8 @@ def analyse_recording(
             )
             if on_detection:
                 on_detection(i + 1, len(detections))
-    return results_of(assumptions, container, samples, len(detections), reports), reports
+    results = results_of(assumptions, container, samples, len(detections), reports, quality)
+    return results, reports
 
 
 def results_of(
@@ -264,15 +268,30 @@ def results_of(
     samples: int,
     detections: int,
     reports: Sequence[DetectionReport],
+    quality: Sequence[Parameter] = (),
 ) -> Results:
     """The results document for a recording whose `detections` bands have `reports`, in order.
     With no reports the bands were found and not analysed (the sample rate is UNKNOWN), and the
-    detect stage says so."""
+    detect stage says so. `quality` (`dsp.quality.capture_quality`) becomes the capture stage."""
     ingest = StageResult(
         id="ingest",
         name="Ingest",
         status="done",
         summary=f"{container}: {samples:,} samples",
+    )
+    capture = (
+        (
+            StageResult(
+                id="capture",
+                name="Capture quality",
+                status="done",
+                summary=_quality_summary(quality),
+                parameters=tuple(quality),
+                warnings=tuple(w for p in quality for w in p.warnings),
+            ),
+        )
+        if quality
+        else ()
     )
     if not reports and numeric_rate(assumptions) is None:
         detect_stage = StageResult(
@@ -284,7 +303,7 @@ def results_of(
         return Results(
             sanket_version=version("sanket-backend"),
             assumptions=assumptions,
-            stages=(ingest, detect_stage),
+            stages=(ingest, *capture, detect_stage),
         )
     detect_stage = StageResult(
         id="detect", name="Detect", status="done", summary=f"{detections} signal(s) found"
@@ -292,6 +311,12 @@ def results_of(
     return Results(
         sanket_version=version("sanket-backend"),
         assumptions=assumptions,
-        stages=(ingest, detect_stage),
+        stages=(ingest, *capture, detect_stage),
         signals=tuple(signal_of(i, r) for i, r in enumerate(reports)),
     )
+
+
+def _quality_summary(quality: Sequence[Parameter]) -> str:
+    """One line for the capture stage: what was found wrong, or that nothing was."""
+    flagged = [p.name for p in quality if p.warnings]
+    return "Flagged: " + ", ".join(flagged) if flagged else "No capture fault found"

@@ -232,3 +232,46 @@ test('an unknown sample format is a question: the candidates are offered and the
   await expect(page.getByText('Synthetic demo', { exact: true })).toBeHidden()
   await expect(page.getByRole('region', { name: 'Sample rate needed' })).toBeVisible()
 })
+
+test('the Assumptions modal shows the capture quality, and the page still never scrolls', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000)
+  const base = testInfo.outputPath('tone')
+  mkdirSync(testInfo.outputDir, { recursive: true })
+  writeSigmf(base)
+  await openByPath(page, `${base}.sigmf-meta`)
+  await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
+
+  const open = () =>
+    page.getByRole('navigation', { name: 'Workspace section' }).getByRole('button', { name: 'Assumptions' }).click()
+  await open()
+  const modal = page.getByRole('heading', { name: 'Configuration & Assumptions' }).locator('xpath=ancestor::div[3]')
+  const quality = modal.getByRole('region', { name: 'Capture quality' })
+  await expect(quality).toBeVisible()
+  // A complex recording: clipping, DC offset, both I/Q imbalances and gaps, each with its level.
+  for (const name of ['Clipping', 'DC offset', 'I/Q gain imbalance', 'I/Q phase imbalance', 'Dropped-sample gaps']) {
+    await expect(quality.getByRole('heading', { name, exact: true })).toBeVisible()
+  }
+  await expect(quality.getByText('Estimated', { exact: true })).toHaveCount(2)
+
+  // With the modal open, in both themes and at both widths, the page does not scroll as a whole
+  // and the modal fits the window (its own content scrolls inside it).
+  for (let pass = 0; pass < 2; pass++) {
+    if (pass > 0) await open()
+    for (const size of [{ width: 1918, height: 950 }, { width: 1440, height: 800 }]) {
+      await page.setViewportSize(size)
+      const { scrollHeight, innerHeight, top, bottom } = (await page.evaluate(
+        `(() => {
+          const r = document.querySelector('[aria-label="Capture quality"]').closest('.fixed').firstElementChild.getBoundingClientRect()
+          return { scrollHeight: document.documentElement.scrollHeight, innerHeight: window.innerHeight, top: r.top, bottom: r.bottom }
+        })()`,
+      )) as { scrollHeight: number; innerHeight: number; top: number; bottom: number }
+      expect(scrollHeight, `page at ${size.width}, pass ${pass}`).toBeLessThanOrEqual(innerHeight)
+      expect(top).toBeGreaterThanOrEqual(0)
+      expect(bottom).toBeLessThanOrEqual(innerHeight)
+    }
+    await modal.getByRole('button', { name: 'Close' }).click()
+    await page.getByRole('button', { name: /^Switch to (light|dark) theme$/ }).click()
+  }
+})
