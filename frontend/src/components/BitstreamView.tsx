@@ -1,8 +1,12 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { Detection, Frame } from '@/lib/analysis'
 import {
+  bytesToBits,
   defaultFrame,
+  findPattern,
   frameAnatomy,
+  hitBytes,
+  parsePattern,
   recurrence,
   streamExtent,
   taggedBytes,
@@ -362,30 +366,34 @@ function AnatomyBar({ a }: { a: Anatomy }) {
   )
 }
 
-function ByteGrid({ bytes }: { bytes: TaggedByte[] }) {
+type ByteView = 'hex' | 'bits'
+
+function ByteGrid({ bytes, view, hits }: { bytes: TaggedByte[]; view: ByteView; hits: ReadonlySet<number> }) {
   if (bytes.length === 0) {
     return <p className="text-xs text-muted-foreground">This frame lists no bytes to show (its header and payload are empty).</p>
   }
+  const perLine = view === 'bits' ? 8 : BYTES_PER_LINE
   const shown = bytes.slice(0, MAX_BYTES)
-  const lines: TaggedByte[][] = []
-  for (let i = 0; i < shown.length; i += BYTES_PER_LINE) lines.push(shown.slice(i, i + BYTES_PER_LINE))
+  const lines: { byte: TaggedByte; at: number }[][] = []
+  for (let i = 0; i < shown.length; i += perLine) lines.push(shown.slice(i, i + perLine).map((byte, k) => ({ byte, at: i + k })))
+  const mark = (at: number) => (hits.has(at) ? ' rounded-[2px] bg-primary/25 ring-1 ring-primary' : '')
   return (
     <div tabIndex={0} role="region" aria-label="Frame bytes" className="num max-h-32 overflow-auto rounded-md bg-surface-2 px-2 py-1.5 text-xs leading-5">
       {lines.map((line, li) => (
         <div key={li} className="flex gap-3 whitespace-nowrap">
           <span className="w-[4ch] shrink-0 text-right text-subtle-foreground" aria-hidden>
-            {(li * BYTES_PER_LINE).toString(16).toUpperCase().padStart(4, '0')}
+            {(li * perLine).toString(16).toUpperCase().padStart(4, '0')}
           </span>
           <span>
-            {line.map((b, i) => (
-              <span key={i} className={`${BYTE_STYLE[b.field]} mr-[1ch]`}>
-                {b.hex}
+            {line.map(({ byte: b, at }) => (
+              <span key={at} className={`${BYTE_STYLE[b.field]} mr-[1ch]${mark(at)}`}>
+                {view === 'bits' ? bytesToBits([b.hex]) : b.hex}
               </span>
             ))}
           </span>
-          <span className="text-muted-foreground" aria-label={`As text: ${hexToText(line.map((b) => b.hex).join(''))}`}>
-            {line.map((b, i) => (
-              <span key={i} className={BYTE_STYLE[b.field]}>
+          <span className="text-muted-foreground" aria-label={`As text: ${hexToText(line.map(({ byte }) => byte.hex).join(''))}`}>
+            {line.map(({ byte: b, at }) => (
+              <span key={at} className={`${BYTE_STYLE[b.field]}${mark(at)}`}>
                 {hexToText(b.hex)}
               </span>
             ))}
@@ -399,9 +407,23 @@ function ByteGrid({ bytes }: { bytes: TaggedByte[] }) {
   )
 }
 
-function FrameAnatomy({ frames, frame, onSelect }: { frames: Frame[]; frame: Frame; onSelect: (index: number) => void }) {
+function FrameAnatomy({
+  frames,
+  frame,
+  onSelect,
+  offsets,
+  patternBits,
+}: {
+  frames: Frame[]
+  frame: Frame
+  onSelect: (index: number) => void
+  offsets: readonly number[]
+  patternBits: number
+}) {
+  const [view, setView] = useState<ByteView>('hex')
   const a = useMemo(() => frameAnatomy(frame), [frame])
   const bytes = useMemo(() => taggedBytes(frame), [frame])
+  const hits = useMemo(() => hitBytes(offsets, patternBits), [offsets, patternBits])
   const selectId = useId()
   return (
     <section aria-labelledby="bs-anatomy-title" className="min-w-0">
@@ -431,7 +453,20 @@ function FrameAnatomy({ frames, frame, onSelect }: { frames: Frame[]; frame: Fra
       </p>
       <AnatomyBar a={a} />
       <div className="mt-2">
-        <ByteGrid bytes={bytes} />
+        <div className="mb-1 flex items-center gap-1 text-2xs" role="group" aria-label="Show the bytes as">
+          {(['hex', 'bits'] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              aria-pressed={view === v}
+              onClick={() => setView(v)}
+              className={`rounded-[3px] border px-1.5 py-0.5 font-medium ${view === v ? 'border-primary bg-primary/10 text-foreground' : 'border-border-strong text-muted-foreground hover:text-foreground'}`}
+            >
+              {v === 'hex' ? 'Hex' : 'Bits'}
+            </button>
+          ))}
+        </div>
+        <ByteGrid bytes={bytes} view={view} hits={hits} />
       </div>
       <p className="mt-1 text-2xs text-subtle-foreground">
         Bytes are coloured and marked by field: <span className="font-semibold text-primary">sync</span> in bold,{' '}
@@ -442,10 +477,89 @@ function FrameAnatomy({ frames, frame, onSelect }: { frames: Frame[]; frame: Fra
   )
 }
 
+/** Look for a bit pattern across every listed frame: the analyst's own search, so a hit is a place to
+ * look and never evidence by itself. */
+function PatternSearch({
+  frames,
+  text,
+  onText,
+  onPick,
+  selected,
+}: {
+  frames: Frame[]
+  text: string
+  onText: (t: string) => void
+  onPick: (index: number) => void
+  selected: number
+}) {
+  const inputId = useId()
+  const pattern = useMemo(() => parsePattern(text), [text])
+  const found = useMemo(() => (pattern ? findPattern(frames, pattern) : []), [frames, pattern])
+  const total = found.reduce((n, h) => n + h.offsets.length, 0)
+  return (
+    <section aria-labelledby="bs-find-title" className="relative min-w-0">
+      <h3 id="bs-find-title" className="eyebrow mb-1">
+        Find a pattern
+      </h3>
+      <div className="flex flex-wrap items-center gap-2">
+        <label htmlFor={inputId} className="sr-only">
+          Pattern to search for, as hex bytes or bits with a 0b prefix
+        </label>
+        <input
+          id={inputId}
+          value={text}
+          onChange={(e) => onText(e.target.value)}
+          spellCheck={false}
+          autoComplete="off"
+          placeholder="1A CF FC 1D, or 0b10110"
+          aria-invalid={text.trim() !== '' && !pattern}
+          className="num w-56 max-w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-xs"
+        />
+        <p role="status" className="text-xs text-muted-foreground">
+          {text.trim() === '' ? (
+            'Search every listed frame, at any bit offset.'
+          ) : !pattern ? (
+            'Not a pattern: write whole hex bytes (1A CF), or bits after 0b (0b1010).'
+          ) : found.length === 0 ? (
+            <>No match in {integer.format(frames.length)} frames.</>
+          ) : (
+            <>
+              <span className="num text-foreground">{integer.format(total)}</span> hit{total === 1 ? '' : 's'} in{' '}
+              <span className="num text-foreground">{integer.format(found.length)}</span> of {integer.format(frames.length)} frames.
+            </>
+          )}
+        </p>
+      </div>
+      {found.length > 0 && (
+        <ul className="mt-1.5 flex max-h-16 flex-wrap gap-1 overflow-auto" aria-label="Frames with a hit">
+          {found.map(({ frame, offsets }) => (
+            <li key={frame.index}>
+              <button
+                type="button"
+                onClick={() => onPick(frame.index)}
+                aria-pressed={frame.index === selected}
+                title={`Frame ${frame.index}: ${offsets.length} hit${offsets.length === 1 ? '' : 's'} at bit ${offsets.join(', ')}`}
+                className={`num rounded-[3px] border px-1.5 py-px text-2xs ${frame.index === selected ? 'border-primary bg-primary/10 text-foreground' : 'border-border-strong text-muted-foreground hover:text-foreground'}`}
+              >
+                #{frame.index}
+                {offsets.length > 1 ? ` ×${offsets.length}` : ''}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-1 text-2xs text-subtle-foreground">
+        Searches the sync word, header and payload bytes as listed (not the CRC). A match shows where a pattern sits; it proves nothing on its own.
+      </p>
+    </section>
+  )
+}
+
 /** How the frames sit in the bit stream and how the sync word recurs, from `detection.frames` alone. */
 export function BitstreamView({ detection }: { detection: Detection }) {
   const frames = detection.frames
   const [picked, setPicked] = useState<number | null>(null)
+  const [query, setQuery] = useState('')
   const recur = useMemo(() => recurrence(frames), [frames])
 
   if (frames.length === 0) {
@@ -464,6 +578,8 @@ export function BitstreamView({ detection }: { detection: Detection }) {
 
   const current = frames.find((f) => f.index === picked) ?? defaultFrame(frames)
   const frameStage = detection.stages.find((s) => s.id === 'frame')
+  const pattern = parsePattern(query)
+  const here = pattern && current ? (findPattern([current], pattern)[0]?.offsets ?? []) : []
   return (
     <div className="@container space-y-3 px-3 py-2.5">
       <section aria-labelledby="bs-timeline-title">
@@ -475,8 +591,11 @@ export function BitstreamView({ detection }: { detection: Detection }) {
       </section>
       <div className="grid grid-cols-1 gap-x-6 gap-y-3 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
         <Recurrences r={recur} frameStage={frameStage} />
-        {current && <FrameAnatomy frames={frames} frame={current} onSelect={setPicked} />}
+        {current && (
+          <FrameAnatomy frames={frames} frame={current} onSelect={setPicked} offsets={here} patternBits={pattern?.bits.length ?? 0} />
+        )}
       </div>
+      <PatternSearch frames={frames} text={query} onText={setQuery} onPick={setPicked} selected={current?.index ?? -1} />
     </div>
   )
 }

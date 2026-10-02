@@ -865,6 +865,15 @@ test('a known-system sample shows its decoded messages and the bit stream, witho
   await expect(page.getByRole('region', { name: 'Decoded message' })).toContainText('GALE WARNING ARABIAN SEA')
   await page.getByRole('tab', { name: /^Bit stream/ }).click()
   await expect(page.getByText('Sync-word recurrence', { exact: false }).first()).toBeVisible()
+  // The pattern search: "GALE" in ASCII hex is found, and the bytes can be shown as bits.
+  const find = page.getByLabel(/^Pattern to search for/)
+  await find.fill('47 41 4C 45')
+  await expect(page.getByRole('status').filter({ hasText: /hits? in/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Bits', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Frame bytes' })).toContainText('01000111')
+  await find.fill('4')
+  await expect(page.getByText(/Not a pattern/)).toBeVisible()
+  await find.fill('')
   for (const size of SIZES) {
     await page.setViewportSize(size)
     // The charts re-measure a moment after the resize, so wait for the settled layout.

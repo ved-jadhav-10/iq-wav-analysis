@@ -202,3 +202,59 @@ export function taggedBytes(f: Frame): TaggedByte[] {
     ...body.map((hex) => ({ hex, field: 'payload' as const })),
   ]
 }
+
+/** A frame's bytes as one string of '0' and '1', most significant bit first. */
+export function bytesToBits(bytes: readonly string[]): string {
+  return bytes.map((b) => parseInt(b, 16).toString(2).padStart(8, '0')).join('')
+}
+
+export interface Pattern {
+  /** The pattern as bits. */
+  bits: string
+  /** How the analyst wrote it. */
+  kind: 'hex' | 'binary'
+}
+
+/** Parse a search pattern: hex bytes ("1A CF FC 1D", "0x1ACF") or bits with a "0b" prefix ("0b1010 0011").
+ * Null for an empty, odd-digit or otherwise unreadable pattern, so the view says what it expects
+ * rather than searching for something other than what was typed. */
+export function parsePattern(text: string): Pattern | null {
+  const t = text.trim()
+  if (!t) return null
+  if (/^0b/i.test(t)) {
+    const bits = t.slice(2).replace(/[\s_]/g, '')
+    return /^[01]+$/.test(bits) ? { bits, kind: 'binary' } : null
+  }
+  const digits = t.replace(/^0x/i, '').replace(/[\s_]/g, '')
+  if (!/^[0-9a-fA-F]+$/.test(digits) || digits.length % 2 !== 0) return null
+  return { bits: bytesToBits(hexBytes(digits)), kind: 'hex' }
+}
+
+export interface FrameHits {
+  frame: Frame
+  /** Bit offsets into the frame's listed bytes (sync word first) where the pattern starts, overlapping hits included. */
+  offsets: number[]
+}
+
+/** Every place the pattern occurs in each frame's listed bytes, at any bit offset (so a pattern
+ * shifted off the byte boundary is still found). Frames with no hit are left out. Only the bytes
+ * the frame table lists are searched: not the CRC, nor anything the engine did not report. */
+export function findPattern(frames: readonly Frame[], pattern: Pattern): FrameHits[] {
+  const out: FrameHits[] = []
+  for (const frame of frames) {
+    const bits = bytesToBits(taggedBytes(frame).map((b) => b.hex))
+    const offsets: number[] = []
+    for (let at = bits.indexOf(pattern.bits); at !== -1; at = bits.indexOf(pattern.bits, at + 1)) offsets.push(at)
+    if (offsets.length > 0) out.push({ frame, offsets })
+  }
+  return out
+}
+
+/** The bytes (by index) that any hit at `offsets` touches, for highlighting. */
+export function hitBytes(offsets: readonly number[], patternBits: number): Set<number> {
+  const touched = new Set<number>()
+  for (const at of offsets) {
+    for (let b = Math.floor(at / 8); b <= Math.floor((at + patternBits - 1) / 8); b++) touched.add(b)
+  }
+  return touched
+}

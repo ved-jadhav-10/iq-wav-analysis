@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Frame } from './analysis'
-import { defaultFrame, frameAnatomy, hexBytes, MIN_FRAMES_FOR_RECURRENCE, recurrence, streamExtent, taggedBytes } from './bitstream'
+import { defaultFrame, findPattern, frameAnatomy, hexBytes, hitBytes, parsePattern, type Pattern, MIN_FRAMES_FOR_RECURRENCE, recurrence, streamExtent, taggedBytes } from './bitstream'
 
 function frame(over: Partial<Frame> = {}): Frame {
   return {
@@ -178,5 +178,39 @@ describe('taggedBytes and defaultFrame', () => {
     expect(defaultFrame(fs)?.index).toBe(2)
     expect(defaultFrame([frame({ index: 9, crc: 'fail' })])?.index).toBe(9)
     expect(defaultFrame([])).toBeNull()
+  })
+})
+
+describe('pattern search', () => {
+  it('reads hex bytes and 0b bits, and refuses what it cannot read', () => {
+    expect(parsePattern('1A CF')?.bits).toBe('0001101011001111')
+    expect(parsePattern('0x1acf')?.kind).toBe('hex')
+    expect(parsePattern('0b1010 0011')).toEqual({ bits: '10100011', kind: 'binary' })
+    expect(parsePattern('')).toBeNull()
+    expect(parsePattern('1AC')).toBeNull()
+    expect(parsePattern('0b102')).toBeNull()
+    expect(parsePattern('hello')).toBeNull()
+  })
+
+  it('finds a hex pattern in the sync word, header and payload, counting overlapping hits', () => {
+    const f = frame({ syncWord: '1ACFFC1D', headerHex: '', payloadHex: '414141' })
+    const hits = findPattern([f], parsePattern('41 41') as Pattern)
+    expect(hits).toHaveLength(1)
+    expect(hits[0].offsets).toEqual([32, 40])
+    expect(findPattern([f], parsePattern('1ACFFC1D') as Pattern)[0].offsets).toEqual([0])
+  })
+
+  it('finds a pattern that is off the byte boundary', () => {
+    const f = frame({ syncWord: 'not hex', payloadHex: '0F' }) // 0000 1111
+    expect(findPattern([f], parsePattern('0b0111') as Pattern)[0].offsets).toEqual([3])
+  })
+
+  it('leaves out frames with no hit and highlights only the bytes a hit touches', () => {
+    const a = frame({ index: 1, syncWord: 'x', payloadHex: 'AABBCC' })
+    const b = frame({ index: 2, syncWord: 'x', payloadHex: '112233' })
+    const hits = findPattern([a, b], parsePattern('BB') as Pattern)
+    expect(hits.map((h) => h.frame.index)).toEqual([1])
+    expect([...hitBytes([4], 8)]).toEqual([0, 1])
+    expect([...hitBytes(hits[0].offsets, 8)]).toEqual([1])
   })
 })
