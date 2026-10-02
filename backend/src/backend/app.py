@@ -16,7 +16,10 @@ from dsp.evidence import CamelModel, Parameter
 from dsp.frame_table import MEDIA_TYPES, ExportFormat, render
 from dsp.report import DetectionReport
 from dsp.results import Assumptions
+from dsp.results_table import render_csv
+from dsp.summary import render_summary
 
+from .analysis import results_of
 from .inputs import FormatUnknownError, RecordingError, expand
 from .recordings import Recording, RecordingStore
 from .uploads import DEFAULT_MAX_UPLOAD_BYTES, UploadError, UploadStore
@@ -326,6 +329,37 @@ def create_app(
             _progress_events(recording),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache"},
+        )
+
+    @app.get(f"{API_PREFIX}/recordings/{{recording_id}}/results")
+    def get_results(recording_id: str, format: Literal["json", "csv", "txt"] = "json") -> Response:
+        """The results document as a download: JSON is the schema-versioned document `sanket
+        analyse` writes, CSV one row per reported value (`dsp.results_table`), text a
+        plain-language summary (`dsp.summary`). Held back while
+        the decode chain is still running, so a download is never a partial analysis."""
+        recording = store.get(recording_id)
+        if recording is None:
+            raise HTTPException(status_code=404, detail="no such recording")
+        reports = recording.analyses
+        if any(report is None for report in reports):
+            raise HTTPException(status_code=409, detail="the analysis has not finished")
+        results = results_of(
+            recording.assumptions,
+            recording.container,
+            recording.num_samples,
+            len(recording.detections),
+            [report for report in reports if report is not None],
+        )
+        stem = re.sub(r"[^A-Za-z0-9._-]+", "_", recording.path.stem) or "recording"
+        content, media_type, name = {
+            "json": (results.to_json, "application/json", f"{stem}.results.json"),
+            "csv": (lambda: render_csv(results), "text/csv", f"{stem}.results.csv"),
+            "txt": (lambda: render_summary(results), "text/plain", f"{stem}.summary.txt"),
+        }[format]
+        return Response(
+            content=content(),
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{name}"'},
         )
 
     @app.get(f"{API_PREFIX}/recordings/{{recording_id}}/detections/{{index}}/frames")

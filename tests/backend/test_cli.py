@@ -297,3 +297,27 @@ def test_analyse_states_why_a_signal_has_no_frames_or_search(
     assert signal["frames"] == [] and signal["noFramesReason"]
     assert (signal["search"] is None) == bool(signal["noSearchReason"])
     assert signal["level"] != "VERIFIED"  # nothing was decoded, so nothing is proven
+
+
+def test_analyse_csv_writes_the_values_table_beside_the_results(
+    tmp_path: Path, sigmf_path: Path
+) -> None:
+    out = tmp_path / "out"
+    assert cli.main(["analyse", str(sigmf_path), "--out", str(out)]) == 0
+    assert not (out / "rec.results.csv").exists()  # only when asked
+    assert cli.main(["analyse", str(sigmf_path), "--out", str(out), "--csv"]) == 0
+    table = (out / "rec.results.csv").read_text(encoding="utf-8").splitlines()
+    assert table[0].startswith("signal,stage,id,name,value")
+    assert any(line.startswith(",assumptions,sample_rate,") for line in table)
+    assert any(line.startswith("signal_0,estimate,carrier,") for line in table)
+
+
+def test_analyse_summary_writes_plain_text_beside_the_results(
+    tmp_path: Path, sigmf_path: Path
+) -> None:
+    out = tmp_path / "out"
+    assert cli.main(["analyse", str(sigmf_path), "--out", str(out)]) == 0
+    assert not (out / "rec.summary.txt").exists()  # only when asked
+    assert cli.main(["analyse", str(sigmf_path), "--out", str(out), "--summary"]) == 0
+    text = (out / "rec.summary.txt").read_text(encoding="utf-8")
+    assert text.startswith("Sanket ") and "Signal 1 (signal_0)" in text

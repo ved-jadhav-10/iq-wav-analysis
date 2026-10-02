@@ -241,44 +241,57 @@ def analyse_recording(
     )
     assumptions = assumptions_with(source.assumptions, entries, inferred)
     sample_rate = numeric_rate(assumptions)
+    reports: list[DetectionReport] = []
+    if sample_rate is not None:
+        for i, d in enumerate(detections):
+            reports.append(
+                analyse_detection(
+                    source,
+                    d,
+                    sample_rate=sample_rate,
+                    swap_iq=swap_iq,
+                    rate_basis=rate_note(assumptions),
+                )
+            )
+            if on_detection:
+                on_detection(i + 1, len(detections))
+    return results_of(assumptions, container, samples, len(detections), reports), reports
+
+
+def results_of(
+    assumptions: Assumptions,
+    container: str,
+    samples: int,
+    detections: int,
+    reports: Sequence[DetectionReport],
+) -> Results:
+    """The results document for a recording whose `detections` bands have `reports`, in order.
+    With no reports the bands were found and not analysed (the sample rate is UNKNOWN), and the
+    detect stage says so."""
     ingest = StageResult(
         id="ingest",
         name="Ingest",
         status="done",
         summary=f"{container}: {samples:,} samples",
     )
-    if sample_rate is None:
+    if not reports and numeric_rate(assumptions) is None:
         detect_stage = StageResult(
             id="detect",
             name="Detect",
             status="done",
-            summary=f"{len(detections)} band(s) found, not analysed: the sample rate is UNKNOWN",
+            summary=f"{detections} band(s) found, not analysed: the sample rate is UNKNOWN",
         )
         return Results(
             sanket_version=version("sanket-backend"),
             assumptions=assumptions,
             stages=(ingest, detect_stage),
-        ), ()
-    reports: list[DetectionReport] = []
-    for i, d in enumerate(detections):
-        reports.append(
-            analyse_detection(
-                source,
-                d,
-                sample_rate=sample_rate,
-                swap_iq=swap_iq,
-                rate_basis=rate_note(assumptions),
-            )
         )
-        if on_detection:
-            on_detection(i + 1, len(detections))
     detect_stage = StageResult(
-        id="detect", name="Detect", status="done", summary=f"{len(detections)} signal(s) found"
+        id="detect", name="Detect", status="done", summary=f"{detections} signal(s) found"
     )
-    results = Results(
+    return Results(
         sanket_version=version("sanket-backend"),
         assumptions=assumptions,
         stages=(ingest, detect_stage),
         signals=tuple(signal_of(i, r) for i, r in enumerate(reports)),
     )
-    return results, reports

@@ -1,9 +1,19 @@
 import { useState, type FormEvent } from 'react'
-import { FileAudio, FolderOpen, Moon, Sun, Upload, WifiOff } from 'lucide-react'
+import { Download, FileAudio, FolderOpen, Moon, Sun, Upload, WifiOff } from 'lucide-react'
 import { BRAND } from '@/brand'
 import { useTheme } from '@/hooks/theme'
 import { VIEWS, type ViewId } from '@/lib/views'
 import { Logo } from './Logo'
+
+const RESULT_FORMATS = [
+  {
+    format: 'json',
+    label: 'JSON',
+    hint: 'The results document: every value with its evidence level, the ledger and the frames (the file sanket analyse writes)',
+  },
+  { format: 'csv', label: 'CSV', hint: 'One row per reported value, with its level, proof and convention' },
+  { format: 'txt', label: 'Summary', hint: 'A plain-language summary: what was proved, what was only estimated, what is unknown' },
+] as const
 
 interface Props {
   fileName: string
@@ -19,6 +29,9 @@ interface Props {
   /** Files chosen from the picker (a SigMF pair arrives as two); dropped files reach App directly. */
   onUpload: (files: File[]) => void
   onOpenSettings: () => void
+  /** Where the finished analysis' results download from, by format; absent for the demo and
+   * while the analysis is still running (the server holds a partial analysis back). */
+  resultsUrl?: (format: 'json' | 'csv' | 'txt') => string
 }
 
 export function TopBar({
@@ -32,6 +45,7 @@ export function TopBar({
   onOpen,
   onUpload,
   onOpenSettings,
+  resultsUrl,
 }: Props) {
   const { theme, toggle } = useTheme()
   const [path, setPath] = useState('')
@@ -150,6 +164,23 @@ export function TopBar({
       )}
 
       <div className="ml-auto flex items-center gap-2">
+        {resultsUrl && (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground max-md:hidden">
+            <Download className="size-3.5" aria-hidden />
+            <span>Results</span>
+            {RESULT_FORMATS.map((f) => (
+              <a
+                key={f.format}
+                href={resultsUrl(f.format)}
+                download
+                title={f.hint}
+                className="rounded-md border border-border-strong px-1.5 py-0.5 text-2xs font-medium uppercase hover:bg-surface-2 hover:text-foreground"
+              >
+                {f.label}
+              </a>
+            ))}
+          </div>
+        )}
         <span
           className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs font-medium text-muted-foreground max-md:hidden"
           title="This build loads nothing from the network: fonts, code and data are all bundled."

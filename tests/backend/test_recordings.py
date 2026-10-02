@@ -1,5 +1,7 @@
 """Opening a recording and fetching its tiles over the API (PLAN §5 M2)."""
 
+import csv
+import io
 import json
 import wave
 from collections.abc import Callable
@@ -11,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 from numpy.typing import NDArray
 
+from backend import cli
 from backend.app import create_app
 from dsp.ingest.formats import SampleFormat
 
@@ -562,3 +565,43 @@ def test_noise_alone_never_yields_a_hypothesis_rate(client: TestClient, tmp_path
     body = client.post("/api/v1/recordings", json={"path": str(path)}).json()
     assert body["sampleRate"] is None
     assert body["assumptions"]["sampleRate"]["level"] == "UNKNOWN"
+
+
+def test_the_results_download_is_the_document_sanket_analyse_writes(
+    client: TestClient, framed_path: Path, tmp_path: Path
+) -> None:
+    opened = open_and_finish(client, framed_path)
+    url = f"/api/v1/recordings/{opened['id']}/results"
+
+    as_json = client.get(url)
+    assert as_json.headers["content-type"] == "application/json"
+    assert 'filename="framed.results.json"' in as_json.headers["content-disposition"]
+    assert cli.main(["analyse", str(framed_path), "--out", str(tmp_path / "cli")]) == 0
+    written = (tmp_path / "cli" / "framed.results.json").read_text(encoding="utf-8")
+    assert as_json.text == written  # the UI's export and the CLI's file are the same bytes
+    data = as_json.json()
+    assert data["signals"][0]["level"] == "VERIFIED"
+    assert data["signals"][0]["frames"] == opened["detections"][0]["analysis"]["frames"]
+
+    as_csv = client.get(url, params={"format": "csv"})
+    assert as_csv.headers["content-type"].startswith("text/csv")
+    assert 'filename="framed.results.csv"' in as_csv.headers["content-disposition"]
+    rows = list(csv.DictReader(io.StringIO(as_csv.text)))
+    assert [r["stage"] for r in rows if r["id"] == "headline"] == ["headline"]
+    verified = [r for r in rows if r["level"] == "VERIFIED"]
+    assert verified and all(r["proof"] for r in verified)
+
+    as_text = client.get(url, params={"format": "txt"})
+    assert as_text.headers["content-type"].startswith("text/plain")
+    assert 'filename="framed.summary.txt"' in as_text.headers["content-disposition"]
+    assert "Signal 1 (signal_0), VERIFIED:" in as_text.text
+    assert "pass their CRC" in as_text.text
+
+
+def test_results_of_something_that_is_not_there_or_not_a_format_are_refused(
+    client: TestClient, sigmf_path: Path
+) -> None:
+    assert client.get("/api/v1/recordings/nope/results").status_code == 404
+    opened = open_and_finish(client, sigmf_path)
+    url = f"/api/v1/recordings/{opened['id']}/results"
+    assert client.get(url, params={"format": "xml"}).status_code == 422

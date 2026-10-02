@@ -99,6 +99,8 @@ def demodulate(x: Complex, rate: float, order: int | None = None) -> FskSymbols:
     boundary = (anchor + offsets) / SPS  # symbols
     centres = (np.arange(blocks) + 0.5) * TIMING_BLOCK
     keep = np.abs(offsets - np.median(offsets)) < SPS / 4  # blocks too noisy to place the spike
+    if not keep.any():  # an even count whose median lies between two distant spikes
+        raise ValueError(f"no timing block agrees with the others ({blocks} blocks)")
     trend = np.polyfit(centres[keep], boundary[keep], 1) if keep.sum() >= 2 else (0.0, anchor / SPS)
     jitter = float(np.std(boundary[keep] - np.polyval(trend, centres[keep])))
     boundary = np.polyval(trend, centres)

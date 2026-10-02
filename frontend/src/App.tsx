@@ -556,6 +556,11 @@ export default function App() {
         onOpen={(path, sequence) => void openPath(path, false, sequence)}
         onUpload={(files) => void upload(files)}
         onOpenSettings={() => setAssumptionsModalOpen(true)}
+        resultsUrl={
+          recording && recording.info.analysis.state === 'done'
+            ? (format) => `/api/v1/recordings/${recording.info.id}/results?format=${format}`
+            : undefined
+        }
       />
       {formatNeeded && (
         <FormatPrompt

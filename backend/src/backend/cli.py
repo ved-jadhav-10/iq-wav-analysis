@@ -11,6 +11,8 @@ from backend.analysis import Entries, analyse_recording
 from backend.app import create_app, default_workspace
 from backend.inputs import FormatUnknownError, Input, RecordingError, expand, open_input
 from dsp.frame_table import FORMATS, render
+from dsp.results_table import render_csv
+from dsp.summary import render_summary
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -50,6 +52,16 @@ def main(argv: list[str] | None = None) -> int:
         "--sample-rate", type=_rate, help="S/s the file doesn't state (e.g. 2.4M); entered, checked"
     )
     analyse.add_argument("--center-frequency", type=_rate, help="Hz the file doesn't state")
+    analyse.add_argument(
+        "--csv",
+        action="store_true",
+        help="also write each recording's values as a CSV table, one row per value",
+    )
+    analyse.add_argument(
+        "--summary",
+        action="store_true",
+        help="also write each recording's plain-language summary as text",
+    )
     analyse.add_argument(
         "--frames",
         choices=FORMATS,
@@ -134,7 +146,9 @@ def _analyse(args: argparse.Namespace) -> int:
     written: set[Path] = set()
     for item in items:
         try:
-            _analyse_one(item, entries, args.out, written, args.datatype, args.frames)
+            _analyse_one(
+                item, entries, args.out, written, args.datatype, args.frames, args.csv, args.summary
+            )
         except FormatUnknownError as exc:
             print(f"sanket: {exc}: {', '.join(exc.candidates)} (pass --datatype)", file=sys.stderr)
             failed = True
@@ -151,6 +165,8 @@ def _analyse_one(
     written: set[Path],
     datatype: str | None,
     frame_formats: list[str],
+    csv_table: bool = False,
+    summary: bool = False,
 ) -> None:
     opened = open_input(item, datatype)
     fmt = opened.recording.sample_format
@@ -162,6 +178,14 @@ def _analyse_one(
     )
     target = _unused(out / f"{item.paths[0].stem}.results.json", written)
     target.write_text(results.to_json(), encoding="utf-8")
+    if csv_table:
+        target.with_name(target.name.removesuffix(".json") + ".csv").write_text(
+            render_csv(results), encoding="utf-8"
+        )
+    if summary:
+        target.with_name(target.name.removesuffix(".results.json") + ".summary.txt").write_text(
+            render_summary(results), encoding="utf-8"
+        )
     print(f"{item.name}: {len(reports)} signal(s) -> {target}")
     for i, report in enumerate(reports):
         print(f"  signal_{i}: {report.level.value} {report.headline}")
