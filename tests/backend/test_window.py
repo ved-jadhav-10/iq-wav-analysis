@@ -242,3 +242,21 @@ def test_server_only_opens_nothing(
 def test_browser_and_no_open_are_exclusive() -> None:
     with pytest.raises(SystemExit):
         cli.main(["--browser", "--no-open"])
+
+
+def test_the_window_is_shrunk_to_fit_the_screen_it_opens_on() -> None:
+    # A 1536 x 960 laptop screen (125 % scaling, taskbar included) cannot hold 1440 x 900.
+    assert window.fit_size((1536, 960)) == (1440, 806)
+    assert window.fit_size((1920, 1080)) == (1440, 900)
+    assert window.fit_size((3840, 2160)) == window.SIZE
+    # Tiny or unknown screens never go below the minimum, and none known gives the default.
+    assert window.fit_size((800, 600)) == window.MIN_SIZE
+    assert window.fit_size(None) == window.SIZE
+
+
+def test_the_window_asks_the_gui_for_the_fitted_size(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = fake_webview(monkeypatch)
+    sys.modules["webview"].screens = [types.SimpleNamespace(width=1536, height=960)]  # type: ignore[attr-defined]
+    window.run("http://127.0.0.1:8765")
+    _title, _url, kw = seen["create"]
+    assert (kw["width"], kw["height"]) == (1440, 806)

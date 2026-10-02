@@ -23,6 +23,26 @@ MIN_SIZE = (1024, 640)
 GUI = {"win32": "edgechromium", "linux": "gtk"}
 
 
+def fit_size(screen: tuple[int, int] | None) -> tuple[int, int]:
+    """The window's size for a screen of `screen` (width, height) in the units the GUI lays windows
+    out in: the default size, shrunk to leave room for the taskbar and the title bar (a 900 px
+    window does not fit a 960 px laptop screen with its taskbar, and its status bar ends up hidden),
+    never below the minimum. No screen known: the default."""
+    if screen is None:
+        return SIZE
+    width = max(MIN_SIZE[0], min(SIZE[0], int(screen[0] * 0.94)))
+    height = max(MIN_SIZE[1], min(SIZE[1], int(screen[1] * 0.84)))
+    return width, height
+
+
+def _primary_screen(webview: Any) -> tuple[int, int] | None:
+    try:
+        primary = webview.screens[0]
+        return int(primary.width), int(primary.height)
+    except Exception:  # no screens API, or none reported: use the default size
+        return None
+
+
 class WindowUnavailable(Exception):
     """No window could be made (no pywebview, no web runtime); the message says why."""
 
@@ -47,8 +67,9 @@ def run(url: str, storage: Path | None = None, busy: Callable[[], bool] | None =
     except ImportError:
         raise WindowUnavailable("pywebview is not installed (uv sync --extra window)") from None
     try:
+        width, height = fit_size(_primary_screen(webview))
         window = webview.create_window(
-            TITLE, url, width=SIZE[0], height=SIZE[1], min_size=MIN_SIZE, text_select=True
+            TITLE, url, width=width, height=height, min_size=MIN_SIZE, text_select=True
         )
         # The page may link out; whatever the window ends up on that isn't ours is sent back.
         window.events.loaded += lambda: _keep_local(window, url)
