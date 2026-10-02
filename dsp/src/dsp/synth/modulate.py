@@ -21,6 +21,9 @@ Complex = NDArray[np.complex128]
 
 BITS_PER_SYMBOL = {"bpsk": 1, "qpsk": 2, "8psk": 3, "16qam": 4, "64qam": 6}
 LINEAR = tuple(BITS_PER_SYMBOL)
+# Offset QPSK carries QPSK's symbols with the Q stream a half symbol late (`pulse_shape_offset`);
+# it is a linear modulation with its own pulse shaping, so it stays out of LINEAR.
+OFFSET = "oqpsk"
 
 
 def gray(n: NDArray[Any]) -> NDArray[np.int64]:
@@ -81,6 +84,18 @@ def pulse_shape(symbols: Complex, sps: int, shape: str, rolloff: float, span: in
         raise ValueError(f"unknown pulse shape {shape!r}")
     taps = rrc_taps(sps, rolloff, span) * np.sqrt(sps)
     return np.convolve(up, taps)[span * sps // 2 : span * sps // 2 + len(up)]
+
+
+def pulse_shape_offset(
+    symbols: Complex, sps: int, shape: str, rolloff: float, span: int = 16
+) -> Complex:
+    """Offset QPSK: the I and Q streams shaped alike, Q delayed by half a symbol (`sps` even), so
+    I peaks at k * sps and Q at k * sps + sps / 2."""
+    if sps % 2:
+        raise ValueError("offset QPSK needs an even number of samples per symbol")
+    i = pulse_shape(symbols.real.astype(np.complex128), sps, shape, rolloff, span)
+    q = pulse_shape(symbols.imag.astype(np.complex128), sps, shape, rolloff, span)
+    return i + 1j * np.concatenate([np.zeros(sps // 2, np.complex128), q[: len(q) - sps // 2]])
 
 
 def _gaussian_taps(sps: int, bt: float, span_symbols: int = 3) -> NDArray[np.float64]:

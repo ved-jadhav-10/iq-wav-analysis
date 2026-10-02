@@ -17,7 +17,7 @@ skips the digital chain.
 import math
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -41,8 +41,18 @@ from dsp.deinterleave import (
     deinterleave,
     deinterleave_forney,
 )
-from dsp.demod import BITS_PER_SYMBOL, ORDERS, demap, rotate, rotations
+from dsp.demod import (
+    BITS_PER_SYMBOL,
+    OFFSET_QPSK,
+    OFFSET_QPSK_I_LATE,
+    ORDERS,
+    base_modulation,
+    demap,
+    rotate,
+    rotations,
+)
 from dsp.detect import Detection, detection_parameters
+from dsp.estimate.offset import OffsetRate, offset_symbol_rate
 from dsp.estimate.params import (
     SymbolRate,
     cumulants,
@@ -106,6 +116,9 @@ MIN_SYMBOLS = 512
 MIN_ENVELOPE_VARIATION = 0.01  # std / mean of |x|² below which a symbol-rate line isn't real
 WEAK_ENVELOPE_LINE = 50.0  # |x|² line ratio below which the line doesn't rule out FSK
 CODES: tuple[ConvCode | None, ...] = (K7_R12, None)
+# Modulations whose 180° branch is the 0° branch inverted bit for bit (Gray QPSK's two bits both
+# flip), which the K=7 code's odd-weight generators and the inverted sync word already cover.
+INVERTING = ("BPSK", "QPSK")
 # Interleavers (dsp.deinterleave.CATALOGUE: block, helical, 802.11, QPP; FORNEY_CATALOGUE:
 # convolutional) are tried after the convolutional code; alignment by the code's parity
 # syndrome, which sits near 0.5 when misaligned.
@@ -154,6 +167,27 @@ def analyse(
     # verdict stands on its own. AM is a varying envelope, which RRC ripple also gives, so an AM
     # verdict needs the absence of a symbol-rate line in |x|² as well.
     rate = symbol_rate(x)
+    # A line in |x|^2 that is weak is noise (at high oversampling a noisy FSK signal shows one of
+    # ratio ~20, where a linear modulation's is in the hundreds to thousands): it is no reason to
+    # skip the FSK trial. The PSK path still uses `rate` if the trial decodes nothing.
+    weak_line = rate is not None and rate.ratio < WEAK_ENVELOPE_LINE
+    # Offset QPSK has no |x|^2 line, so the analog check below would read it as noise-like AM; its
+    # own signature is a pair of lines in x^2, which two FSK tones also make (doubled). So it is
+    # tried where AM would otherwise be the verdict, and otherwise only after the FSK trial: a
+    # decode that verifies is proof either way, and one that fails stands unless FSK has a report.
+    offset_trials: list[DetectionReport | None] = []
+
+    def offset_report() -> DetectionReport | None:
+        if not offset_trials:
+            found = offset_symbol_rate(x) if rate is None or weak_line else None
+            usable = found is not None and found.normalised_rate * len(x) >= MIN_SYMBOLS
+            offset_trials.append(
+                _offset_report(detect_stage, detection, units, x, found)
+                if found is not None and usable
+                else None
+            )
+        return offset_trials[0]
+
     analog = _analog(x, channel, detection)
     if analog is not None and analog[0] == "fm":
         # Noisy tones (M-FSK at moderate SNR) pull the frequency kurtosis toward FM's, so a
@@ -162,6 +196,10 @@ def analyse(
         tried = _fsk_report(detect_stage, detection, units, x, candidates)
         if tried is not None and tried.level is E.VERIFIED:
             return tried
+    if analog is not None and analog[0] == "am" and rate is None:
+        offered = offset_report()
+        if offered is not None:
+            return offered
     if analog is not None and (analog[0] == "fm" or rate is None):
         kind, param = analog
         return DetectionReport(
@@ -178,10 +216,6 @@ def analyse(
             no_frames_reason="An analog signal carries no bits.",
         )
 
-    # A line in |x|^2 that is weak is noise (at high oversampling a noisy FSK signal shows one of
-    # ratio ~20, where a linear modulation's is in the hundreds to thousands): it is no reason to
-    # skip the FSK trial. The PSK path still uses `rate` if the trial decodes nothing.
-    weak_line = rate is not None and rate.ratio < WEAK_ENVELOPE_LINE
     if rate is None or weak_line or _frequency_kurtosis(x, channel, detection) < FSK_KURTOSIS:
         # Constant envelope and not analog, or discrete tones (a bimodal instantaneous
         # frequency; PSK's is spiky, well above 0) even where the channel filter has trimmed
@@ -191,6 +225,9 @@ def analyse(
         if report is not None:
             return report
 
+    offered = offset_report()
+    if offered is not None:
+        return offered
     if rate is None or rate.normalised_rate * len(x) < MIN_SYMBOLS:
         unknown = Parameter(
             id="symbol_rate",
@@ -243,6 +280,43 @@ def analyse(
         timing,
         ranked,
         search,
+    )
+
+
+def _offset_report(
+    detect_stage: StageReport,
+    detection: Detection,
+    units: "_Units",
+    x: Any,
+    offset: OffsetRate,
+) -> DetectionReport:
+    """The chain on an offset-QPSK signal: timing from x², I read at the instant and Q half a
+    symbol later, then the QPSK demapper and the same search as any other linear modulation."""
+    psd = welch(x, 1024)
+    freqs = welch_freqs(len(x), 1024, False)
+    rolloff = rolloff_fit(psd, freqs, offset.normalised_rate)
+    timing = recover_timing(x, offset.normalised_rate, rolloff, offset=True, cfo=offset.cfo)
+    # Which of I and Q is the delayed stream is the quarter turn the carrier phase leaves open: the
+    # two pairings are two modulations in the search, one of which is the transmitted one.
+    ranked = ((OFFSET_QPSK, 0.5), (OFFSET_QPSK_I_LATE, 0.5))
+    symbols = {OFFSET_QPSK: timing.symbols, OFFSET_QPSK_I_LATE: timing.alternate}
+    carriers: dict[str, Carrier] = {}
+    search = _search(
+        _psk_branches(symbols, ranked, carriers),
+        sum(len(rotations(m)) for m, _ in ranked),
+        carriers,
+    )
+    return _report(
+        detect_stage,
+        detection,
+        units,
+        offset.normalised_rate,
+        offset.uncertainty,
+        rolloff,
+        timing,
+        ranked,
+        search,
+        offset,
     )
 
 
@@ -416,13 +490,23 @@ class _Search:
     branches: tuple[Branch, ...] = ()  # every branch the walk demodulated, for Match
 
 
+def _symbols_of(symbols: Any, modulation: str) -> Any:
+    """One modulation's symbols from what `_psk_branches` was given (an array, or a dict)."""
+    if isinstance(symbols, dict):
+        return cast("dict[str, Any]", symbols)[modulation]
+    return symbols
+
+
 def _psk_branches(
     symbols: Any, ranked: tuple[tuple[str, float], ...], carriers: dict[str, Carrier]
 ) -> Iterator[list[Branch]]:
     """Per ranked modulation, best first: each of its carrier rotations as soft bits. Lazy, so
-    modulations after an accepted one are never demodulated; `carriers` records each lock."""
+    modulations after an accepted one are never demodulated; `carriers` records each lock.
+    `symbols` is one array, or one per modulation (offset QPSK's two I/Q pairings)."""
     for modulation, _ in ranked:
-        carrier = correct_carrier(symbols, ORDERS[modulation])
+        carrier = correct_carrier(
+            _symbols_of(symbols, modulation), ORDERS[base_modulation(modulation)]
+        )
         carriers[modulation] = carrier
         yield [
             (modulation, rotation, demap(rotate(carrier.symbols, rotation), modulation).llr)
@@ -498,7 +582,7 @@ def _punctured_cells(branch: Branch) -> list[_Chain]:
     the others are counted as tried."""
     modulation, rotation, soft = branch
     chains: list[_Chain] = []
-    if modulation in ("BPSK", "QPSK") and rotation >= 180:
+    if base_modulation(modulation) in INVERTING and rotation >= 180:
         return chains  # the K=7 code's odd-weight generators make an inverted stream equivalent
     for puncture in PUNCTURES:
         code = puncture.code()
@@ -528,7 +612,7 @@ def _blind_conv_cells(branch: Branch, stats: _BlindStats) -> list[_Chain]:
     that the catalogue doesn't already try; decoded from the block boundary it found, with the
     polarity it found."""
     modulation, rotation, soft = branch
-    if modulation in ("BPSK", "QPSK") and rotation >= 180:
+    if base_modulation(modulation) in INVERTING and rotation >= 180:
         return []  # only inverts every bit of the 0°/90° branch, which the search reads itself
     llr = np.asarray(soft, np.float64)
     if len(llr) < MIN_BLIND_BITS:
@@ -557,7 +641,7 @@ def _blind_block_cells(branch: Branch) -> list[_Chain]:
     """Block interleavers the stream's own structure names (`dsp.blind_interleaver`), less those
     the catalogue already tried, each then aligned and decided like a catalogued one."""
     modulation, rotation, soft = branch
-    if modulation in ("BPSK", "QPSK") and rotation >= 180:
+    if base_modulation(modulation) in INVERTING and rotation >= 180:
         return []  # as for the catalogue: only inverts every bit of the 0°/90° branch
     known = {(e.rows, e.cols) for e in CATALOGUE if isinstance(e, Block)}
     found = find_blocks((np.asarray(soft) < 0).astype(np.uint8))
@@ -571,7 +655,7 @@ def _block_cells(
 ) -> list[_Chain]:
     modulation, rotation, soft = branch
     chains: list[_Chain] = []
-    if modulation in ("BPSK", "QPSK") and rotation >= 180:
+    if base_modulation(modulation) in INVERTING and rotation >= 180:
         # Only inverts every bit of the 0°/90° branch, which the code (odd-weight generators)
         # and the inverted-sync check already cover: counted as tried, not run again.
         return chains
@@ -616,7 +700,7 @@ def _forney_cells(branch: Branch) -> list[_Chain]:
     Viterbi and framing."""
     modulation, rotation, soft = branch
     chains: list[_Chain] = []
-    if modulation in ("BPSK", "QPSK") and rotation >= 180:
+    if base_modulation(modulation) in INVERTING and rotation >= 180:
         return chains  # counted as tried, as for the block interleavers
     llr = np.asarray(soft, np.float64)
     for entry in FORNEY_CATALOGUE:
@@ -1015,6 +1099,20 @@ class _Units:
         return cycles_per_input_sample, "cycles/sample", 1.0
 
 
+def _early(chain: _Chain) -> bool:
+    """An offset-QPSK chain on the pairing that reads the imaginary part half a symbol early."""
+    return chain.modulation == OFFSET_QPSK_I_LATE
+
+
+def _shown(modulation: str) -> str:
+    """The modulation as the reader sees it: both offset-QPSK pairings are `OFFSET_QPSK`."""
+    return (
+        OFFSET_QPSK
+        if base_modulation(modulation) == "QPSK" and "OQPSK" in modulation
+        else modulation
+    )
+
+
 def _stage(
     id: str, name: str, summary: str, level: EvidenceLevel | None, params: tuple[Parameter, ...]
 ) -> StageReport:
@@ -1039,15 +1137,18 @@ def _report(
     timing: Timing,
     ranked: tuple[tuple[str, float], ...],
     search: _Search,
+    offset: OffsetRate | None = None,
 ) -> DetectionReport:
     acc = search.accepted
     rate_value, rate_unit, rate_scale = units.rate(timing.rate)
     modulation = acc.modulation if acc else ranked[0][0]
+    shown = _shown(modulation)  # the two offset-QPSK pairings are one modulation to the reader
     carrier = search.carriers[modulation]
     symbols = rotate(carrier.symbols, acc.rotation if acc else 0)
     soft = demap(symbols, modulation)
     esn0 = -20 * math.log10(max(soft.evm, 1e-3))
-    cfo_cycles = carrier.cfo * timing.rate / units.channel.decimation  # per input sample
+    # per input sample; offset QPSK also had `timing.cfo` (per channel sample) removed up front
+    cfo_cycles = (carrier.cfo * timing.rate + timing.cfo) / units.channel.decimation
     carrier_value, carrier_unit, carrier_scale = units.frequency(units.channel.centre + cfo_cycles)
 
     estimate_params = (
@@ -1058,10 +1159,20 @@ def _report(
             unit=rate_unit,
             uncertainty=max(rate_uncertainty, abs(timing.rate - rate)) * rate_scale,
             level=E.ESTIMATED,
-            method="|x|² spectral line, refined by the timing loop's drift",
+            method=(
+                "|x|² spectral line, refined by the timing loop's drift"
+                if offset is None
+                else "Pair of lines in x² at 2f ± Rs (offset QPSK has no |x|² line), "
+                "refined by the timing loop's drift"
+            ),
             evidence=(
                 f"Timing drift followed: {timing.drift:+.3f} symbols over "
                 f"{len(timing.symbols):,} symbols",
+            )
+            + (
+                ()
+                if offset is None
+                else (f"The weaker x² line of the pair is {offset.ratio:.0f} times its level",)
             ),
         ),
         Parameter(
@@ -1083,7 +1194,9 @@ def _report(
             )
             * carrier_scale,
             level=E.ESTIMATED,
-            method=f"Detection centre plus the M-th power (M={carrier.order}) residual offset",
+            method=f"Detection centre plus the M-th power (M={carrier.order}) residual offset"
+            if offset is None
+            else "Detection centre plus the x² pair's offset and the 4th-power residual",
             evidence=("Relative to the capture centre.",),
         ),
         Parameter(
@@ -1109,10 +1222,12 @@ def _report(
         id="rotation",
         name="Phase ambiguity",
         value=f"{acc.rotation}°"
+        + (", imaginary stream paired a symbol early" if _early(acc) else "")
         if acc
         else f"one of {', '.join(f'{r}°' for r in rotations(modulation))}",
         level=E.HYPOTHESIS,
-        method=f"All {ORDERS[modulation]} rotations of the M-th power phase tried; the CRC decides",
+        method=f"All {len(rotations(modulation))} rotations of the M-th power phase tried; "
+        "the CRC decides",
     )
     timing_param = Parameter(
         id="timing",
@@ -1121,7 +1236,10 @@ def _report(
         unit="symbols RMS jitter",
         uncertainty=round(timing.jitter / 2, 4),
         level=E.ESTIMATED,
-        method="RRC matched filter, Oerder-Meyr square-law timing per 256 symbols, unwrapped",
+        method="RRC matched filter, Oerder-Meyr square-law timing per 256 symbols, unwrapped"
+        if offset is None
+        else "RRC matched filter, timing from the phase of the x² line per 256 symbols, unwrapped; "
+        "Q read half a symbol after I",
     )
     sync_params = (timing_param, promote(phase, proof) if proof else phase)
     sync = _stage(
@@ -1135,22 +1253,26 @@ def _report(
     mod_param = Parameter(
         id="modulation",
         name="Modulation",
-        value=modulation,
+        value=shown,
         level=E.HYPOTHESIS,
-        confidence=round(dict(ranked)[modulation], 2),
-        method="Nearest theoretical fourth-order cumulants (|C40|, -C42) on the carrier-locked "
-        "symbols: BPSK (2, 2), QPSK (1, 1), 8PSK (0, 1), 16QAM (0.68, 0.68), 64QAM (0.62, 0.62); "
-        "tried in rank "
-        "order, the CRC decides",
+        confidence=None if offset else round(dict(ranked)[modulation], 2),
+        method=(
+            "Nearest theoretical fourth-order cumulants (|C40|, -C42) on the carrier-locked "
+            "symbols: BPSK (2, 2), QPSK (1, 1), 8PSK (0, 1), 16QAM (0.68, 0.68), 64QAM "
+            "(0.62, 0.62); tried in rank order, the CRC decides"
+            if offset is None
+            else "No |x|² line but a balanced pair in x²: offset QPSK (I and Q half a symbol "
+            "apart); its symbols are QPSK's once Q is brought back in line, so the CRC decides"
+        ),
         evidence=("|C40| = {:.2f}, -C42 = {:.2f}".format(*_features(timing.symbols)),),
         alternatives=tuple(
-            Alternative(value=m, confidence=round(c, 2)) for m, c in ranked if m != modulation
+            Alternative(value=m, confidence=round(c, 2)) for m, c in ranked if _shown(m) != shown
         ),
     )
     classify = _stage(
         "classify",
         "Classify",
-        f"{modulation}, confirmed by decode" if acc else f"{modulation} (unconfirmed)",
+        f"{shown}, confirmed by decode" if acc else f"{shown} (unconfirmed)",
         E.VERIFIED if acc else E.HYPOTHESIS,
         (promote(mod_param, proof) if proof else mod_param,),
     )
@@ -1162,9 +1284,9 @@ def _report(
         unit="% rms",
         uncertainty=round(100 * soft.evm / math.sqrt(max(len(symbols), 1)) * 2, 2),
         level=E.ESTIMATED,
-        method=f"Error vector against the nearest ideal {modulation} point",
+        method=f"Error vector against the nearest ideal {base_modulation(modulation)} point",
     )
-    n_bits = len(symbols) * BITS_PER_SYMBOL[modulation]
+    n_bits = len(symbols) * BITS_PER_SYMBOL[base_modulation(modulation)]
     demod = _stage(
         "demod",
         "Demodulate",
@@ -1179,27 +1301,27 @@ def _report(
     )
     stages += decode_stages
     findings = Findings(
-        modulation=modulation,
+        modulation=shown,
         symbol_rate=rate_value if rate_unit == "Bd" else None,
         rate_uncertainty=estimate_params[0].uncertainty if rate_unit == "Bd" else None,
     )
-    matched = _run_match([Candidate(modulation, findings, _hard_bits(soft.llr))], search, findings)
+    matched = _run_match([Candidate(shown, findings, _hard_bits(soft.llr))], search, findings)
     stages.append(matched.stage)
     frames = frames or matched.frames
     if matched.verified:
         frames = relayout(frames, matched.verified)
 
     ledger = _ledger(search, matched)
-    label = modulation if acc else f"{modulation}?"
+    label = shown if acc else f"{shown}?"
     if acc and acc.frames:
         code_name = _code_label(acc)
         f = acc.frames
         headline = (
-            f"{modulation} {_fmt_rate(rate_value, rate_unit)} → {code_name} → {f.word.name} "
+            f"{shown} {_fmt_rate(rate_value, rate_unit)} → {code_name} → {f.word.name} "
             f"frames, {f.passes}/{f.complete} CRC pass"
         )
     else:
-        headline = f"{modulation}? {_fmt_rate(rate_value, rate_unit)}, not decoded"
+        headline = f"{shown}? {_fmt_rate(rate_value, rate_unit)}, not decoded"
     headline = _with_system(headline, matched, bool(acc and acc.frames))
     points = symbols[:MAX_CONSTELLATION_POINTS]
     return DetectionReport(
@@ -1215,7 +1337,7 @@ def _report(
         else "No sync word recurred with passing CRCs under any hypothesis, so no frame "
         "boundaries are claimed.",
         constellation=tuple((round(float(p.real), 4), round(float(p.imag), 4)) for p in points),
-        eye=eye_diagram(timing, symbols),
+        eye=None if offset else eye_diagram(timing, symbols),
     )
 
 

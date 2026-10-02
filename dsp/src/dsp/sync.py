@@ -6,6 +6,12 @@ From a channel centred on a detection (`dsp.channel`) and its estimated symbol r
 3. timing: the Oerder-Meyr square-law estimate per block of symbols, unwrapped across blocks,
    so a small symbol-rate error shows up as a drift and is followed; the matched-filter output
    is interpolated at the recovered symbol instants;
+   Offset QPSK (`offset=True`): its |x|² line cancels (I² and Q² peak half a symbol apart), but
+   the line of x² does not: its phase puts the real part's peaks at the timing instants and the
+   imaginary part is read half a symbol later (`Timing.symbols`) or earlier (`Timing.alternate`):
+   which stream leads is the quarter-turn the carrier phase leaves open, so both pairings are
+   returned and the search decides; a carrier offset `cfo` (from `dsp.estimate.offset`) is
+   removed first, and the carrier phase from the fourth power per block (`_block_phase`);
 4. carrier (`correct_carrier`, per PSK order M): the M-th power line gives the residual CFO,
    then the M-th power phase per block, unwrapped, tracks what is left. The M-fold phase
    ambiguity stays: callers try every rotation and let the CRC decide.
@@ -85,10 +91,21 @@ class Timing:
     # and the sample position of each symbol in it (one per entry of `symbols`).
     matched: Complex = field(default_factory=lambda: np.zeros(0, np.complex128), repr=False)
     instants: Float = field(default_factory=lambda: np.zeros(0), repr=False)
+    cfo: float = 0.0  # cycles per channel sample removed before timing (offset QPSK only)
+    # Offset QPSK only: the same instants with the imaginary part read half a symbol earlier, not
+    # later (the pairing when the quarter-turn ambiguity swaps which stream leads).
+    alternate: Complex = field(default_factory=lambda: np.zeros(0, np.complex128), repr=False)
 
 
-def recover_timing(x: Complex, rate: float, rolloff: float) -> Timing:
-    """Symbols from channel samples `x` at `rate` symbols per sample (from `symbol_rate`)."""
+def recover_timing(
+    x: Complex, rate: float, rolloff: float, *, offset: bool = False, cfo: float = 0.0
+) -> Timing:
+    """Symbols from channel samples `x` at `rate` symbols per sample (from `symbol_rate`). With
+    `offset`, the signal is offset QPSK: `cfo` (cycles per sample) is removed first, timing comes
+    from the line of y² and a symbol is the real part at the instant plus j times the imaginary
+    part half a symbol later (`symbols`) or earlier (`alternate`)."""
+    if offset and cfo:
+        x = x * np.exp(-2j * np.pi * cfo * np.arange(len(x)))
     grid = np.arange(0.0, len(x) - 1, 1.0 / (SPS * rate))
     y = interpolate(x, grid)
     y = np.convolve(y, rrc_taps(SPS, rolloff), mode="same")
@@ -96,7 +113,10 @@ def recover_timing(x: Complex, rate: float, rolloff: float) -> Timing:
     if blocks < 2:
         raise ValueError(f"too few symbols for timing recovery ({len(y) // SPS})")
     n = np.arange(blocks * SPS * TIMING_BLOCK)
-    weighted = (np.abs(y[: len(n)]) ** 2 * np.exp(-2j * np.pi * n / SPS)).reshape(blocks, -1)
+    if offset:
+        y = y * np.exp(-1j * _block_phase(y, blocks))
+    energy = y[: len(n)] ** 2 if offset else np.abs(y[: len(n)]) ** 2
+    weighted = (energy * np.exp(-2j * np.pi * n / SPS)).reshape(blocks, -1)
     tau = np.unwrap(-np.angle(weighted.sum(axis=1))) / (2 * np.pi)  # symbols, per block
     centres = (np.arange(blocks) + 0.5) * TIMING_BLOCK
     trend = np.polyfit(centres, tau, 1)
@@ -104,11 +124,37 @@ def recover_timing(x: Complex, rate: float, rolloff: float) -> Timing:
     count = len(y) // SPS - 1
     k = np.arange(count, dtype=np.float64)
     instants = SPS * (k + np.interp(k, centres, tau))
-    keep = (instants >= 0) & (instants <= len(y) - 1)
-    symbols = interpolate(y, instants[keep], anti_alias=False)
+    half = SPS / 2 if offset else 0.0
+    keep = (instants - half >= 0) & (instants + half <= len(y) - 1)
+    at = instants[keep]
+    alternate = np.zeros(0, np.complex128)
+    if offset:
+        re = interpolate(y.real.astype(np.complex128), at, anti_alias=False).real
+        im = y.imag.astype(np.complex128)
+        symbols = re + 1j * interpolate(im, at + half, anti_alias=False).real
+        alternate = re + 1j * interpolate(im, at - half, anti_alias=False).real
+        alternate = alternate / math.sqrt(float(np.mean(np.abs(alternate) ** 2)))
+    else:
+        symbols = interpolate(y, at, anti_alias=False)
     symbols = symbols / math.sqrt(float(np.mean(np.abs(symbols) ** 2)))
     slope = float(trend[0])  # symbols of timing drift per symbol
-    return Timing(symbols, rate * (1 + slope), slope * count, jitter, y, instants[keep])
+    return Timing(
+        symbols, rate * (1 + slope), slope * count, jitter, y, at, cfo, alternate=alternate
+    )
+
+
+def _block_phase(y: Complex, blocks: int) -> Float:
+    """The carrier phase at every sample of `y`, modulo a quarter turn, from the fourth power of
+    each timing block. The line of y² that gives offset QPSK its timing has the phase 2 phi - 2 pi
+    tau, so it needs the carrier phase first; the fourth power does not depend on timing (its time
+    average is -|c| e^(4 j phi), the minus sign being the shaped binary I and Q streams' negative
+    excess kurtosis) and leaves only the quarter-turn ambiguity, which swaps which stream is I
+    and shifts the bit pairing by one, which the callers' rotation and alignment search covers."""
+    size = SPS * TIMING_BLOCK
+    power = (-(y[: blocks * size] ** 4)).reshape(blocks, size).sum(axis=1)
+    phase = np.unwrap(np.angle(power)) / 4
+    centres = (np.arange(blocks) + 0.5) * size
+    return np.interp(np.arange(len(y)), centres, phase)
 
 
 @dataclass(frozen=True)

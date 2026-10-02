@@ -27,6 +27,16 @@ Float = NDArray[np.float64]
 # The M-th power used for carrier recovery; also the number of phase rotations to try.
 ORDERS = {"BPSK": 2, "QPSK": 4, "8PSK": 8, "16QAM": 4, "64QAM": 4}
 BITS_PER_SYMBOL = {"BPSK": 1, "QPSK": 2, "8PSK": 3, "16QAM": 4, "64QAM": 6}
+# Offset QPSK, once its Q samples are brought back in line with I, is QPSK to the demapper: the
+# same points, labels and rotation ambiguity. Only these functions know the alias.
+OFFSET_QPSK = "OQPSK"  # the Q stream half a symbol after I
+OFFSET_QPSK_I_LATE = "OQPSK (I delayed)"  # the I stream half a symbol after Q
+ALIASES = {OFFSET_QPSK: "QPSK", OFFSET_QPSK_I_LATE: "QPSK"}
+
+
+def base_modulation(modulation: str) -> str:
+    """The constellation a modulation's symbols are demapped on."""
+    return ALIASES.get(modulation, modulation)
 
 
 def _gray_position(label: int) -> int:
@@ -62,12 +72,12 @@ def _table(modulation: str) -> tuple[Complex, NDArray[np.uint8]]:
 
 
 def ideal_points(modulation: str) -> Complex:
-    return _table(modulation)[0]
+    return _table(base_modulation(modulation))[0]
 
 
 def rotations(modulation: str) -> tuple[int, ...]:
     """The candidate rotations, in degrees, for the M-fold ambiguity."""
-    order = ORDERS[modulation]
+    order = ORDERS[base_modulation(modulation)]
     return tuple(360 * k // order for k in range(order))
 
 
@@ -95,7 +105,7 @@ def demap(symbols: Complex, modulation: str) -> SoftBits:
     per bit, (distance² to the nearest point carrying a 1 - to the nearest carrying a 0) / σ²."""
     error, variance = evm(symbols, modulation)
     variance = max(variance, 1e-6)
-    points, bits = _table(modulation)
+    points, bits = _table(base_modulation(modulation))
     d = np.abs(symbols[:, None] - points[None, :]) ** 2
     llr = np.empty((len(symbols), bits.shape[1]))
     for i in range(bits.shape[1]):

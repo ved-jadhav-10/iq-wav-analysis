@@ -40,7 +40,18 @@ from dsp.synth.bits import (
     to_bytes,
 )
 from dsp.synth.impair import Impairments, apply, awgn
-from dsp.synth.modulate import BITS_PER_SYMBOL, LINEAR, am, audio, fm, fsk, map_bits, pulse_shape
+from dsp.synth.modulate import (
+    BITS_PER_SYMBOL,
+    LINEAR,
+    OFFSET,
+    am,
+    audio,
+    fm,
+    fsk,
+    map_bits,
+    pulse_shape,
+    pulse_shape_offset,
+)
 from dsp.synth.modulate import resample as resample_
 from dsp.synth.systems import Dsc, Navtex, Pocsag
 
@@ -48,7 +59,7 @@ Complex = NDArray[np.complex128]
 GENERATOR_VERSION = "0.1.0"
 FSK = {"2fsk": 2, "4fsk": 4, "8fsk": 8}
 ANALOG = ("am", "fm")
-MODULATIONS = (*LINEAR, *FSK, *ANALOG, "noise")
+MODULATIONS = (*LINEAR, OFFSET, *FSK, *ANALOG, "noise")
 
 InnerCode = fec_.Convolutional | fec_.Ldpc | fec_.Repetition
 BitInterleaver = il.BlockInterleaver | il.Convolutional
@@ -136,7 +147,7 @@ def generate(scene: Scene, seed: int) -> Generated:
         total[spec.start : spec.start + length] += x
         snr = spec.power_db - scene.noise_db
         truth |= {"snrDb": round(snr, 6), "sampleStart": spec.start, "sampleCount": length}
-        if spec.modulation in LINEAR or spec.modulation in FSK:
+        if spec.modulation in LINEAR or spec.modulation == OFFSET or spec.modulation in FSK:
             truth["esn0Db"] = round(snr + 10 * math.log10(spec.sps), 6)
         if scene.sample_rate:
             truth |= _hertz(truth, spec, scene.sample_rate)
@@ -181,13 +192,22 @@ def _signal(
         raise ValueError(f"unknown modulation {spec.modulation!r}")
     base = max(4, math.ceil(spec.sps))  # integer rate for shaping, then resampled
     symbols_needed = math.ceil(length / spec.sps) + 64
-    width = BITS_PER_SYMBOL.get(spec.modulation) or int(math.log2(FSK[spec.modulation]))
+    width = (
+        BITS_PER_SYMBOL["qpsk"]
+        if spec.modulation == OFFSET
+        else BITS_PER_SYMBOL.get(spec.modulation) or int(math.log2(FSK[spec.modulation]))
+    )
     payloads, framed, coded = _bitstream(spec, symbols_needed * width + spec.stream_offset, rng)
     coded = coded[spec.stream_offset : spec.stream_offset + symbols_needed * width]
     if spec.modulation in FSK:
         symbols = np.zeros(0, np.complex128)
         x = fsk(coded, FSK[spec.modulation], base, spec.fsk_index / (2 * base), spec.fsk_bt)
         truth |= {"fskIndex": spec.fsk_index, "tones": FSK[spec.modulation], "fskBt": spec.fsk_bt}
+    elif spec.modulation == OFFSET:
+        symbols = map_bits(coded, "qpsk")
+        base += base % 2  # the half-symbol delay needs an even integer rate
+        x = pulse_shape_offset(symbols, base, spec.pulse, spec.rolloff)
+        truth |= {"pulse": spec.pulse, "rolloff": spec.rolloff if spec.pulse == "rrc" else None}
     else:
         symbols = map_bits(coded, spec.modulation)
         x = pulse_shape(symbols, base, spec.pulse, spec.rolloff)
