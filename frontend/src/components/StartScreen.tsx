@@ -119,12 +119,12 @@ export function StartScreen({ opening, openingSample, onUpload, onOpenSample }: 
       className="relative min-h-0 flex-1 overflow-y-auto bg-background"
     >
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 2xl:max-w-7xl px-6 py-6 max-sm:px-4">
-        <header className="flex items-start gap-4">
-          <Logo variant="full" className="size-24 shrink-0 max-sm:size-14" />
+        <header className="flex items-center gap-6 max-sm:gap-4">
+          <Logo variant="full" className="size-32 shrink-0 2xl:size-40 max-md:size-20 max-sm:size-14" />
           <div className="min-w-0">
             <p className="eyebrow">{BRAND.tagline}</p>
-            <h1 className="mt-0.5 text-xl font-semibold tracking-tight">What is in this recording?</h1>
-            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            <h1 className="mt-1 text-3xl font-semibold tracking-tight 2xl:text-4xl max-sm:text-xl">What is in this recording?</h1>
+            <p className="mt-2 max-w-3xl text-base text-muted-foreground 2xl:text-lg max-sm:text-sm">
               Give Sanket an unknown radio recording. It works out how the signal was sent (rate, modulation,
               interleaving, error correction, framing), undoes each layer to recover the bits, and shows the
               evidence for every claim.
