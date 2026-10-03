@@ -399,6 +399,11 @@ test('the results exports follow the recording: SigMF links for SigMF, Save as S
       const menu = bar.getByRole('button', { name: /^Results/ })
       // The bar switches between the inline links and the menu a moment after the resize.
       await expect(folded ? menu : bar.getByRole('link', { name: 'Run record' })).toBeVisible()
+      // Below 1536 the menu is already there from the previous size, so also wait for the charts to
+      // re-measure: a lasting overflow still fails here.
+      await expect
+        .poll(async () => (await barMetrics(page)).pageOverflow, { message: `${size.width} wide, sideways, pass ${pass}` })
+        .toBeLessThanOrEqual(0)
       const states = folded ? ['closed', 'menu', 'message'] : ['closed', 'message']
       for (const state of states) {
         if (state === 'menu') await menu.click()
