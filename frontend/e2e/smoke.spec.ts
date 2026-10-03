@@ -390,6 +390,9 @@ test('the results exports follow the recording: SigMF links for SigMF, Save as S
       { width: 1918, height: 950 },
       { width: 1440, height: 800 },
       { width: 1100, height: 800 },
+      { width: 900, height: 700 },
+      { width: 700, height: 700 },
+      { width: 390, height: 800 },
     ]) {
       await page.setViewportSize(size)
       const folded = size.width < 1536
@@ -406,7 +409,8 @@ test('the results exports follow the recording: SigMF links for SigMF, Save as S
         }
         const m = await barMetrics(page)
         const where = `${size.width} wide, ${state}, pass ${pass}: ${JSON.stringify(m)}`
-        expect(m.scrollHeight, where).toBeLessThanOrEqual(m.innerHeight)
+        // Below 900 the workspace's own panels are the known compromise (UI.md); the bar is not.
+        if (size.width >= 900) expect(m.scrollHeight, where).toBeLessThanOrEqual(m.innerHeight)
         expect(m.pageOverflow, where).toBeLessThanOrEqual(0)
         expect(m.barHeight, where).toBe(48)
         expect(m.barOverflow, where).toBeLessThanOrEqual(0)
@@ -874,6 +878,12 @@ test('a known-system sample shows its decoded messages and the bit stream, witho
   await find.fill('4')
   await expect(page.getByText(/Not a pattern/)).toBeVisible()
   await find.fill('')
+  // The AIS signal has enough frames passing their CRC to compare bit by bit: its fixed fields and
+  // the point where the bits start to vary are found by correlation.
+  await page.getByRole('button', { name: /^#3 / }).click()
+  await page.getByRole('tab', { name: /^Bit stream/ }).click()
+  await expect(page.getByRole('heading', { name: 'Header and payload by correlation' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Fields found' })).toContainText('Constant')
   for (const size of SIZES) {
     await page.setViewportSize(size)
     // The charts re-measure a moment after the resize, so wait for the settled layout.

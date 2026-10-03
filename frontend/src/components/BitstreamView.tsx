@@ -1,4 +1,5 @@
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useWidth } from '@/hooks/useWidth'
 import type { Detection, Frame } from '@/lib/analysis'
 import {
   bytesToBits,
@@ -17,21 +18,8 @@ import {
 } from '@/lib/bitstream'
 import { hexToText, integer } from '@/lib/format'
 import { EvidenceBadge } from './EvidenceBadge'
+import { FieldMap } from './FieldMap'
 import { InfoTip } from './InfoTip'
-
-/** Width in CSS px of an element, kept current by a ResizeObserver (0 until measured). */
-function useWidth<T extends HTMLElement>() {
-  const ref = useRef<T>(null)
-  const [width, setWidth] = useState(0)
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const ro = new ResizeObserver(([entry]) => setWidth(Math.floor(entry.contentRect.width)))
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-  return [ref, width] as const
-}
 
 const CRC_WORD: Record<Frame['crc'], string> = { pass: 'passes its CRC', fail: 'fails its CRC', truncated: 'is truncated by the end of the burst' }
 const CRC_COLOR: Record<Frame['crc'], string> = { pass: 'var(--ev-verified)', fail: 'var(--danger)', truncated: 'var(--ev-unknown)' }
@@ -595,6 +583,7 @@ export function BitstreamView({ detection }: { detection: Detection }) {
           <FrameAnatomy frames={frames} frame={current} onSelect={setPicked} offsets={here} patternBits={pattern?.bits.length ?? 0} />
         )}
       </div>
+      <FieldMap frames={frames} />
       <PatternSearch frames={frames} text={query} onText={setQuery} onPick={setPicked} selected={current?.index ?? -1} />
     </div>
   )
