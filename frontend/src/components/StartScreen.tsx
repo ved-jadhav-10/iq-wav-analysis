@@ -120,7 +120,7 @@ export function StartScreen({ opening, openingSample, onUpload, onOpenSample }: 
     >
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 2xl:max-w-7xl px-6 py-6 max-sm:px-4">
         <header className="flex items-start gap-4">
-          <Logo className="size-11 shrink-0" />
+          <Logo variant="full" className="size-24 shrink-0 max-sm:size-14" />
           <div className="min-w-0">
             <p className="eyebrow">{BRAND.tagline}</p>
             <h1 className="mt-0.5 text-xl font-semibold tracking-tight">What is in this recording?</h1>

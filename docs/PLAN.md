@@ -161,7 +161,7 @@ One local process tree, no external services.
 | Element | Decision | Source of truth |
 |---|---|---|
 | Name | **Sanket** (संकेत, "signal"); tagline "Blind signal analysis, with evidence" | `frontend/src/brand.ts` only |
-| Mark | A waveform resolving into a four-point constellation | `frontend/src/components/Logo.tsx`, `frontend/public/favicon.svg` |
+| Mark | The Devanagari letter स, the first letter of संकेत: a spectrogram strip as its headline, a curled body, a figure-8 trace as its vertical stroke; a light and a dark file, each in a detailed and a simplified (small-size) version, traced from the original artwork | `frontend/src/components/Logo.tsx`, `frontend/src/assets/sanket-{logo,mark}-{dark,light}.svg`, `frontend/public/favicon.svg` |
 | Colour | Dark-first instrument UI with a light theme; accent "signal cyan"; all colours are shadcn-compatible tokens | `frontend/src/styles/index.css` |
 | Evidence levels | VERIFIED green + shield · MEASURED blue + ruler · ESTIMATED violet + Σ · HYPOTHESIS amber + dashed circle · UNKNOWN grey + slashed circle | `frontend/src/components/levelStyles.ts` |
 | Type | IBM Plex Sans (UI), IBM Plex Mono with tabular numerals (numbers), IBM Plex Sans Devanagari (native name), bundled | `frontend/src/main.tsx` |
