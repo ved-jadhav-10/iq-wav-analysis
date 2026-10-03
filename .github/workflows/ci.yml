@@ -84,6 +84,10 @@ jobs:
         working-directory: frontend
         run: npx playwright install-deps chromium
 
+      # The start screen lists the bundled samples, which are git-ignored (data/): make them first.
+      - name: Sample recordings
+        run: uv run python tools/make_demo.py
+
       - name: End-to-end smoke test (offline)
         working-directory: frontend
         run: npm run e2e
