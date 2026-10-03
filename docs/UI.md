@@ -24,8 +24,8 @@ The section decides which regions are on screen. State lives in `App`, above the
 | **Evidence** (Alt+2) | Detection chips in a strip, then tabs **Values**, **Frames**, **Bit stream** over one panel that scrolls inside itself | Every value of the selected signal with its level; the frames and the CRC proof |
 | **Hypotheses** (Alt+3) | Detection chips, then the search ledger in a panel that scrolls inside itself | Every candidate the blind search tried |
 | **Summary** (Alt+4) | A header strip, then the plain-language text filling the rest | What was proved, estimated, unknown |
-| **History** (Alt+5) | A header strip, then one table that fills the rest and scrolls inside its own panel | The analyses the server kept (they survive a restart) |
-| **Assumptions** (Alt+6) | A modal, not a section | Everything the analysis took as given, over whatever is on screen |
+| **Assumptions** (Alt+5) | A modal, not a section | Everything the analysis took as given, over whatever is on screen |
+| **History** (Alt+6) | A header strip, then one table that fills the rest and scrolls inside its own panel | The analyses the server kept (they survive a restart) |
 
 - The choice is persisted in `localStorage` (`sanket.view.v1`): an analyst reopening on Dashboard shouldn't have to click back. A bare `1`–`6` is deliberately *not* used: it would fight numeric fields.
 - **Assumptions** keeps its nav place but never switches the workspace: `TopBar` dispatches it to the modal, which can be summoned over any section and dismissed; `App` renders no view for it, and `assumptions` is never the current or stored section (`lib/views.ts` `SectionId`). The modal closes on Esc or a click outside and returns focus to what opened it.

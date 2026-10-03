@@ -406,7 +406,7 @@ export default function App() {
     storeView(next)
   }, [])
 
-  // Alt+1..4 jumps between sections without leaving the waterfall's keyboard handling. A bare 1..4
+  // Alt+1..6 jumps between sections without leaving the waterfall's keyboard handling. A bare 1..6
   // would fight numeric fields. Assumptions is a modal over the current section, never a section.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

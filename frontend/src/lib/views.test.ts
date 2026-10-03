@@ -61,7 +61,7 @@ describe('views', () => {
     expect(isSectionId('assumptions')).toBe(false)
     expect(isSectionId('dashboard')).toBe(true)
     expect(isSectionId('survey')).toBe(false)
-    // Alt+6 used to store it, which left the workspace blank on every reload.
+    // Alt+5 used to store it, which left the workspace blank on every reload.
     const store: Record<string, string> = { 'sanket.view.v1': 'assumptions' }
     vi.stubGlobal('window', { localStorage: { getItem: (k: string) => store[k] ?? null } })
     expect(loadStoredView()).toBe(DEFAULT_VIEW)

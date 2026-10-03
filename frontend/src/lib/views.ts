@@ -43,16 +43,16 @@ export const VIEWS = [
     hint: 'What was proved, what was only estimated, what is unknown',
   },
   {
-    id: 'history',
-    label: 'History',
-    digit: '5',
-    hint: 'The analyses kept in the workspace: download their results again, or delete them',
-  },
-  {
     id: 'assumptions',
     label: 'Assumptions',
-    digit: '6',
+    digit: '5',
     hint: 'Everything the analysis took as given, over the current view',
+  },
+  {
+    id: 'history',
+    label: 'History',
+    digit: '6',
+    hint: 'The analyses kept in the workspace: download their results again, or delete them',
   },
 ] as const
 

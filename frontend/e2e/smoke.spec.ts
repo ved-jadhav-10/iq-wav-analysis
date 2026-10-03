@@ -779,12 +779,12 @@ test('a sample opens from its card and its analysis reaches VERIFIED', async ({ 
   }
 })
 
-test('Alt+6 opens the Assumptions modal over the section instead of blanking the workspace', async ({ page }) => {
+test('Alt+5 opens the Assumptions modal over the section instead of blanking the workspace', async ({ page }) => {
   test.setTimeout(120_000)
   await page.goto('/')
   await page.locator('[data-sample="scene_fsk"]').click()
   await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
-  await page.keyboard.press('Alt+6')
+  await page.keyboard.press('Alt+5')
   const dialog = page.getByRole('dialog', { name: /Assumptions/ })
   await expect(dialog).toBeVisible()
   await page.keyboard.press('Escape')
