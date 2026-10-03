@@ -1,12 +1,13 @@
-import { useState, type FormEvent } from 'react'
-import { CircleHelp, FileAudio, FolderOpen, Loader2, Moon, Sun, Upload, WifiOff } from 'lucide-react'
+import { CircleHelp, FileAudio, Loader2, Moon, Sun, WifiOff } from 'lucide-react'
 import { BRAND } from '@/brand'
 import { useTheme } from '@/hooks/theme'
 import { VIEWS, type SectionId } from '@/lib/views'
 import type { RecordingInfo } from '@/lib/api'
 import type { ResultFormat } from '@/lib/exports'
 import { Logo } from './Logo'
+import { OpenMenu } from './OpenMenu'
 import { ResultsExports } from './ResultsExports'
+import { TeamBadge } from './TeamBadge'
 
 interface Props {
   /** The open recording's name; null on the start screen. */
@@ -18,7 +19,7 @@ interface Props {
   progress?: { done: number; total: number }
   view: SectionId
   onViewChange: (view: SectionId) => void
-  /** Reopens the welcome dialog (and from it the tour). */
+  /** Reopens the welcome dialog (and from it the guided tour). */
   onHelp: () => void
   /** `sequence` reads numbered files (rec_000, rec_001, ...) as one recording. */
   onOpen: (path: string, sequence: boolean) => void
@@ -50,15 +51,6 @@ export function TopBar({
   onSaveSigmf,
 }: Props) {
   const { theme, toggle } = useTheme()
-  const [path, setPath] = useState('')
-  const [sequence, setSequence] = useState(false)
-
-  function submit(e: FormEvent) {
-    e.preventDefault()
-    const trimmed = path.trim()
-    if (trimmed && !opening) onOpen(trimmed, sequence)
-  }
-
   return (
     <header className="relative flex h-12 shrink-0 items-center gap-3 border-b bg-surface px-3">
       {progress && progress.total > 0 && (
@@ -89,7 +81,7 @@ export function TopBar({
       <div className="h-5 w-px bg-border max-xl:hidden" aria-hidden />
 
       <nav aria-label="Workspace section" data-tour="section-nav" className="flex shrink-0 items-center gap-0.5 max-md:hidden">
-        {VIEWS.filter((v) => fileName !== null || v.id === 'survey' || v.id === 'history').map((v) => {
+        {VIEWS.filter((v) => fileName !== null || v.id === 'dashboard' || v.id === 'history').map((v) => {
           const selected = v.id === view
 
           return (
@@ -123,7 +115,7 @@ export function TopBar({
           </span>
           <span className="shrink-0 rounded-[3px] border border-dashed border-border-strong px-1.5 text-2xs font-medium text-muted-foreground uppercase">
             {synthetic ? 'Synthetic' : 'Real'}
-            <span className="max-2xl:sr-only"> recording</span>
+            <span className="max-3xl:sr-only"> recording</span>
           </span>
           {progress && (
             <span role="status" className="num flex shrink-0 items-center gap-1 text-2xs text-muted-foreground max-lg:hidden">
@@ -134,56 +126,7 @@ export function TopBar({
         </div>
       )}
 
-      <form onSubmit={submit} data-tour="open" className="flex shrink-0 items-center gap-1.5 max-lg:hidden">
-        <label htmlFor="open-path" className="sr-only">
-          Open a recording by path
-        </label>
-        <input
-          id="open-path"
-          type="text"
-          value={path}
-          onChange={(e) => setPath(e.target.value)}
-          placeholder="Open a recording by path…"
-          className="w-24 rounded-md border border-border-strong bg-surface px-2 xl:w-36 2xl:w-56 py-1 text-xs text-foreground placeholder:text-subtle-foreground"
-        />
-        <button
-          type="submit"
-          disabled={opening || !path.trim()}
-          className="flex shrink-0 items-center gap-1 rounded-md border border-border-strong px-2 py-1 text-xs font-medium text-muted-foreground enabled:hover:bg-surface-2 enabled:hover:text-foreground disabled:opacity-40"
-        >
-          <FolderOpen className="size-3.5" aria-hidden />
-          {opening ? 'Opening…' : 'Open'}
-        </button>
-        <label
-          className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
-          title="Read numbered files (rec_000.cu8, rec_001.cu8, ...) as one recording. A folder is opened as a list of its recordings."
-        >
-          <input type="checkbox" checked={sequence} onChange={(e) => setSequence(e.target.checked)} />
-          <span className="2xl:hidden">Join</span>
-          <span className="max-2xl:hidden">Join numbered files</span>
-        </label>
-        <label
-          className={`flex shrink-0 items-center gap-1 rounded-md border border-border-strong px-2 py-1 text-xs font-medium text-muted-foreground focus-within:ring-2 focus-within:ring-ring ${
-            opening ? 'opacity-40' : 'cursor-pointer hover:bg-surface-2 hover:text-foreground'
-          }`}
-          title="Copy recording files into the workspace and open them. Drop files on the window works too."
-        >
-          <Upload className="size-3.5" aria-hidden />
-          Upload
-          <input
-            type="file"
-            multiple
-            disabled={opening}
-            className="sr-only"
-            aria-label="Upload recording files"
-            onChange={(e) => {
-              const files = Array.from(e.target.files ?? [])
-              e.target.value = '' // so choosing the same file again fires change
-              if (files.length > 0) onUpload(files)
-            }}
-          />
-        </label>
-      </form>
+      <OpenMenu opening={opening} onOpen={onOpen} onUpload={onUpload} />
 
       <div className="ml-auto flex items-center gap-2">
         {resultsUrl && (
@@ -200,17 +143,18 @@ export function TopBar({
           title="This build loads nothing from the network: fonts, code and data are all bundled."
         >
           <WifiOff className="size-3" aria-hidden />
-          <span className="max-2xl:sr-only">Offline build</span>
+          <span className="max-3xl:sr-only">Offline build</span>
         </span>
         <button
           type="button"
           onClick={onHelp}
-          title="What is Sanket? Replay the welcome and the guided tour"
+          title="What is Sanket? Replay the welcome, and from it the guided tour"
           className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-surface-2 hover:text-foreground"
         >
           <CircleHelp className="size-3.5" aria-hidden />
-          <span className="max-2xl:sr-only">Help</span>
+          <span className="max-3xl:sr-only">Help</span>
         </button>
+        <TeamBadge />
         <button
           type="button"
           onClick={toggle}

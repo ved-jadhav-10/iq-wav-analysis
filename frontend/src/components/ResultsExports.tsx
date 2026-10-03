@@ -1,11 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, Download, Save, X } from 'lucide-react'
-import { useMediaQuery } from '@/hooks/useMediaQuery'
+import { useDismiss } from '@/hooks/useDismiss'
 import type { RecordingInfo } from '@/lib/api'
 import { SAVE_MESSAGE_MS, SAVE_SIGMF_HINT, canSaveSigmf, resultLinks, type ResultFormat } from '@/lib/exports'
-
-/** Below this width the downloads would crowd the open-by-path controls, so they fold into a menu. */
-const INLINE_MIN_WIDTH = '(min-width: 1536px)'
 
 interface Props {
   /** Where the finished analysis' results download from, by format. */
@@ -18,35 +15,33 @@ interface Props {
 
 type Message = { ok: boolean; text: string }
 
-interface LinksProps extends Props {
-  stacked: boolean
+interface LinksProps extends Omit<Props, 'onSaveSigmf'> {
   saving: boolean
   onSave: () => void
 }
 
-/** The download links, and Save as SigMF for a raw file: in a row on a wide window, in a column
- * inside the menu on a narrower one. */
-export function ResultsLinks({ resultsUrl, sigmf, stacked, saving, onSave }: Omit<LinksProps, 'onSaveSigmf'>) {
-  const item = `whitespace-nowrap rounded-md border border-border-strong text-2xs font-medium uppercase hover:bg-surface-2 hover:text-foreground ${
-    stacked ? 'px-2.5 py-1.5' : 'px-1.5 py-0.5'
-  }`
+const ITEM =
+  'flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-foreground hover:bg-surface-2 focus-visible:bg-surface-2 disabled:opacity-40'
+
+/** The download rows, and Save as SigMF for a raw file: one row per format with what it is for. */
+export function ResultsLinks({ resultsUrl, sigmf, saving, onSave }: LinksProps) {
   return (
     <>
       {resultLinks(sigmf).map((f) => (
-        <a key={f.format} href={resultsUrl(f.format)} download title={f.hint} className={item}>
+        <a key={f.format} href={resultsUrl(f.format)} download aria-label={f.label} title={f.hint} role="menuitem" className={ITEM}>
           {f.label}
+          <span className="line-clamp-2 text-2xs font-normal text-muted-foreground">{f.hint}</span>
         </a>
       ))}
       {canSaveSigmf(sigmf) && (
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={saving}
-          title={SAVE_SIGMF_HINT}
-          className={`flex items-center gap-1 disabled:opacity-40 ${item}`}
-        >
-          <Save className="size-3" aria-hidden />
-          {saving ? 'Saving…' : 'Save as SigMF'}
+        <button type="button" onClick={onSave} disabled={saving} title={SAVE_SIGMF_HINT} role="menuitem" className={ITEM}>
+          <span className="flex items-center gap-1">
+            <Save className="size-3" aria-hidden />
+            {saving ? 'Saving…' : 'Save as SigMF'}
+          </span>
+          <span className="line-clamp-2 text-2xs font-normal text-muted-foreground">
+            Write the metadata next to the raw file; the samples are never touched
+          </span>
         </button>
       )}
     </>
@@ -57,31 +52,18 @@ export function ResultsLinks({ resultsUrl, sigmf, stacked, saving, onSave }: Omi
  * (Escape, a click elsewhere or choosing something closes it). The outcome of a save is a short
  * message under the bar: it clears itself, or is dismissed, and never blocks anything. */
 export function ResultsExports(props: Props) {
-  const inline = useMediaQuery(INLINE_MIN_WIDTH)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<Message | null>(null)
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
+  const close = useCallback(() => setOpen(false), [])
+  useDismiss(open, root, close)
 
   useEffect(() => {
     if (!message) return
     const timer = setTimeout(() => setMessage(null), SAVE_MESSAGE_MS)
     return () => clearTimeout(timer)
   }, [message])
-
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
-    const onPointer = (e: PointerEvent) => {
-      if (e.target instanceof Node && !root.current?.contains(e.target)) setOpen(false)
-    }
-    document.addEventListener('keydown', onKey)
-    document.addEventListener('pointerdown', onPointer)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.removeEventListener('pointerdown', onPointer)
-    }
-  }, [open])
 
   async function save() {
     setOpen(false)
@@ -96,41 +78,33 @@ export function ResultsExports(props: Props) {
     }
   }
 
-  const links = (stacked: boolean) => <ResultsLinks {...props} stacked={stacked} saving={saving} onSave={() => void save()} />
-
   return (
-    <div ref={root} className="relative flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-      {inline ? (
-        <>
-          <Download className="size-3.5" aria-hidden />
-          <span>Results</span>
-          {links(false)}
-        </>
-      ) : (
-        <>
-          <button
-            type="button"
-            onClick={() => setOpen(!open)}
-            aria-expanded={open}
-            aria-controls="results-menu"
-            title="Download the results, the run record and SigMF metadata"
-            className="flex items-center gap-1 rounded-md border border-border-strong px-2 py-1 text-xs font-medium hover:bg-surface-2 hover:text-foreground"
-          >
-            <Download className="size-3.5" aria-hidden />
-            Results
-            <ChevronDown className="size-3" aria-hidden />
-          </button>
-          {open && (
-            <div
-              id="results-menu"
-              role="group"
-              aria-label="Results downloads"
-              className="absolute top-full right-0 z-20 mt-2 flex w-44 flex-col gap-1 rounded-md border border-border-strong bg-surface-2 p-1.5 shadow-lg"
-            >
-              {links(true)}
-            </div>
-          )}
-        </>
+    <div ref={root} className="relative flex shrink-0 items-center text-xs text-muted-foreground">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-controls="results-menu"
+        title="Download the results, the run record and SigMF metadata"
+        className="flex items-center gap-1 rounded-md border border-border-strong px-2 py-1 text-xs font-medium hover:bg-surface-2 hover:text-foreground"
+      >
+        <Download className="size-3.5" aria-hidden />
+        <span className="max-sm:sr-only">Download</span>
+        <ChevronDown className="size-3" aria-hidden />
+      </button>
+      {open && (
+        <div
+          id="results-menu"
+          role="menu"
+          aria-label="Results downloads"
+          onClick={(e) => {
+            if (e.target instanceof Element && e.target.closest('a')) setOpen(false)
+          }}
+          className="absolute top-full right-0 z-30 mt-2 flex max-h-[calc(100vh-4rem)] w-72 max-w-[calc(100vw-1.5rem)] flex-col gap-0.5 overflow-y-auto rounded-md border border-border-strong bg-surface-2 p-1.5 shadow-lg"
+        >
+          <ResultsLinks {...props} saving={saving} onSave={() => void save()} />
+        </div>
       )}
       {message && (
         <div

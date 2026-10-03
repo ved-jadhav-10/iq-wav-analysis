@@ -117,13 +117,18 @@ export function Welcome({ onTrySample, onTakeTour, onSkip }: Props) {
           >
             Try a sample
           </button>
-          <button
-            type="button"
-            onClick={onTakeTour}
-            className="rounded-md border border-border-strong px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
-          >
-            Take the tour
-          </button>
+          <div className="relative">
+            <span className="pointer-events-none absolute -top-5 left-0 rounded-full bg-primary px-2 py-0.5 text-[10px] leading-none font-semibold tracking-wide whitespace-nowrap text-primary-foreground uppercase">
+              ★ Highly recommended if you are new here
+            </span>
+            <button
+              type="button"
+              onClick={onTakeTour}
+              className="rounded-md border-2 border-primary px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+            >
+              Take the tour
+            </button>
+          </div>
           <button
             type="button"
             onClick={onSkip}

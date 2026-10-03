@@ -1,17 +1,8 @@
-import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { CircleSlash, ShieldCheck, X } from 'lucide-react'
 import type { Detection } from '@/lib/analysis'
 import { hexToText, integer, sci } from '@/lib/format'
-import { BitstreamView } from './BitstreamView'
 import { InfoTip } from './InfoTip'
-
-const TABS = [
-  { id: 'hypotheses', label: 'Hypotheses', caption: 'Every candidate the blind search tried, and why each was kept or rejected.' },
-  { id: 'frames', label: 'Frames', caption: 'Frames found by sync-word search, with the CRC result, header and payload of each.' },
-  { id: 'bitstream', label: 'Bit stream', caption: 'How the frames sit in the stream and how the sync word recurs.' },
-  { id: 'assumptions', label: 'Assumptions', caption: 'Everything opening this recording took as given.' },
-] as const
-type TabId = (typeof TABS)[number]['id']
 
 const TH = 'sticky top-0 z-10 bg-surface px-3 py-1.5 text-left text-2xs font-semibold tracking-wide text-subtle-foreground uppercase'
 const TD = 'px-3 py-1.5 align-top'
@@ -33,7 +24,7 @@ function Stat({ label, value, note, tip }: { label: string; value: string; note?
   )
 }
 
-function Hypotheses({ detection }: { detection: Detection }) {
+export function Hypotheses({ detection }: { detection: Detection }) {
   const s = detection.search
   if (!s) return <Empty>{detection.noSearchReason ?? 'No search ran.'}</Empty>
   const accepted = s.rows.filter((r) => r.outcome === 'accepted' && r.layer !== 'Match').length
@@ -182,7 +173,7 @@ function FrameExport({ url }: { url: (format: string) => string }) {
   )
 }
 
-function Frames({ detection, exportUrl }: { detection: Detection; exportUrl?: (format: string) => string }) {
+export function Frames({ detection, exportUrl }: { detection: Detection; exportUrl?: (format: string) => string }) {
   const frames = detection.frames
   if (frames.length === 0) return <Empty>{detection.noFramesReason ?? 'No frames found.'}</Empty>
   const complete = frames.filter((f) => f.crc === 'pass').length
@@ -254,49 +245,48 @@ function Frames({ detection, exportUrl }: { detection: Detection; exportUrl?: (f
   )
 }
 
-interface Props {
-  detection: Detection
-  /** The Assumptions tab's content: the recording's own `<RecordingAssumptionsPanel>` (App.tsx
-   * passes it in so this component doesn't need to know about `lib/api`'s `Assumptions` shape). */
-  assumptionsPanel?: ReactNode
-  /** How many assumptions the recording lists, shown on the tab. */
-  assumptionsCount?: number
-  /** The download link for the frame table in a format, for a real recording. */
-  frameExportUrl?: (format: string) => string
+export interface TabSpec<T extends string> {
+  id: T
+  label: string
+  /** A count shown beside the label, when there is one. */
+  count?: number | null
+  caption: string
 }
 
-export function BottomPanel({ detection, assumptionsPanel, assumptionsCount, frameExportUrl }: Props) {
-  const [tab, setTab] = useState<TabId>('hypotheses')
-  const tabRefs = useRef<Record<TabId, HTMLButtonElement | null>>({ hypotheses: null, frames: null, bitstream: null, assumptions: null })
+interface TabbedProps<T extends string> {
+  label: string
+  tabs: readonly TabSpec<T>[]
+  tab: T
+  onTab: (id: T) => void
+  children: ReactNode
+}
 
-  const counts: Record<TabId, number | null> = {
-    hypotheses: detection.search?.tried ?? null,
-    frames: detection.frames.length,
-    bitstream: detection.frames.length,
-    assumptions: assumptionsCount ?? null,
-  }
+/** A tab strip over one scrolling panel (arrow keys, Home and End move between the tabs). The
+ * panel is `min-h-0 flex-1 overflow-auto`, so a long table scrolls inside it and never grows the
+ * page. */
+export function TabbedPanel<T extends string>({ label, tabs, tab, onTab, children }: TabbedProps<T>) {
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
 
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
-    const i = TABS.findIndex((t) => t.id === tab)
+    const i = tabs.findIndex((t) => t.id === tab)
     let next: number
-    if (e.key === 'ArrowRight') next = (i + 1) % TABS.length
-    else if (e.key === 'ArrowLeft') next = (i - 1 + TABS.length) % TABS.length
+    if (e.key === 'ArrowRight') next = (i + 1) % tabs.length
+    else if (e.key === 'ArrowLeft') next = (i - 1 + tabs.length) % tabs.length
     else if (e.key === 'Home') next = 0
-    else if (e.key === 'End') next = TABS.length - 1
+    else if (e.key === 'End') next = tabs.length - 1
     else return
     e.preventDefault()
-    const id = TABS[next].id
-    setTab(id)
+    const id = tabs[next].id
+    onTab(id)
     tabRefs.current[id]?.focus()
   }
 
   return (
-    <section aria-label="Analysis details" data-tour="bottom-tabs" className="flex min-h-0 flex-col border-t bg-surface">
+    <section aria-label={label} className="flex min-h-0 flex-1 flex-col bg-surface">
       <div className="@container flex shrink-0 items-center border-b px-2">
-        <div role="tablist" aria-label="Analysis details" className="flex shrink-0 gap-1" onKeyDown={onKeyDown}>
-          {TABS.map((t) => {
+        <div role="tablist" aria-label={label} className="flex shrink-0 gap-1" onKeyDown={onKeyDown}>
+          {tabs.map((t) => {
             const selected = t.id === tab
-            const count = counts[t.id]
             return (
               <button
                 key={t.id}
@@ -308,14 +298,14 @@ export function BottomPanel({ detection, assumptionsPanel, assumptionsCount, fra
                 aria-selected={selected}
                 aria-controls={`panel-${t.id}`}
                 tabIndex={selected ? 0 : -1}
-                onClick={() => setTab(t.id)}
+                onClick={() => onTab(t.id)}
                 title={t.caption}
-                className={`relative flex items-center gap-1.5 px-2 py-2 text-xs font-medium ${selected ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`relative flex items-center gap-1.5 px-2.5 py-2 text-xs font-medium ${selected ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 {t.label}
-                {count !== null && (
+                {t.count != null && (
                   <span className="num rounded-[3px] bg-surface-2 px-1 text-2xs text-muted-foreground">
-                    {integer.format(count)}
+                    {integer.format(t.count)}
                   </span>
                 )}
                 {selected && <span className="absolute inset-x-1 -bottom-px h-0.5 rounded-full bg-primary" aria-hidden />}
@@ -324,14 +314,11 @@ export function BottomPanel({ detection, assumptionsPanel, assumptionsCount, fra
           })}
         </div>
         <p className="ml-3 hidden min-w-0 flex-1 truncate text-2xs text-muted-foreground @2xl:block" aria-live="off">
-          {TABS.find((t) => t.id === tab)?.caption}
+          {tabs.find((t) => t.id === tab)?.caption}
         </p>
       </div>
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} tabIndex={0} className="min-h-0 flex-1 overflow-auto">
-        {tab === 'hypotheses' && <Hypotheses detection={detection} />}
-        {tab === 'frames' && <Frames detection={detection} exportUrl={frameExportUrl} />}
-        {tab === 'bitstream' && <BitstreamView detection={detection} />}
-        {tab === 'assumptions' && assumptionsPanel}
+        {children}
       </div>
     </section>
   )

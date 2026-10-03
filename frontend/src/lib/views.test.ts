@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_VIEW, isSectionId, isViewId, loadStoredView, stepView, VIEWS, viewByDigit, type ViewId } from './views'
 
-// The per-detection deep dive is an overlay, not a section, so it must not appear in this list.
-const OVERLAY_VIEWS = ['signal']
+// Sections that used to exist must not come back as ids: a stored one falls back to the default.
+const RETIRED_VIEWS = ['survey', 'waterfall', 'signal']
 
 const IDS = VIEWS.map((v) => v.id)
 
@@ -12,12 +12,12 @@ describe('views', () => {
     expect(new Set(VIEWS.map((v) => v.digit)).size).toBe(VIEWS.length)
   })
 
-  it('defaults to Survey', () => {
-    expect(DEFAULT_VIEW).toBe('survey')
+  it('defaults to the Dashboard', () => {
+    expect(DEFAULT_VIEW).toBe('dashboard')
   })
 
-  it('has no section for the full-screen deep dive', () => {
-    for (const id of OVERLAY_VIEWS) expect(isViewId(id)).toBe(false)
+  it('has no section for the retired Survey, Waterfall or full-screen deep dive', () => {
+    for (const id of RETIRED_VIEWS) expect(isViewId(id)).toBe(false)
   })
 
   it('recognises only real ids', () => {
@@ -35,7 +35,7 @@ describe('views', () => {
   })
 
   it('survives a full cycle in both directions', () => {
-    const start = 'survey' satisfies ViewId
+    const start = 'dashboard' satisfies ViewId
     let v: ViewId = start
     for (let i = 0; i < IDS.length; i++) v = stepView(v, 1)
     expect(v).toBe(start)
@@ -59,8 +59,9 @@ describe('views', () => {
   it('never treats the Assumptions modal as a section to land on or to remember', () => {
     expect(isViewId('assumptions')).toBe(true)
     expect(isSectionId('assumptions')).toBe(false)
-    expect(isSectionId('survey')).toBe(true)
-    // Alt+4 used to store it, which left the workspace blank on every reload.
+    expect(isSectionId('dashboard')).toBe(true)
+    expect(isSectionId('survey')).toBe(false)
+    // Alt+6 used to store it, which left the workspace blank on every reload.
     const store: Record<string, string> = { 'sanket.view.v1': 'assumptions' }
     vi.stubGlobal('window', { localStorage: { getItem: (k: string) => store[k] ?? null } })
     expect(loadStoredView()).toBe(DEFAULT_VIEW)

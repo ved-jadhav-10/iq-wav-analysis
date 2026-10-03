@@ -56,6 +56,8 @@
 }
 
 @theme inline {
+  /* The top bar's long labels need more room than 2xl (1536px, a 1920px screen at 125% scaling) gives. */
+  --breakpoint-3xl: 112rem;
   --color-background: var(--background);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);

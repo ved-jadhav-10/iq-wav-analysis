@@ -1,10 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
-  OPEN_BY_DEFAULT_MIN_HEIGHT,
   NOT_READY_RETRY_MS,
   loadSummary,
-  loadSummaryOpen,
-  storeSummaryOpen,
   summaryLines,
   summaryTarget,
   summaryUrl,
@@ -114,68 +111,5 @@ describe('summaryLines', () => {
     expect(kind('- frame sync')).toBe('item')
     expect(kind('Frames in the table')).toBe('text')
     expect(lines.filter((l) => l.kind === 'blank').length).toBe(3)
-  })
-})
-
-describe('the remembered open state', () => {
-  afterEach(() => vi.unstubAllGlobals())
-
-  function store(initial: string | null, innerHeight = 950) {
-    const data = new Map<string, string>(initial === null ? [] : [['sanket.summary.v1', initial]])
-    vi.stubGlobal('window', {
-      innerHeight,
-      localStorage: {
-        getItem: (k: string) => data.get(k) ?? null,
-        setItem: (k: string, v: string) => void data.set(k, v),
-      },
-    })
-    return data
-  }
-
-  it('remembers collapsed and open', () => {
-    const data = store(null)
-    storeSummaryOpen(false)
-    expect(data.get('sanket.summary.v1')).toBe('collapsed')
-    expect(loadSummaryOpen()).toBe(false)
-    storeSummaryOpen(true)
-    expect(data.get('sanket.summary.v1')).toBe('open')
-    expect(loadSummaryOpen()).toBe(true)
-  })
-
-  it('with nothing remembered opens only in a window tall enough to spare the room', () => {
-    store(null, OPEN_BY_DEFAULT_MIN_HEIGHT)
-    expect(loadSummaryOpen()).toBe(true)
-    store(null, OPEN_BY_DEFAULT_MIN_HEIGHT - 1)
-    expect(loadSummaryOpen()).toBe(false)
-  })
-
-  it('lets what the analyst chose win over the window height', () => {
-    store('open', 600)
-    expect(loadSummaryOpen()).toBe(true)
-    store('collapsed', 1200)
-    expect(loadSummaryOpen()).toBe(false)
-  })
-
-  it('ignores a corrupted value', () => {
-    store('banana', 950)
-    expect(loadSummaryOpen()).toBe(true)
-    store('banana', 700)
-    expect(loadSummaryOpen()).toBe(false)
-  })
-
-  it('copes with storage that throws', () => {
-    vi.stubGlobal('window', {
-      innerHeight: 950,
-      localStorage: {
-        getItem: () => {
-          throw new Error('denied')
-        },
-        setItem: () => {
-          throw new Error('denied')
-        },
-      },
-    })
-    expect(loadSummaryOpen()).toBe(false)
-    expect(() => storeSummaryOpen(false)).not.toThrow()
   })
 })

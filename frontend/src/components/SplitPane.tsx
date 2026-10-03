@@ -33,8 +33,8 @@ const GUTTER_PX = 6
  */
 export function SplitPane({ rail, main, panel, panelLabel, railWidth = 216, minPanelPx = 340 }: Props) {
   const { setContainer, setGutter, fraction, available } = useSplit(
-    'sanket.split.v1',
-    0.68,
+    'sanket.split.v2',
+    0.72,
     minPanelPx,
     railWidth,
   )

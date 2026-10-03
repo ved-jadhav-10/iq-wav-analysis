@@ -3,12 +3,10 @@
  * they're laid out, so the waterfall can have the whole display without a route change or a
  * second window.
  *
- * Two of these are deliberately *not* page sections, because neither is a place you sit:
- * - the per-detection deep dive is a full-screen overlay (`SignalOverlay.tsx`);
- * - `assumptions` keeps its nav slot so the button has a home, but it opens the Settings /
- *   Assumptions modal rather than switching the workspace. The modal can be summoned over any
- *   section, which a section could not do. `TopBar` dispatches on it; `App` never renders a view
- *   for it.
+ * `assumptions` is deliberately *not* a page section: it keeps its nav slot so the button has a
+ * home, but it opens the Settings / Assumptions modal rather than switching the workspace. The
+ * modal can be summoned over any section, which a section could not do. `TopBar` dispatches on it;
+ * `App` never renders a view for it.
  *
  * A nav item that does nothing is a dead control, so this list is the single place one is
  * declared: if an entry goes, remove it here and the nav loses the button with it.
@@ -20,35 +18,47 @@
 
 export const VIEWS = [
   {
-    id: 'survey',
-    label: 'Survey',
+    id: 'dashboard',
+    label: 'Dashboard',
     /** Digit for Alt+<digit>, shown in the button's title. */
     digit: '1',
-    hint: 'Waterfall, spectrum and the pipeline rail side by side',
+    hint: 'Waterfall, constellation and eye together, with the detections and pipeline beside them',
   },
   {
-    id: 'waterfall',
-    label: 'Waterfall',
+    id: 'evidence',
+    label: 'Evidence',
     digit: '2',
-    hint: 'The spectrogram full width, with the power spectrum under it',
+    hint: 'Every value of the selected signal with its level, plus its frames and bit stream',
+  },
+  {
+    id: 'hypotheses',
+    label: 'Hypotheses',
+    digit: '3',
+    hint: 'Every candidate the blind search tried, and why each was kept or rejected',
+  },
+  {
+    id: 'summary',
+    label: 'Summary',
+    digit: '4',
+    hint: 'What was proved, what was only estimated, what is unknown',
   },
   {
     id: 'history',
     label: 'History',
-    digit: '3',
+    digit: '5',
     hint: 'The analyses kept in the workspace: download their results again, or delete them',
   },
   {
     id: 'assumptions',
     label: 'Assumptions',
-    digit: '4',
+    digit: '6',
     hint: 'Everything the analysis took as given, over the current view',
   },
 ] as const
 
 export type ViewId = (typeof VIEWS)[number]['id']
 
-export const DEFAULT_VIEW: SectionId = 'survey'
+export const DEFAULT_VIEW: SectionId = 'dashboard'
 
 const IDS: readonly string[] = VIEWS.map((v) => v.id)
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, Maximize2, PanelRightClose, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { BRAND } from '@/brand'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import {
@@ -27,7 +27,8 @@ import { sourceFromRecording, type WaterfallSource } from '@/lib/waterfallSource
 import { hasSeenOnboarding, markOnboardingSeen } from '@/lib/onboarding'
 import { startTour } from '@/lib/tour'
 import { BatchChooser } from '@/components/BatchChooser'
-import { BottomPanel } from '@/components/BottomPanel'
+import { BitstreamView } from '@/components/BitstreamView'
+import { Frames, Hypotheses, TabbedPanel, type TabSpec } from '@/components/DetailTabs'
 import { EvidenceBadge } from '@/components/EvidenceBadge'
 import { FormatPrompt } from '@/components/FormatPrompt'
 import { HistorySection } from '@/components/HistorySection'
@@ -36,11 +37,10 @@ import { PipelineRail } from '@/components/PipelineRail'
 import { PsdPlot } from '@/components/PsdPlot'
 import { SampleRatePrompt } from '@/components/SampleRatePrompt'
 import { RecordingAssumptionsPanel } from '@/components/RecordingAssumptionsPanel'
-import { SignalOverlay } from '@/components/SignalOverlay'
 import { SplitPane } from '@/components/SplitPane'
 import { StartScreen } from '@/components/StartScreen'
-import { SummaryStrip } from '@/components/SummaryStrip'
-import { SymbolView } from '@/components/SymbolView'
+import { SummarySection, SummaryWaiting } from '@/components/SummarySection'
+import { ConstellationPlot, EyePlot } from '@/components/SymbolView'
 import { TopBar } from '@/components/TopBar'
 import { Waterfall } from '@/components/Waterfall'
 import { Welcome } from '@/components/Welcome'
@@ -144,19 +144,17 @@ function DetectionStrip({
   )
 }
 
+type EvidenceTab = 'values' | 'frames' | 'bitstream'
+
 function Workspace({
   mode,
   view,
-  railOpen,
-  onRailOpenChange,
-  onEnterAssumptions,
+  onViewChange,
   historyTick,
 }: {
   mode: Opened
   view: SectionId
-  railOpen: boolean
-  onRailOpenChange: (open: boolean) => void
-  onEnterAssumptions: (values: AssumptionValues) => Promise<void>
+  onViewChange: (view: SectionId) => void
   /** Changes whenever an analysis finishes, so the History list is fetched again. */
   historyTick: number
 }) {
@@ -167,7 +165,7 @@ function Workspace({
   // Null until the analyst picks a signal: then the first one the analysis has reached is shown.
   const [pickedId, setPickedId] = useState<number | null>(null)
   const [activeStage, setActiveStage] = useState<StageId | null>(null)
-  const [fullScreen, setFullScreen] = useState(false)
+  const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>('values')
 
   // The split only applies where there's room for two panes; below xl the grid stacks.
   const splittable = useMediaQuery('(min-width: 1280px)')
@@ -184,14 +182,13 @@ function Workspace({
     setActiveStage(null)
   }
 
-  const assumptionsPanel = (
-    <RecordingAssumptionsPanel
-      assumptions={mode.info.assumptions}
-      captureQuality={mode.info.captureQuality}
-      onEnter={onEnterAssumptions}
-    />
-  )
-  const assumptionsCount = Object.values(mode.info.assumptions).filter((p) => p !== null).length
+  /** A stage clicked in the pipeline rail opens its values in the Evidence section. */
+  function showStage(id: StageId) {
+    setActiveStage(id)
+    setEvidenceTab('values')
+    onViewChange('evidence')
+  }
+
   const frameExportUrl = selected
     ? (format: string) => `/api/v1/recordings/${mode.info.id}/detections/${selected.id - 1}/frames?format=${format}`
     : undefined
@@ -214,168 +211,145 @@ function Workspace({
     </div>
   )
 
-  // The plot column, shared by Survey and Waterfall: same waterfall, same zoom, same selection.
-  // `flex-1 min-h-0` so the column is bounded by its parent and the waterfall takes what's left
-  // over. Without `flex-1` the column is auto-height in the Waterfall section, the waterfall's own
-  // `flex-1` has no definite space to fill, and the plot collapses to zero - leaving the power
-  // spectrum and a large empty gap. As a grid item in Survey, `flex-1` is inert and `align-self`
-  // stretches it, so the same class works in both places.
+  // The waterfall column. `flex-1 min-h-0` so the column is bounded by its parent and the
+  // waterfall takes what's left over. Without `flex-1` the column is auto-height in a flex parent,
+  // the waterfall's own `flex-1` has no definite space to fill, and the plot collapses to zero. As
+  // a grid item, `flex-1` is inert and `align-self` stretches it, so the same class works in both.
   const plotColumn = (
     <div data-tour="waterfall" className="flex min-h-0 min-w-0 flex-1 flex-col">
       {waterfall}
       {psd}
-      {view === 'survey' && (
-        <div className="flex h-[232px] shrink-0 flex-col">
-          {selected ? (
-            <BottomPanel
-              detection={selected}
-              assumptionsPanel={assumptionsPanel}
-              assumptionsCount={assumptionsCount}
-              frameExportUrl={frameExportUrl}
-            />
-          ) : (
-            assumptionsPanel
-          )}
-        </div>
-      )}
     </div>
   )
 
-  const evidenceRail = (
+  // Constellation over eye, each in a card with a definite height (UI.md invariants 1 and 2); side
+  // by side when the layout stacks.
+  const symbolsColumn = (
     <aside
-      aria-label="Symbols and evidence"
-      className="flex h-full min-h-0 min-w-0 flex-col bg-surface max-xl:border-t max-xl:border-l-0"
+      aria-label="Constellation and eye"
+      className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] border-l bg-surface max-xl:grid-cols-2 max-xl:grid-rows-[minmax(0,1fr)] max-xl:border-t max-xl:border-l-0 max-md:grid-cols-1 max-md:grid-rows-[minmax(220px,1fr)_minmax(220px,1fr)]"
     >
       {selected ? (
         <>
-          <div className="flex h-8 shrink-0 items-center gap-2 border-b px-2">
-            <h2 className="eyebrow">Evidence · #{selected.id}</h2>
-            <button
-              type="button"
-              onClick={() => setFullScreen(true)}
-              className="ml-auto flex items-center gap-1 rounded-md px-1.5 py-0.5 text-2xs font-medium text-muted-foreground hover:bg-surface-2 hover:text-foreground"
-              title="Open this detection full screen (Esc to close)"
-            >
-              <Maximize2 className="size-3" aria-hidden />
-              Full screen
-            </button>
-            {splittable && (
-              <button
-                type="button"
-                onClick={() => onRailOpenChange(false)}
-                aria-label="Hide the evidence panel"
-                className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-2xs font-medium text-muted-foreground hover:bg-surface-2 hover:text-foreground"
-                title="Hide the evidence panel"
-              >
-                <PanelRightClose className="size-3.5" aria-hidden />
-              </button>
-            )}
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <SymbolView detection={selected} />
-            <EvidencePanel detection={selected} activeStage={activeStage} />
-          </div>
+          <ConstellationPlot detection={selected} />
+          <EyePlot detection={selected} />
         </>
       ) : (
         <p className="px-3 py-4 text-xs text-muted-foreground italic">
           {rateUnknown
             ? 'Signals are found once the sample rate is entered.'
-            : 'No signals were detected in this recording.'}
+            : 'No signals were detected in this recording, so there is no constellation or eye to draw.'}
         </p>
       )}
     </aside>
   )
 
-  // The rail is its own grid cell, so hiding it has to change the template, not just skip a child.
-  const showRail = splittable ? railOpen : true
+  const rail = selected ? (
+    <PipelineRail
+      detections={detections}
+      selected={selected}
+      onSelectDetection={selectDetection}
+      activeStage={activeStage}
+      onSelectStage={showStage}
+    />
+  ) : (
+    <EmptyDetections rateUnknown={rateUnknown} />
+  )
+
+  const detectionStrip = (
+    <DetectionStrip
+      detections={detections}
+      selectedId={selected?.id ?? -1}
+      onSelect={selectDetection}
+      rateUnknown={rateUnknown}
+    />
+  )
+
+  const noSignal = (
+    <p className="px-4 py-6 text-xs text-muted-foreground italic">
+      {rateUnknown ? 'Signals are found once the sample rate is entered.' : 'No signals were detected in this recording.'}
+    </p>
+  )
+
+  const evidenceTabs: readonly TabSpec<EvidenceTab>[] = [
+    { id: 'values', label: 'Values', caption: 'Every value with its level, method, evidence and alternatives, stage by stage.' },
+    {
+      id: 'frames',
+      label: 'Frames',
+      count: selected?.frames.length ?? null,
+      caption: 'Frames found by sync-word search, with the CRC result, header and payload of each.',
+    },
+    {
+      id: 'bitstream',
+      label: 'Bit stream',
+      count: selected?.frames.length ?? null,
+      caption: 'How the frames sit in the stream and how the sync word recurs.',
+    },
+  ]
 
   // The plain-language summary belongs to a recording whose analysis has finished.
   const summaryId = summaryTarget(mode.info)
 
   return (
     <>
-      {view === 'survey' && summaryId && <SummaryStrip key={summaryId} recordingId={summaryId} />}
-
-      {view === 'survey' &&
+      {view === 'dashboard' &&
         (splittable ? (
-          <SplitPane
-            rail={
-              selected ? (
-                <PipelineRail
-                  detections={detections}
-                  selected={selected}
-                  onSelectDetection={selectDetection}
-                  activeStage={activeStage}
-                  onSelectStage={setActiveStage}
-                />
-              ) : (
-                <EmptyDetections rateUnknown={rateUnknown} />
-              )
-            }
-            main={plotColumn}
-            panel={showRail ? evidenceRail : null}
-            panelLabel="the evidence panel"
-          />
+          <SplitPane rail={rail} main={plotColumn} panel={symbolsColumn} panelLabel="the constellation and eye" />
         ) : (
           <main className="grid min-h-0 flex-1 grid-cols-[216px_minmax(0,1fr)] grid-rows-[minmax(216px,1.6fr)_minmax(0,1fr)] max-md:grid-cols-1 max-md:grid-rows-[auto_minmax(0,1fr)]">
-            {selected ? (
-              <PipelineRail
-                detections={detections}
-                selected={selected}
-                onSelectDetection={selectDetection}
-                activeStage={activeStage}
-                onSelectStage={setActiveStage}
-              />
-            ) : (
-              <EmptyDetections rateUnknown={rateUnknown} />
-            )}
+            {rail}
             {plotColumn}
-            {/* Two columns, three children: the rail wraps to a second row, so it has to span
-                both rather than land in the 216px column. `min-h-0` plus the aside's `h-full`
-                give the evidence panel a definite height, which is what makes its own
-                `overflow-y-auto` engage instead of the page growing to fit every stage. */}
-            <div className="min-h-0 min-w-0 max-xl:col-span-2">{evidenceRail}</div>
+            {/* Two columns, three children: the symbols wrap to a second row, so they span both
+                rather than land in the 216px column. `min-h-0` plus the aside's `h-full` give them
+                a definite height. */}
+            <div className="min-h-0 min-w-0 max-xl:col-span-2">{symbolsColumn}</div>
           </main>
         ))}
 
-      {view === 'waterfall' && (
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <DetectionStrip
-            detections={detections}
-            selectedId={selected?.id ?? -1}
-            onSelect={selectDetection}
-            rateUnknown={rateUnknown}
-          />
-          {plotColumn}
+      {view === 'evidence' && (
+        <main aria-label="Evidence" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {detectionStrip}
+          {selected ? (
+            <div data-tour="evidence" className="flex min-h-0 flex-1 flex-col">
+              <TabbedPanel label="Evidence" tabs={evidenceTabs} tab={evidenceTab} onTab={setEvidenceTab}>
+                {evidenceTab === 'values' && (
+                  <div className="mx-auto max-w-4xl">
+                    <EvidencePanel detection={selected} activeStage={activeStage} />
+                  </div>
+                )}
+                {evidenceTab === 'frames' && <Frames detection={selected} exportUrl={frameExportUrl} />}
+                {evidenceTab === 'bitstream' && <BitstreamView detection={selected} />}
+              </TabbedPanel>
+            </div>
+          ) : (
+            noSignal
+          )}
         </main>
       )}
+
+      {view === 'hypotheses' && (
+        <main aria-label="Hypotheses" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {detectionStrip}
+          {selected ? (
+            <div data-tour="hypotheses" className="min-h-0 flex-1 overflow-auto bg-surface">
+              <Hypotheses detection={selected} />
+            </div>
+          ) : (
+            noSignal
+          )}
+        </main>
+      )}
+
+      {view === 'summary' &&
+        (summaryId ? (
+          <SummarySection key={summaryId} recordingId={summaryId} />
+        ) : (
+          <SummaryWaiting done={mode.info.analysis.done} total={mode.info.analysis.total} />
+        ))}
 
       {/* The kept analyses are the server's, not this recording's: the section sits in the
           Workspace only so that zoom and selection survive a visit to it. */}
       {view === 'history' && <HistorySection refreshKey={historyTick} />}
-
-      {!showRail && view === 'survey' && (
-        <button
-          type="button"
-          onClick={() => onRailOpenChange(true)}
-          aria-label="Show the evidence panel"
-          className="absolute top-1/2 right-0 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-l-md border border-r-0 bg-surface px-1 py-3 text-muted-foreground hover:bg-surface-2 hover:text-foreground"
-        >
-          <PanelRightClose className="size-3.5" aria-hidden />
-          <ChevronRight className="size-3" aria-hidden />
-        </button>
-      )}
-
-      {fullScreen && selected && (
-        <SignalOverlay
-          detection={selected}
-          activeStage={activeStage}
-          assumptionsPanel={assumptionsPanel}
-          assumptionsCount={assumptionsCount}
-          frameExportUrl={frameExportUrl}
-          onClose={() => setFullScreen(false)}
-        />
-      )}
     </>
   )
 }
@@ -413,7 +387,6 @@ export default function App() {
   const [openingSample, setOpeningSample] = useState<string | null>(null)
   const [openError, setOpenError] = useState<string | null>(null)
   const [view, setView] = useState<SectionId>(loadStoredView)
-  const [railOpen, setRailOpen] = useState(true)
   const [assumptionsModalOpen, setAssumptionsModalOpen] = useState(false)
   // A folder that holds several recordings, until the analyst picks one.
   const [batch, setBatch] = useState<{ source: string; items: InputInfo[] } | null>(null)
@@ -424,8 +397,8 @@ export default function App() {
   // A raw file whose sample format is UNKNOWN, until the analyst chooses one.
   const [formatNeeded, setFormatNeeded] = useState<{ item: InputInfo; candidates: string[] } | null>(null)
 
-  // With nothing open only the start screen (Survey) and History have anything to show.
-  const shownView: SectionId = recording || view === 'history' ? view : 'survey'
+  // With nothing open only the start screen (Dashboard) and History have anything to show.
+  const shownView: SectionId = recording || view === 'history' ? view : 'dashboard'
   const hasRecording = recording !== null
 
   const changeView = useCallback((next: SectionId) => {
@@ -445,7 +418,7 @@ export default function App() {
       e.preventDefault()
       if (next === 'assumptions') {
         if (hasRecording) setAssumptionsModalOpen(true)
-      } else if (hasRecording || next === 'survey' || next === 'history') {
+      } else if (hasRecording || next === 'dashboard' || next === 'history') {
         changeView(next)
       }
     }
@@ -604,9 +577,17 @@ export default function App() {
     setWelcomeOpen(false)
   }
 
+  // The section on screen when the tour starts, which it returns to; read at start, not render time.
+  const shownRef = useRef(shownView)
+  useEffect(() => {
+    shownRef.current = shownView
+  }, [shownView])
+
   function runTour() {
     // After the next paint, so the sections the tour points at are in the DOM.
-    requestAnimationFrame(() => startTour({ onDone: markOnboardingSeen }))
+    requestAnimationFrame(() =>
+      startTour({ onDone: markOnboardingSeen, section: shownRef.current, showSection: changeView }),
+    )
   }
 
   const reachedFirst = recording ? recording.info.analysis.done >= 1 || recording.info.analysis.state === 'done' : false
@@ -710,9 +691,7 @@ export default function App() {
           key={`${recording.info.id}:${recording.source.normalised ? 'norm' : 'hz'}:${recording.info.assumptions.iqOrder?.value ?? ''}`}
           mode={recording}
           view={shownView}
-          railOpen={railOpen}
-          onRailOpenChange={setRailOpen}
-          onEnterAssumptions={enterAssumptions}
+          onViewChange={changeView}
           historyTick={historyTick}
         />
       ) : shownView === 'history' ? (

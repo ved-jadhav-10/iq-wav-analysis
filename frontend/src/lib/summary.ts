@@ -2,11 +2,11 @@
  * The plain-language summary of a finished analysis: the text `GET /api/v1/recordings/{id}/results
  * ?format=txt` serves (`dsp/summary.py`, a fixed template over the results document, never a
  * model). The UI shows it as the server wrote it, line for line; this module only fetches it, tells
- * its headings from its items for styling, and remembers whether the strip is open.
+ * its headings from its items for styling.
  */
 import type { RecordingInfo } from './api'
 
-/** What the strip shows: nothing is fetched until an analysis has finished. */
+/** What the Summary section shows: nothing is fetched until an analysis has finished. */
 export type SummaryState =
   | { status: 'loading' }
   | { status: 'ready'; text: string }
@@ -89,35 +89,4 @@ export function summaryLines(text: string): SummaryLine[] {
     if (line.trimEnd().endsWith(':')) return { kind: 'subheading', text: line }
     return { kind: 'text', text: line }
   })
-}
-
-/* localStorage keeps the strip open or collapsed across reloads; the try/catch is for a browser
- * with storage disabled, where the strip still works and just starts as the default. */
-
-const STORAGE_KEY = 'sanket.summary.v1'
-
-/** With nothing remembered the strip opens only in a window tall enough to give it the room (it
- * takes the waterfall's height: at 1440x800 the waterfall would be left about 90px), and is
- * collapsed in a shorter one; a choice the analyst has made always wins. */
-export const OPEN_BY_DEFAULT_MIN_HEIGHT = 880
-
-function defaultOpen(): boolean {
-  return window.innerHeight >= OPEN_BY_DEFAULT_MIN_HEIGHT
-}
-
-export function loadSummaryOpen(): boolean {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    return raw === 'open' ? true : raw === 'collapsed' ? false : defaultOpen()
-  } catch {
-    return false
-  }
-}
-
-export function storeSummaryOpen(open: boolean): void {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, open ? 'open' : 'collapsed')
-  } catch {
-    // Nothing to do: it just won't survive a reload.
-  }
 }

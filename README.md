@@ -67,7 +67,7 @@ npx playwright install chromium && npm run e2e   # offline smoke test against sa
 
 ### Sample recordings
 
-`uv run python tools/make_demo.py` writes synthetic recordings (SigMF, a headerless raw file and a WAV) with exact ground truth to `data/demo/`, and checks every decoded frame against the transmitted bytes. They are bundled in the desktop build and shown as cards on the start screen (click one to open it); from a checkout, paste a file's full path into the path box in the top bar instead. The UI labels them "Synthetic recording".
+`uv run python tools/make_demo.py` writes synthetic recordings (SigMF, a headerless raw file and a WAV) with exact ground truth to `data/demo/`, and checks every decoded frame against the transmitted bytes. They are bundled in the desktop build and shown as cards on the start screen (click one to open it); from a checkout, use Open in the top bar and paste a file's full path instead. The UI labels them "Synthetic recording".
 
 | File | Contents | What Sanket shows |
 |---|---|---|
@@ -75,7 +75,7 @@ npx playwright install chromium && npm run e2e   # offline smoke test against sa
 | `scene_widen.sigmf-meta` | 8PSK with a block interleaver; QPSK inside RS(255,223) | Both VERIFIED, with the de-interleave and RS stages shown |
 | `scene_fsk.sigmf-meta` | Coded 2-FSK | VERIFIED frames |
 | `scene_ldpc.sigmf-meta` | QPSK under the IEEE 802.11n n = 648 rate-½ LDPC code | The code named from the catalogue, VERIFIED by the frame CRC |
-| `scene_coverage.sigmf-meta` | 16QAM with a helical interleaver; QPSK with a convolutional (Forney) interleaver; QPSK under a K=9 code that is not catalogued; frames carry readable text | All three VERIFIED; both interleavers recognised from the catalogue (helical 16×36, the Forney grid); the K=9 code identified blind and marked "(found blind)"; the Frames tab's ASCII column reads as words |
+| `scene_coverage.sigmf-meta` | 16QAM with a helical interleaver; QPSK with a convolutional (Forney) interleaver; QPSK under a K=9 code that is not catalogued; frames carry readable text | All three VERIFIED; both interleavers recognised from the catalogue (helical 16×36, the Forney grid); the K=9 code identified blind and marked "(found blind)"; the Frames tab's ASCII column (under Evidence) reads as words |
 | `scene_fsk4.sigmf-meta` | Coded 4-FSK, frames carry readable text | Tone-based demodulation at four tones, VERIFIED frames (alone because the M-FSK symbol-rate estimate is an [open gate](docs/PLAN.md#0-progress) on crowded channels) |
 | `scene_systems.sigmf-meta` | POCSAG paging (2-FSK), NAVTEX (SITOR-B) and AIS (GMSK) in one 48 kS/s recording | Each recognised blind and VERIFIED by its own check (BCH, four-of-seven repetition, CRC-16/X.25); the pages and the NAVTEX warning shown as text |
 | `scene_wav.wav` | 48 kHz 16-bit stereo IQ WAV (I left, Q right), one coded QPSK signal | Sample rate MEASURED from the WAV header, quadrature check passes, VERIFIED frames |

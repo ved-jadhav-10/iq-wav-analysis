@@ -8,7 +8,6 @@ const html = (sigmf: 'annotate' | 'save' | 'none', saving = false) =>
     createElement(ResultsLinks, {
       resultsUrl: (format) => `/api/v1/recordings/r1/results?format=${format}`,
       sigmf,
-      stacked: false,
       saving,
       onSave: () => undefined,
     }),

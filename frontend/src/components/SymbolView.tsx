@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
+import { CircleSlash, Loader2 } from 'lucide-react'
 import type { Detection, Eye } from '@/lib/analysis'
 import { integer, signed } from '@/lib/format'
 import { cssVar, useTheme } from '@/hooks/theme'
+import { useSize } from '@/hooks/useWidth'
 import { isPending } from '@/lib/plainHeadline'
 import { InfoTip } from './InfoTip'
 
@@ -172,119 +174,173 @@ function drawEye(ctx: CanvasRenderingContext2D, w: number, h: number, eye: Eye, 
   }
 }
 
-function emptyMessage(detection: Detection): string {
+
+/** Why there is no constellation to draw for this detection. */
+function constellationReason(detection: Detection): string {
   if (detection.kind === 'cw') {
-    return 'No symbols to plot: this is a steady carrier. Its frequency, drift and C/N0 are in the evidence below.'
+    return 'This is a steady carrier, so there are no symbols. Its frequency, drift and C/N0 are in the Evidence section.'
   }
   if (detection.kind === 'analog') {
-    return 'No symbols to plot: this is an analog signal, kept out of the digital chain. See the evidence below.'
+    return 'This is an analog signal, kept out of the digital chain. See the Evidence section.'
   }
   if (detection.kind === 'fsk') {
-    return 'No constellation: non-coherent FSK decides each symbol by tone energy. Tone spacing and timing are in the evidence below.'
-  }
-  if (isPending(detection)) {
-    return 'Analysing this signal. Its symbols appear here once timing and carrier recovery have run.'
+    return 'Non-coherent FSK decides each symbol by tone energy, so there is no constellation. Tone spacing and timing are in the Evidence section.'
   }
   const reason = detection.noFramesReason ?? detection.noSearchReason
   const settle =
     ' A stronger or longer capture, or an analyst-entered symbol rate, would give the receiver something to lock to.'
   return reason
-    ? `No symbols to plot. ${reason.trim()}${/[.!?]$/.test(reason.trim()) ? '' : '.'}${settle}`
-    : `No symbols were recovered for this detection (the signal was not locked to a symbol rate and carrier).${settle}`
+    ? `No symbols were recovered. ${reason.trim()}${/[.!?]$/.test(reason.trim()) ? '' : '.'}${settle}`
+    : `No symbols were recovered (the signal was not locked to a symbol rate and carrier).${settle}`
 }
 
-/** Symbol-domain view for the selected detection: the constellation (or, on the toggle, the eye
- * diagram) for a linear signal, and the honest reason there is nothing to plot for the rest. */
-export function SymbolView({ detection }: { detection: Detection }) {
-  const wrapRef = useRef<HTMLDivElement>(null)
+/** Why there is no eye diagram to draw for this detection. */
+function eyeReason(detection: Detection): string {
+  if (detection.kind === 'fsk') {
+    return 'An eye needs a linear (PSK/QAM) signal; FSK is decided by tone energy, not by symbol amplitude.'
+  }
+  if (detection.kind === 'cw') return 'This is a steady carrier: there are no symbol transitions to overlay.'
+  if (detection.kind === 'analog') return 'This is an analog signal: there are no symbol transitions to overlay.'
+  return `No eye was recorded because no symbols were recovered. ${constellationReason(detection)}`
+}
+
+function NotApplicable({ children }: { children: string }) {
+  return (
+    <div className="flex size-full flex-col items-center justify-center gap-1.5 overflow-y-auto px-4 py-3 text-center">
+      <CircleSlash className="size-5 shrink-0 text-subtle-foreground" aria-hidden />
+      <p className="text-xs font-medium text-muted-foreground">Not applicable</p>
+      <p className="max-w-[44ch] text-xs text-subtle-foreground">{children}</p>
+    </div>
+  )
+}
+
+function Analysing() {
+  return (
+    <div role="status" className="flex size-full items-center justify-center gap-2 px-4 text-xs text-muted-foreground">
+      <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />
+      Analysing this signal…
+    </div>
+  )
+}
+
+interface CardProps {
+  title: string
+  tip: 'constellation' | 'eye'
+  subtitle: string
+  tourAnchor: string
+  children: ReactNode
+}
+
+/** One plot card: a title row and a body that takes the rest of the height. The body gets a
+ * definite size from the card (`min-h-0 flex-1`) and the plot inside it is absolutely positioned,
+ * so a canvas can never size its own container. */
+function PlotCard({ title, tip, subtitle, tourAnchor, children }: CardProps) {
+  return (
+    <section
+      aria-label={title}
+      data-tour={tourAnchor}
+      className="flex min-h-0 min-w-0 flex-col border-b bg-surface last:border-b-0"
+    >
+      <div className="shrink-0 px-3 pt-2">
+        <h2 className="flex items-center gap-1.5 text-[13px] font-semibold">
+          {title}
+          <InfoTip term={tip} />
+        </h2>
+        <p className="truncate text-2xs text-muted-foreground" title={subtitle}>
+          {subtitle}
+        </p>
+      </div>
+      <div className="relative min-h-0 flex-1">{children}</div>
+    </section>
+  )
+}
+
+/** The selected detection's constellation: the real symbols after timing, carrier and phase
+ * recovery, or the reason there are none. */
+export function ConstellationPlot({ detection }: { detection: Detection }) {
+  const [boxRef, { width, height }] = useSize<HTMLDivElement>()
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [width, setWidth] = useState(0)
-  const [view, setView] = useState<'constellation' | 'eye'>('constellation')
   const { theme } = useTheme()
-
-  useEffect(() => {
-    const el = wrapRef.current
-    if (!el) return
-    const ro = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width))
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  const kind = detection.kind
-  const hasCanvas = kind === 'psk' && detection.constellation.length > 0
-  // A real detection may carry an eye.
-  const eye = kind === 'psk' ? (detection.eye ?? null) : null
-  const showEye = eye !== null && view === 'eye'
-  const height = showEye ? 180 : kind === 'psk' ? Math.min(width, 300) : 150
+  const hasCanvas = detection.kind === 'psk' && detection.constellation.length > 0
+  const side = Math.max(0, Math.min(width, height) - 8)
+  const symbols = detection.constellation.length
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || width === 0 || !hasCanvas) return
-    const canvasW = !showEye ? height : width
-    const ctx = setupCanvas(canvas, canvasW, height)
-    if (!ctx) return
-    if (showEye && eye) drawEye(ctx, width, height, eye, theme === 'dark')
-    else drawConstellationPoints(ctx, height, detection.constellation, theme === 'dark')
-  }, [width, height, theme, hasCanvas, detection.constellation, showEye, eye])
-
-  const symbols = detection.constellation.length
-  const title = showEye ? 'Eye diagram' : kind === 'psk' ? 'Constellation' : 'Symbols'
-  const subtitle = showEye
-    ? `${integer.format(eye?.i.length ?? 0)} symbols overlaid, one symbol either side of the instant, after phase correction`
-    : kind === 'psk' && hasCanvas
-      ? `${integer.format(symbols)} symbols after sync and phase correction`
-      : detection.headline
+    if (!canvas || side < 40 || !hasCanvas) return
+    const ctx = setupCanvas(canvas, side, side)
+    if (ctx) drawConstellationPoints(ctx, side, detection.constellation, theme === 'dark')
+  }, [side, theme, hasCanvas, detection.constellation])
 
   return (
-    <section aria-labelledby="symview-title" data-tour="symbols" className="border-b px-3 pt-3 pb-3">
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h2 id="symview-title" className="flex items-center gap-1.5 text-[13px] font-semibold">
-            {title}
-            {kind === 'psk' && <InfoTip term={showEye ? 'eye' : 'constellation'} />}
-          </h2>
-          <p className="text-xs text-muted-foreground">{subtitle}</p>
-        </div>
-        {eye && (
-          <div role="radiogroup" aria-label="Symbol view" className="flex shrink-0 gap-1">
-            {(['constellation', 'eye'] as const).map((id) => (
-              <button
-                key={id}
-                type="button"
-                role="radio"
-                aria-checked={view === id}
-                onClick={() => setView(id)}
-                className={`rounded-md border px-1.5 py-0.5 text-2xs font-medium ${
-                  view === id
-                    ? 'border-primary bg-surface-2 text-foreground'
-                    : 'border-border-strong text-muted-foreground hover:bg-background hover:text-foreground'
-                }`}
-              >
-                {id === 'eye' ? 'Eye' : 'Constellation'}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-      <div ref={wrapRef} className="flex justify-center w-full min-w-0 overflow-hidden">
+    <PlotCard
+      title="Constellation"
+      tip="constellation"
+      tourAnchor="constellation"
+      subtitle={hasCanvas ? `${integer.format(symbols)} symbols after sync and phase correction` : detection.headline}
+    >
+      <div ref={boxRef} className="absolute inset-0 flex items-center justify-center overflow-hidden">
         {hasCanvas ? (
           <canvas
             ref={canvasRef}
-            style={{ width: !showEye ? height : width, height, maxWidth: '100%' }}
+            style={{ width: side, height: side }}
             className="block"
             role="img"
-            aria-label={
-              showEye
-                ? `${detection.label} eye diagram, I and Q, ${eye?.i.length ?? 0} traces`
-                : `${detection.label} constellation, ${symbols} symbols`
-            }
+            aria-label={`${detection.label} constellation, ${symbols} symbols`}
           />
+        ) : isPending(detection) ? (
+          <Analysing />
         ) : (
-          <p className="w-full rounded-md border border-dashed px-3 py-6 text-center text-xs text-muted-foreground">
-            {emptyMessage(detection)}
-          </p>
+          <NotApplicable>{constellationReason(detection)}</NotApplicable>
         )}
       </div>
-    </section>
+    </PlotCard>
+  )
+}
+
+/** The selected detection's eye diagram (I and Q overlaid over one symbol either side of the
+ * symbol instant), or the reason there is none. */
+export function EyePlot({ detection }: { detection: Detection }) {
+  const [boxRef, { width, height }] = useSize<HTMLDivElement>()
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const { theme } = useTheme()
+  const eye = detection.kind === 'psk' ? (detection.eye ?? null) : null
+  const w = Math.max(0, width - 8)
+  const h = Math.max(0, height - 8)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || w < 80 || h < 60 || !eye) return
+    const ctx = setupCanvas(canvas, w, h)
+    if (ctx) drawEye(ctx, w, h, eye, theme === 'dark')
+  }, [w, h, theme, eye])
+
+  return (
+    <PlotCard
+      title="Eye diagram"
+      tip="eye"
+      tourAnchor="eye"
+      subtitle={
+        eye
+          ? `${integer.format(eye.i.length)} symbols overlaid, one symbol either side of the instant, after phase correction`
+          : 'I and Q overlaid over one symbol'
+      }
+    >
+      <div ref={boxRef} className="absolute inset-0 flex items-center justify-center overflow-hidden">
+        {eye ? (
+          <canvas
+            ref={canvasRef}
+            style={{ width: w, height: h }}
+            className="block"
+            role="img"
+            aria-label={`${detection.label} eye diagram, I and Q, ${eye.i.length} traces`}
+          />
+        ) : isPending(detection) ? (
+          <Analysing />
+        ) : (
+          <NotApplicable>{eyeReason(detection)}</NotApplicable>
+        )}
+      </div>
+    </PlotCard>
   )
 }

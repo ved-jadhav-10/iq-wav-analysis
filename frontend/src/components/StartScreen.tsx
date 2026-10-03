@@ -5,6 +5,7 @@ import { listSamples, type SampleInfo } from '@/lib/api'
 import { LEVEL_INFO, type EvidenceLevel } from '@/lib/evidence'
 import { EvidenceBadge } from './EvidenceBadge'
 import { Logo } from './Logo'
+import { TeamLogo } from './TeamBadge'
 
 /** What a visitor should look for in each bundled sample, by id. The ground truth behind each is
  * in `data/demo/<id>.truth.json`; the server's own title and description come from `/samples`. */
@@ -129,6 +130,10 @@ export function StartScreen({ opening, openingSample, onUpload, onOpenSample }: 
               evidence for every claim.
             </p>
           </div>
+          <div className="ml-auto flex shrink-0 flex-col items-center gap-1 max-md:hidden">
+            <TeamLogo variant="full" alt="Team Abhedya" className="w-28 2xl:w-36" />
+            <span className="text-2xs text-subtle-foreground">Built by Team Abhedya</span>
+          </div>
         </header>
 
         <section aria-labelledby="start-samples">
@@ -157,7 +162,7 @@ export function StartScreen({ opening, openingSample, onUpload, onOpenSample }: 
           {samples.state === 'ready' && samples.items.length === 0 && (
             <p className="text-xs text-muted-foreground italic">
               No sample recordings are installed. Run <span className="num">tools/make_demo.py</span> to generate them,
-              or open your own recording above.
+              or open your own recording below.
             </p>
           )}
           {samples.state === 'ready' && samples.items.length > 0 && (
@@ -235,8 +240,8 @@ export function StartScreen({ opening, openingSample, onUpload, onOpenSample }: 
                 Open your own recording
               </h2>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                .iq / raw, .wav, SigMF, .npy and more. Drop files anywhere on this window, choose them here, or paste
-                a path into the box at the top. Nothing leaves this machine.
+                .iq / raw, .wav, SigMF, .npy and more. Drop files anywhere on this window, choose them here, or use
+                Open in the top bar to type a path. Nothing leaves this machine.
               </p>
             </div>
             <label

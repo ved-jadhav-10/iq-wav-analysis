@@ -64,8 +64,14 @@ function writeSigmf(base: string) {
   )
 }
 
+/** The top bar's Open dropdown, which holds the file picker and the path box. */
+async function openMenu(page: Page) {
+  if ((await page.locator('#open-menu').count()) === 0) await page.locator('button[aria-controls="open-menu"]').click()
+}
+
 async function openByPath(page: Page, path: string) {
   await page.goto('/')
+  await openMenu(page)
   await page.getByPlaceholder('Open a recording by path…').fill(path)
   await page.keyboard.press('Enter')
 }
@@ -87,7 +93,7 @@ test('a raw file with an unknown sample rate opens, asks for the rate, then anal
   // The prompt takes its own row; the page still never scrolls as a whole, in either section.
   for (const size of [{ width: 1918, height: 950 }, { width: 1440, height: 800 }]) {
     await page.setViewportSize(size)
-    for (const section of ['Survey', 'Waterfall']) {
+    for (const section of ['Dashboard', 'Evidence', 'Hypotheses', 'Summary']) {
       await page.getByRole('navigation', { name: 'Workspace section' }).getByRole('button', { name: section }).click()
       // A string, not a function: the e2e project has no DOM types, and this runs in the page.
       const { scrollHeight, innerHeight } = (await page.evaluate(
@@ -97,6 +103,7 @@ test('a raw file with an unknown sample rate opens, asks for the rate, then anal
     }
   }
 
+  await page.getByRole('navigation', { name: 'Workspace section' }).getByRole('button', { name: 'Dashboard' }).click()
   // A bad entry is refused with a message; a good one replaces the prompt with real detections.
   await page.getByLabel('Sample rate in samples per second').fill('fast')
   await page.getByLabel('Sample rate in samples per second').press('Enter')
@@ -114,10 +121,12 @@ test('a raw file with an unknown sample rate opens, asks for the rate, then anal
 test('uploaded files are opened from the workspace, and a bad name is refused', async ({ page }) => {
   test.setTimeout(120_000)
   await page.goto('/')
+  await openMenu(page)
   const picker = page.getByLabel('Upload recording files')
 
   await picker.setInputFiles({ name: 'bad;name.bin', mimeType: 'application/octet-stream', buffer: toneBytes() })
   await expect(page.getByRole('alert')).toContainText('file names may hold')
+  await openMenu(page) // choosing files closes the menu
 
   // A SigMF pair arrives as two files and opens as one recording, with its stated rate.
   const meta = JSON.stringify({
@@ -204,7 +213,7 @@ test('the analyst can enter a centre frequency and swap I and Q', async ({ page 
   await modal.getByRole('button', { name: 'Close' }).click()
   for (const size of [{ width: 1918, height: 950 }, { width: 1440, height: 800 }]) {
     await page.setViewportSize(size)
-    for (const section of ['Survey', 'Waterfall']) {
+    for (const section of ['Dashboard', 'Evidence', 'Hypotheses', 'Summary']) {
       await page.getByRole('navigation', { name: 'Workspace section' }).getByRole('button', { name: section }).click()
       const { scrollHeight, innerHeight } = (await page.evaluate(
         '({ scrollHeight: document.documentElement.scrollHeight, innerHeight: window.innerHeight })',
@@ -289,7 +298,7 @@ async function barMetrics(page: Page) {
   return (await page.evaluate(`(() => {
     const bar = document.querySelector('header')
     const controls = Array.from(bar.querySelectorAll('a, button, input[type=text], label'))
-      .filter((e) => e.getClientRects().length > 0 && !e.closest('[role=status], [role=alert], #results-menu'))
+      .filter((e) => e.getClientRects().length > 0 && !e.closest('[role=status], [role=alert], #results-menu, #open-menu'))
       .map((e) => ({ e, r: e.getBoundingClientRect() }))
     const overlaps = []
     for (let i = 0; i < controls.length; i++) {
@@ -303,7 +312,7 @@ async function barMetrics(page: Page) {
     }
     const wide = Array.from(document.querySelectorAll('body *')).filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1 && e.getClientRects().length > 0)
       .slice(0, 3).map((e) => e.tagName + '.' + String(e.className).slice(0, 40) + ':' + (e.textContent || '').trim().slice(0, 20))
-    const open = document.querySelector('#results-menu, [role=status], [role=alert]')
+    const open = document.querySelector('#results-menu, #open-menu, [role=status], [role=alert]')
     const o = open && open.getBoundingClientRect()
     return {
       barHeight: bar.getBoundingClientRect().height,
@@ -339,52 +348,60 @@ test('the results exports follow the recording: SigMF links for SigMF, Save as S
   test.setTimeout(180_000)
   mkdirSync(testInfo.outputDir, { recursive: true })
   const bar = page.getByRole('banner')
-  // Wide enough that the downloads sit in the bar itself; narrower ones fold into a Results menu.
+  const download = bar.getByRole('button', { name: /^Download/ })
+  const menu = page.getByRole('menu', { name: 'Results downloads' })
   await page.setViewportSize({ width: 1918, height: 950 })
 
   // The start screen has no recording behind it: no downloads at all.
   await page.goto('/')
   await expect(page.getByTestId('start-screen')).toBeVisible()
-  await expect(bar.getByRole('link', { name: 'Run record' })).toHaveCount(0)
-  await expect(bar.getByRole('button', { name: /^Results/ })).toHaveCount(0)
-  await expect(bar.getByRole('button', { name: 'Save as SigMF' })).toHaveCount(0)
+  await expect(download).toHaveCount(0)
 
   // A SigMF recording: every download, the run record and the annotated metadata, but no save.
   const base = testInfo.outputPath('tone')
   writeSigmf(base)
   await openByPath(page, `${base}.sigmf-meta`)
-  const runLink = bar.getByRole('link', { name: 'Run record' })
-  await expect(runLink).toBeVisible({ timeout: 60_000 })
+  await expect(download).toBeVisible({ timeout: 60_000 })
+  await expect(menu).toHaveCount(0) // one dropdown: nothing sits in the bar until it is opened
+  await download.click()
+  const runLink = menu.getByRole('menuitem', { name: 'Run record' })
+  await expect(runLink).toBeVisible()
   await expect(runLink).toHaveAttribute('href', /\/results\?format=run$/)
   await expect(runLink).toHaveAttribute('title', /time per phase/)
-  const sigmfLink = bar.getByRole('link', { name: 'SigMF' })
+  const sigmfLink = menu.getByRole('menuitem', { name: 'SigMF' })
   await expect(sigmfLink).toHaveAttribute('href', /\/results\?format=sigmf$/)
-  await expect(bar.getByRole('button', { name: 'Save as SigMF' })).toHaveCount(0)
+  await expect(menu.getByRole('menuitem', { name: 'Save as SigMF' })).toHaveCount(0)
   const sigmf = await page.request.get((await sigmfLink.getAttribute('href'))!)
   expect(sigmf.status()).toBe(200)
   expect(((await sigmf.json()) as { global: Record<string, unknown> }).global['core:datatype']).toBe('cf32_le')
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
 
   // A raw file: the same links and a Save button; saving writes the file and says where, and
   // saving again is refused with the server's reason.
   const raw = testInfo.outputPath('capture.bin')
   writeFileSync(raw, toneBytes())
   await openByPath(page, raw)
-  const save = bar.getByRole('button', { name: 'Save as SigMF' })
-  await expect(save).toBeVisible({ timeout: 60_000 })
+  await expect(download).toBeVisible({ timeout: 60_000 })
+  await download.click()
+  const save = menu.getByRole('menuitem', { name: /Save as SigMF/ })
+  await expect(save).toBeVisible()
   await expect(save).toHaveAttribute('title', /next to the original.*never touched/)
-  await expect(bar.getByRole('link', { name: 'SigMF' })).toBeVisible()
+  await expect(menu.getByRole('menuitem', { name: 'SigMF', exact: true })).toBeVisible()
   await save.click()
   const saved = page.getByRole('status').filter({ hasText: /^Saved / })
   await expect(saved).toContainText('capture.sigmf-meta')
   await saved.getByRole('button', { name: 'Dismiss message' }).click()
   await expect(saved).toHaveCount(0)
-  await save.click()
+  await download.click()
+  await menu.getByRole('menuitem', { name: /Save as SigMF/ }).click()
   await expect(page.getByRole('alert').filter({ hasText: 'Not saved' })).toContainText('already exists')
   await page.getByRole('button', { name: 'Dismiss message' }).click()
 
   // At every width, in both themes: the page never scrolls as a whole, and the top bar stays one
-  // 48 px row with nothing overflowing or overlapping. Below 1536 the downloads are a menu, which
-  // is opened (and closed again with Escape) so its own box is measured too, as is the message.
+  // 48 px row with nothing overflowing or overlapping. Both dropdowns and the save message are
+  // opened (and closed again) so their own boxes are measured too.
+  const openTrigger = page.locator('button[aria-controls="open-menu"]')
   for (let pass = 0; pass < 2; pass++) {
     for (const size of [
       { width: 1918, height: 950 },
@@ -395,21 +412,17 @@ test('the results exports follow the recording: SigMF links for SigMF, Save as S
       { width: 390, height: 800 },
     ]) {
       await page.setViewportSize(size)
-      const folded = size.width < 1536
-      const menu = bar.getByRole('button', { name: /^Results/ })
-      // The bar switches between the inline links and the menu a moment after the resize.
-      await expect(folded ? menu : bar.getByRole('link', { name: 'Run record' })).toBeVisible()
-      // Below 1536 the menu is already there from the previous size, so also wait for the charts to
-      // re-measure: a lasting overflow still fails here.
+      await expect(download).toBeVisible()
+      // Wait for the charts to re-measure: a lasting overflow still fails here.
       await expect
         .poll(async () => (await barMetrics(page)).pageOverflow, { message: `${size.width} wide, sideways, pass ${pass}` })
         .toBeLessThanOrEqual(0)
-      const states = folded ? ['closed', 'menu', 'message'] : ['closed', 'message']
-      for (const state of states) {
-        if (state === 'menu') await menu.click()
+      for (const state of ['closed', 'download', 'open', 'message']) {
+        if (state === 'download') await download.click()
+        if (state === 'open') await openTrigger.click()
         if (state === 'message') {
-          if (folded) await menu.click()
-          await bar.getByRole('button', { name: 'Save as SigMF' }).click()
+          await download.click()
+          await menu.getByRole('menuitem', { name: /Save as SigMF/ }).click()
           await expect(page.getByRole('alert')).toContainText('already exists')
         }
         const m = await barMetrics(page)
@@ -425,10 +438,15 @@ test('the results exports follow the recording: SigMF links for SigMF, Save as S
           expect(m.popupRight, where).toBeLessThanOrEqual(m.innerWidth)
           expect(m.popupBottom, where).toBeLessThanOrEqual(m.innerHeight)
         }
-        if (state === 'menu') {
-          await expect(bar.getByRole('link', { name: 'Run record' })).toBeVisible()
+        if (state === 'download') {
+          await expect(menu.getByRole('menuitem', { name: 'Run record' })).toBeVisible()
           await page.keyboard.press('Escape')
-          await expect(bar.getByRole('link', { name: 'Run record' })).toHaveCount(0)
+          await expect(menu).toHaveCount(0)
+        }
+        if (state === 'open') {
+          await expect(page.getByRole('dialog', { name: 'Open a recording' })).toBeVisible()
+          await page.keyboard.press('Escape')
+          await expect(page.getByRole('dialog', { name: 'Open a recording' })).toHaveCount(0)
         }
         if (state === 'message') await page.getByRole('button', { name: 'Dismiss message' }).click()
       }
@@ -451,7 +469,7 @@ test('History lists a finished analysis, links its downloads and deletes it afte
   await page.setViewportSize({ width: 1918, height: 950 })
   await openByPath(page, `${base}.sigmf-meta`)
   // The analysis has finished once the top bar offers its results.
-  await expect(page.getByRole('banner').getByRole('link', { name: 'Run record' })).toBeVisible({ timeout: 90_000 })
+  await expect(page.getByRole('banner').getByRole('button', { name: /^Download/ })).toBeVisible({ timeout: 90_000 })
 
   await SECTION_NAV(page).getByRole('button', { name: 'History' }).click()
   await expect(page.getByRole('main', { name: 'History' })).toBeVisible()
@@ -577,101 +595,76 @@ test('History fills the window and its table scrolls inside its own panel, in bo
       m = await measure()
       expect(m.scrollHeight, `${where}, empty`).toBeLessThanOrEqual(m.innerHeight)
       served = entries
-      await SECTION_NAV(page).getByRole('button', { name: 'Survey' }).click()
+      await SECTION_NAV(page).getByRole('button', { name: 'Dashboard' }).click()
     }
     await page.getByRole('button', { name: /^Switch to (light|dark) theme$/ }).click()
   }
 })
 
-test('the plain-language summary tops the Survey of a finished recording, never of the demo, and never scrolls the page', async ({
+test('the Summary section fills the window with the finished summary, never of the demo, and never scrolls the page', async ({
   page,
 }, testInfo) => {
   test.setTimeout(180_000)
   mkdirSync(testInfo.outputDir, { recursive: true })
-  const summary = page.getByRole('region', { name: 'Plain-language summary' })
-  const toggle = summary.getByRole('button', { name: /^Summary/ })
+  const summary = page.getByRole('main', { name: 'Summary' })
   const text = summary.getByRole('region', { name: 'Summary text' })
   const metrics = async () =>
     (await page.evaluate(`(() => {
-      const strip = document.querySelector('section[aria-label="Plain-language summary"]')
-      const body = strip && strip.querySelector('[aria-label="Summary text"]')
-      const rail = document.querySelector('nav[aria-label="Detections and pipeline"]')
-      const r = strip && strip.getBoundingClientRect()
+      const main = document.querySelector('main[aria-label="Summary"]')
+      const body = main && main.querySelector('[aria-label="Summary text"]')
+      const panel = body && body.parentElement
+      const r = main && main.getBoundingClientRect()
       return {
         scrollHeight: document.documentElement.scrollHeight,
         innerHeight: window.innerHeight,
         pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
-        stripHeight: r ? Math.round(r.height) : 0,
-        stripBottom: r ? Math.round(r.bottom) : 0,
-        railTop: rail ? Math.round(rail.getBoundingClientRect().top) : 0,
-        bodyScroll: body ? body.scrollHeight : 0,
-        bodyClient: body ? body.clientHeight : 0,
-        wide: Array.from(document.querySelectorAll('body *')).filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1 && e.getClientRects().length > 0).slice(0, 4).map((e) => e.tagName + '.' + String(e.className).slice(0, 50) + ':' + Math.round(e.getBoundingClientRect().right)),
+        mainBottom: r ? Math.round(r.bottom) : 0,
+        panelScroll: panel ? panel.scrollHeight : 0,
+        panelClient: panel ? panel.clientHeight : 0,
       }
     })()`)) as {
-      wide: string[]
       scrollHeight: number
       innerHeight: number
       pageOverflow: number
-      stripHeight: number
-      stripBottom: number
-      railTop: number
-      bodyScroll: number
-      bodyClient: number
+      mainBottom: number
+      panelScroll: number
+      panelClient: number
     }
 
-  // The start screen has no summary.
+  // The start screen has no summary to offer.
   await page.setViewportSize({ width: 1918, height: 950 })
   await page.goto('/')
   await expect(page.getByTestId('start-screen')).toBeVisible()
-  await expect(summary).toHaveCount(0)
+  await expect(SECTION_NAV(page).getByRole('button', { name: 'Summary' })).toHaveCount(0)
 
-  // A real recording: the summary appears once its analysis has finished, above the pipeline rail.
-  // With nothing remembered it starts collapsed in a short window (it would leave the waterfall
-  // about 90px) and open in a tall one.
+  // A real recording: the Summary section is a click away and its text is open, nothing to expand.
   const base = testInfo.outputPath('tone')
   writeSigmf(base)
   await page.setViewportSize({ width: 1440, height: 800 })
-  await page.goto('/')
   await openByPath(page, `${base}.sigmf-meta`)
-  await expect(page.getByRole('banner').getByRole('button', { name: /^Results/ })).toBeVisible({ timeout: 90_000 })
+  await expect(page.getByRole('banner').getByRole('button', { name: /^Download/ })).toBeVisible({ timeout: 90_000 })
+  await SECTION_NAV(page).getByRole('button', { name: 'Summary' }).click()
   await expect(summary).toBeVisible()
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-  await page.setViewportSize({ width: 1918, height: 950 })
-  await page.reload()
-  await openByPath(page, `${base}.sigmf-meta`)
-  await expect(page.getByRole('banner').getByRole('link', { name: 'Run record' })).toBeVisible({ timeout: 90_000 })
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(text).toBeVisible()
   await expect(text).toContainText('results summary')
   await expect(text).toContainText('Taken as given about the recording:')
   await expect(text).toContainText('Not proved:')
   await expect(text).toContainText('Results SHA-256')
-  const served = await page.request.get(`${(await page.getByRole('banner').getByRole('link', { name: 'Summary' }).getAttribute('href'))!}`)
+  await page.getByRole('banner').getByRole('button', { name: /^Download/ }).click()
+  const served = await page.request.get(
+    (await page.getByRole('menuitem', { name: 'Summary' }).getAttribute('href'))!,
+  )
   expect(served.status()).toBe(200)
   expect(await text.innerText()).toContain((await served.text()).split('\n')[0]!)
-  let m = await metrics()
-  expect(m.stripBottom, 'the strip sits above the pipeline rail').toBeLessThanOrEqual(m.railTop)
+  await page.keyboard.press('Escape')
 
-  // Keyboard: the toggle is reachable, Enter collapses it, and the choice survives a reload.
-  await toggle.focus()
-  await page.keyboard.press('Enter')
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-  await expect(text).toBeHidden()
-  await page.reload()
-  await expect(page.getByTestId('start-screen')).toBeVisible() // a reload opens nothing
-  await openByPath(page, `${base}.sigmf-meta`)
-  await expect(toggle).toBeVisible({ timeout: 90_000 })
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-  await toggle.click()
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-  await expect(text).toBeVisible()
-
-  // A long summary scrolls inside its own panel; the page never scrolls, collapsed or open, at
-  // both widths and in both themes.
+  // A long summary scrolls inside its own panel; the page never scrolls, at both widths and in
+  // both themes.
   const long = ['Sanket test results summary', ...Array.from({ length: 300 }, (_, i) => `  - line ${i}: a value (estimated)`)].join('\n')
   await page.route('**/results?format=txt', (route) => route.fulfill({ contentType: 'text/plain', body: long }))
   await page.reload()
   await openByPath(page, `${base}.sigmf-meta`)
+  await SECTION_NAV(page).getByRole('button', { name: 'Summary' }).click()
   await expect(text).toContainText('line 299', { timeout: 90_000 })
   for (let pass = 0; pass < 2; pass++) {
     for (const size of [
@@ -679,25 +672,15 @@ test('the plain-language summary tops the Survey of a finished recording, never 
       { width: 1440, height: 800 },
     ]) {
       await page.setViewportSize(size)
-      // The top bar folds its downloads into a menu below 1536 a moment after the resize.
-      const bar = page.getByRole('banner')
-      await expect(
-        size.width < 1536 ? bar.getByRole('button', { name: /^Results/ }) : bar.getByRole('link', { name: 'Run record' }),
-      ).toBeVisible()
-      for (const open of [true, false]) {
-        if ((await toggle.getAttribute('aria-expanded')) !== String(open)) await toggle.click()
-        const where = `${size.width} wide, ${open ? 'expanded' : 'collapsed'}, pass ${pass}`
-        m = await metrics()
-        expect(m.scrollHeight, where).toBeLessThanOrEqual(m.innerHeight)
-        expect(m.pageOverflow, where + JSON.stringify(m.wide)).toBeLessThanOrEqual(0)
-        expect(m.stripBottom, where).toBeLessThanOrEqual(m.railTop)
-        if (open) {
-          expect(m.bodyScroll, where).toBeGreaterThan(m.bodyClient) // the text scrolls in its panel ...
-          expect(m.stripHeight, where).toBeLessThanOrEqual(28 + 160 + 8) // ... and the panel is bounded
-        } else {
-          expect(m.stripHeight, where).toBeLessThanOrEqual(30)
-        }
-      }
+      const where = `${size.width} wide, pass ${pass}`
+      await expect
+        .poll(async () => (await metrics()).pageOverflow, { message: `${where}, sideways` })
+        .toBeLessThanOrEqual(0)
+      const m = await metrics()
+      expect(m.scrollHeight, where).toBeLessThanOrEqual(m.innerHeight)
+      expect(m.mainBottom, where).toBeLessThanOrEqual(m.innerHeight)
+      expect(m.panelScroll, where).toBeGreaterThan(m.panelClient) // the text scrolls in its panel
+      expect(m.panelClient, where).toBeGreaterThan(300) // and the panel is most of the window
     }
     await page.getByRole('button', { name: /^Switch to (light|dark) theme$/ }).click()
   }
@@ -717,7 +700,8 @@ test('a summary that cannot be fetched says why, and Retry fetches it again', as
       : route.continue(),
   )
   await openByPath(page, `${base}.sigmf-meta`)
-  const summary = page.getByRole('region', { name: 'Plain-language summary' })
+  await SECTION_NAV(page).getByRole('button', { name: 'Summary' }).click()
+  const summary = page.getByRole('main', { name: 'Summary' })
   await expect(summary.getByRole('alert')).toContainText('Could not load the summary: the report broke', {
     timeout: 90_000,
   })
@@ -769,8 +753,11 @@ test('the start screen offers the samples, fills the window and never scrolls th
   }
   // With nothing open, only the sections that have something to show are in the nav.
   const nav = SECTION_NAV(page)
-  await expect(nav.getByRole('button', { name: 'Waterfall' })).toHaveCount(0)
-  await expect(nav.getByRole('button', { name: 'Assumptions' })).toHaveCount(0)
+  await expect(nav.getByRole('button', { name: 'Dashboard' })).toBeVisible()
+  await expect(nav.getByRole('button', { name: 'History' })).toBeVisible()
+  for (const name of ['Evidence', 'Hypotheses', 'Summary', 'Assumptions']) {
+    await expect(nav.getByRole('button', { name })).toHaveCount(0)
+  }
 })
 
 test('a sample opens from its card and its analysis reaches VERIFIED', async ({ page }) => {
@@ -782,6 +769,9 @@ test('a sample opens from its card and its analysis reaches VERIFIED', async ({ 
   await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
   await expect(page.getByRole('status').filter({ hasText: /^Analysing signal/ })).toHaveCount(0, { timeout: 150_000 })
   await expect(page.getByText('Verified', { exact: true }).first()).toBeVisible()
+  // The dashboard has all three plots; an FSK signal has neither constellation nor eye, and says so.
+  await expect(page.getByRole('region', { name: 'Constellation' })).toContainText('Not applicable')
+  await expect(page.getByRole('region', { name: 'Eye diagram' })).toContainText('Not applicable')
   for (const size of SIZES) {
     await page.setViewportSize(size)
     const fit = await pageFit(page)
@@ -789,17 +779,17 @@ test('a sample opens from its card and its analysis reaches VERIFIED', async ({ 
   }
 })
 
-test('Alt+4 opens the Assumptions modal over the section instead of blanking the workspace', async ({ page }) => {
+test('Alt+6 opens the Assumptions modal over the section instead of blanking the workspace', async ({ page }) => {
   test.setTimeout(120_000)
   await page.goto('/')
   await page.locator('[data-sample="scene_fsk"]').click()
   await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
-  await page.keyboard.press('Alt+4')
+  await page.keyboard.press('Alt+6')
   const dialog = page.getByRole('dialog', { name: /Assumptions/ })
   await expect(dialog).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
-  // The section is still Survey, and a reload does not land on a blank page.
+  // The section is still the Dashboard, and a reload does not land on a blank page.
   await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
   await page.reload()
   await expect(page.getByTestId('start-screen')).toBeVisible()
@@ -842,7 +832,9 @@ test('the guided tour walks the real dashboard and the page never scrolls at any
   await page.getByRole('button', { name: 'Take the tour' }).click()
   const popover = page.locator('.driver-popover')
   await expect(popover).toBeVisible()
-  for (let step = 0; step < 12; step++) {
+  const titles: string[] = []
+  for (let step = 0; step < 14; step++) {
+    titles.push(await popover.locator('.driver-popover-title').innerText())
     const fit = await pageFit(page)
     expect(fit.scrollHeight, `tour step ${step}`).toBeLessThanOrEqual(fit.innerHeight)
     const box = await popover.boundingBox()
@@ -854,8 +846,15 @@ test('the guided tour walks the real dashboard and the page never scrolls at any
       break
     }
     await popover.getByRole('button', { name: 'Next' }).click()
+    // Moving to a step in another section takes a moment: wait for the new step before measuring.
+    await expect(popover.locator('.driver-popover-title')).not.toHaveText(titles[titles.length - 1]!)
   }
   await expect(popover).toBeHidden()
+  // It went through the other sections too, and came back to the Dashboard it started on.
+  for (const title of ['Constellation', 'Eye diagram', 'Evidence', 'Hypotheses', 'Plain-language summary', 'Download']) {
+    expect(titles, title).toContain(title)
+  }
+  await expect(page.getByRole('region', { name: 'Eye diagram' })).toBeVisible()
 })
 
 test('a known-system sample shows its decoded messages and the bit stream, without scrolling the page', async ({ page }) => {
@@ -865,6 +864,7 @@ test('a known-system sample shows its decoded messages and the bit stream, witho
   await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
   await expect(page.getByRole('status').filter({ hasText: /^Analysing signal/ })).toHaveCount(0, { timeout: 150_000 })
   // The POCSAG pages, as text, under their own level (the text rests on a convention).
+  await SECTION_NAV(page).getByRole('button', { name: 'Evidence' }).click()
   const card = page.getByRole('region', { name: 'Decoded message' })
   await expect(card).toBeVisible()
   await expect(card).toContainText('SANKET DEMO PAGE ONE')
@@ -911,4 +911,73 @@ test('the raw sample opens with its sample rate UNKNOWN and asks for it', async 
   await expect(prompt).toBeHidden()
   await expect(page.getByRole('status').filter({ hasText: /^Analysing signal/ })).toHaveCount(0, { timeout: 150_000 })
   await expect(page.getByText('Verified', { exact: true }).first()).toBeVisible()
+})
+
+test('the dashboard draws the waterfall, constellation and eye together and every plot fits its box', async ({ page }, testInfo) => {
+  test.setTimeout(180_000)
+  mkdirSync(testInfo.outputDir, { recursive: true })
+  await page.goto('/')
+  await page.locator('[data-sample="scene"]').click()
+  await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: /^Analysing signal/ })).toHaveCount(0, { timeout: 150_000 })
+  // A QPSK signal is selected first: the constellation and the eye are both real canvases.
+  const constellation = page.getByRole('img', { name: /constellation, \d+ symbols$/ })
+  const eye = page.getByRole('img', { name: /eye diagram, I and Q/ })
+  await expect(constellation).toBeVisible()
+  await expect(eye).toBeVisible()
+  const fits = async () =>
+    (await page.evaluate(`(() => {
+      const box = (e) => e.getBoundingClientRect()
+      const inside = (inner, outer) => inner.left >= outer.left - 1 && inner.right <= outer.right + 1 && inner.top >= outer.top - 1 && inner.bottom <= outer.bottom + 1
+      const card = (name) => document.querySelector('section[aria-label="' + name + '"]')
+      const wf = document.querySelector('[aria-label^="Waterfall of the capture"]')
+      return {
+        scrollHeight: document.documentElement.scrollHeight,
+        innerHeight: window.innerHeight,
+        pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        wide: Array.from(document.querySelectorAll('body *')).filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1 && e.getClientRects().length > 0).slice(0, 4).map((e) => e.tagName + '.' + String(e.className).slice(0, 50) + ':' + Math.round(e.getBoundingClientRect().right)),
+        constellationInside: inside(box(card('Constellation').querySelector('canvas')), box(card('Constellation'))),
+        eyeInside: inside(box(card('Eye diagram').querySelector('canvas')), box(card('Eye diagram'))),
+        constellationH: Math.round(box(card('Constellation')).height),
+        eyeH: Math.round(box(card('Eye diagram')).height),
+        waterfallCanvas: wf ? wf.querySelector('canvas').height : -1,
+        waterfallBox: wf ? Math.round(wf.getBoundingClientRect().height * (window.devicePixelRatio || 1)) : -1,
+      }
+    })()`)) as {
+      scrollHeight: number
+      innerHeight: number
+      pageOverflow: number
+      wide: string[]
+      constellationInside: boolean
+      eyeInside: boolean
+      constellationH: number
+      eyeH: number
+      waterfallCanvas: number
+      waterfallBox: number
+    }
+  for (let pass = 0; pass < 2; pass++) {
+    for (const size of [
+      { width: 1918, height: 950 },
+      { width: 1440, height: 800 },
+    ]) {
+      await page.setViewportSize(size)
+      // The charts re-measure a moment after the resize: wait until the layout holds.
+      await expect
+        .poll(async () => {
+          const f = await fits()
+          return f.pageOverflow <= 0 && f.waterfallCanvas === f.waterfallBox
+        }, { message: `${size.width} wide, settling: ${JSON.stringify(await fits())}` })
+        .toBe(true)
+      const m = await fits()
+      const where = `${size.width} wide, pass ${pass}: ${JSON.stringify(m)}`
+      expect(m.scrollHeight, where).toBeLessThanOrEqual(m.innerHeight)
+      expect(m.constellationInside, where).toBe(true)
+      expect(m.eyeInside, where).toBe(true)
+      expect(m.constellationH, where).toBeGreaterThan(120)
+      expect(m.eyeH, where).toBeGreaterThan(120)
+      expect(m.waterfallCanvas, where).toBe(m.waterfallBox)
+      await page.screenshot({ path: testInfo.outputPath(`dashboard-${size.width}-${pass}.png`) })
+    }
+    await page.getByRole('button', { name: /^Switch to (light|dark) theme$/ }).click()
+  }
 })
