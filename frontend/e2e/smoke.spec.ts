@@ -275,13 +275,28 @@ test('the Assumptions modal shows the capture quality, and the page still never 
     if (pass > 0) await open()
     for (const size of [{ width: 1918, height: 950 }, { width: 1440, height: 800 }]) {
       await page.setViewportSize(size)
-      const { scrollHeight, innerHeight, top, bottom } = (await page.evaluate(
-        `(() => {
+      const measure = async () =>
+        (await page.evaluate(
+          `(() => {
           const r = document.querySelector('[aria-label="Capture quality"]').closest('.fixed').firstElementChild.getBoundingClientRect()
-          return { scrollHeight: document.documentElement.scrollHeight, innerHeight: window.innerHeight, top: r.top, bottom: r.bottom }
+          const tall = Array.from(document.querySelectorAll('body *'))
+            .filter((e) => !e.closest('.fixed'))
+            .map((e) => ({ e, b: e.getBoundingClientRect().bottom }))
+            .sort((x, y) => y.b - x.b)
+            .slice(0, 3)
+            .map((x) => x.e.tagName + '.' + String(x.e.className).slice(0, 60) + ' ' + Math.round(x.b))
+          return { scrollHeight: document.documentElement.scrollHeight, innerHeight: window.innerHeight, top: r.top, bottom: r.bottom, tall }
         })()`,
-      )) as { scrollHeight: number; innerHeight: number; top: number; bottom: number }
-      expect(scrollHeight, `page at ${size.width}, pass ${pass}`).toBeLessThanOrEqual(innerHeight)
+        )) as { scrollHeight: number; innerHeight: number; top: number; bottom: number; tall: string[] }
+      // The charts re-measure a moment after the resize (slower on a busy runner): wait until the
+      // layout holds, and say which elements are tallest if it never does.
+      await expect
+        .poll(async () => {
+          const m = await measure()
+          return m.scrollHeight <= m.innerHeight ? 'fits' : `page ${m.scrollHeight} > ${m.innerHeight}; tallest: ${m.tall.join(' | ')}`
+        }, { message: `page at ${size.width}, pass ${pass}` })
+        .toBe('fits')
+      const { top, bottom, innerHeight } = await measure()
       expect(top).toBeGreaterThanOrEqual(0)
       expect(bottom).toBeLessThanOrEqual(innerHeight)
     }
