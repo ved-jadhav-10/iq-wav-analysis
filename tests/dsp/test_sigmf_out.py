@@ -166,5 +166,32 @@ def test_an_existing_recordings_metadata_is_kept_and_annotated() -> None:
     assert original["annotations"][0]["core:label"] == "mine" and len(original["annotations"]) == 1
 
 
+def two_signals_out_of_order(results: Results) -> Results:
+    """`detected`'s signal (starting at sample 1000) followed by one starting at sample 200."""
+    first = detected(results).signals[0]
+    early = detected(results, start_sample=200, stop_sample=900).signals[0]
+    return results.model_copy(
+        update={"signals": (first, early.model_copy(update={"id": "signal_1", "label": "BPSK"}))}
+    )
+
+
+def test_annotations_come_in_sample_order_as_the_sigmf_validator_requires() -> None:
+    results = two_signals_out_of_order(build_results())
+    assert [a["core:sample_start"] for a in annotations(results)] == [200, 1000]
+    original = {
+        "global": {"core:datatype": "cf32_le", "core:sample_rate": 2e6, "core:version": "1.2.0"},
+        "captures": [{"core:sample_start": 0}],
+        "annotations": [
+            {"core:sample_start": 500, "core:sample_count": 10, "core:label": "theirs"},
+            {"core:sample_start": 5000, "core:sample_count": 10, "core:label": "later"},
+        ],
+    }
+    merged = meta_for(results, original=original)["annotations"]
+    assert [a["core:label"] for a in merged] == ["BPSK", "theirs", "QPSK", "later"]
+    assert [a["core:sample_start"] for a in merged] == sorted(
+        a["core:sample_start"] for a in merged
+    )
+
+
 def test_the_assumptions_helper_matches_the_fixture() -> None:
     assert assumptions().datatype.value == "ci16_le"

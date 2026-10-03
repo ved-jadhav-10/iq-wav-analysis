@@ -99,7 +99,7 @@ export function ResultsExports(props: Props) {
   const links = (stacked: boolean) => <ResultsLinks {...props} stacked={stacked} saving={saving} onSave={() => void save()} />
 
   return (
-    <div ref={root} className="relative flex shrink-0 items-center gap-1 text-xs text-muted-foreground max-md:hidden">
+    <div ref={root} className="relative flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
       {inline ? (
         <>
           <Download className="size-3.5" aria-hidden />
@@ -135,7 +135,7 @@ export function ResultsExports(props: Props) {
       {message && (
         <div
           role={message.ok ? 'status' : 'alert'}
-          className={`absolute top-full right-0 z-20 mt-2 flex w-max max-w-sm items-start gap-2 rounded-md border bg-surface-2 px-2.5 py-1.5 text-xs shadow-lg ${
+          className={`fixed top-14 right-3 z-20 flex w-max max-w-[min(24rem,calc(100vw-1.5rem))] items-start gap-2 rounded-md border bg-surface-2 px-2.5 py-1.5 text-xs shadow-lg ${
             message.ok ? 'border-border-strong text-foreground' : 'border-destructive text-destructive'
           }`}
         >

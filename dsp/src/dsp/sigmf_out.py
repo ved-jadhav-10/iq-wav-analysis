@@ -48,8 +48,14 @@ def _firm(parameter: Parameter) -> float | None:
     return None
 
 
+def _by_start(notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The annotations in sample order, as the SigMF validator requires (ties keep their order)."""
+    return sorted(notes, key=lambda n: n.get("core:sample_start", 0))
+
+
 def annotations(results: Results) -> list[dict[str, Any]]:
-    """One annotation per signal that has a sample span; bands in Hz need a sample rate."""
+    """One annotation per signal that has a sample span, in sample order; bands in Hz need a
+    sample rate."""
     rate = _firm(results.assumptions.sample_rate)
     centre = _firm(results.assumptions.center_frequency)
     out: list[dict[str, Any]] = []
@@ -76,7 +82,7 @@ def annotations(results: Results) -> list[dict[str, Any]]:
             if centre is None:
                 note["sanket:frequency_reference"] = "baseband: Hz from the capture centre"
         out.append(note)
-    return out
+    return _by_start(out)
 
 
 def _provenance(results: Results) -> dict[str, Any]:
@@ -107,7 +113,7 @@ def meta_for(
         global_: dict[str, Any] = meta.setdefault("global", {})
         if dataset is not None:
             global_["core:dataset"] = dataset
-        meta["annotations"] = [*meta.get("annotations", []), *notes]
+        meta["annotations"] = _by_start([*meta.get("annotations", []), *notes])
     else:
         a = results.assumptions
         if a.datatype.value is None:
