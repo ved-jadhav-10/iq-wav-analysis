@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { RotateCcw } from 'lucide-react'
-import { buildLut, COLORMAPS, type ColormapName } from '@/lib/colormaps'
+import { useTheme } from '@/hooks/theme'
+import { buildLut, COLORMAPS, themedStops, type ColormapName } from '@/lib/colormaps'
 import type { DetectionMarker } from '@/lib/detections'
 import { decimalsFor, niceTicks, signed } from '@/lib/format'
 import { clampView, zoomAxis, type View } from '@/lib/view'
@@ -37,6 +38,7 @@ export function Waterfall({ source, full, view, onViewChange, detections, select
   const dragRef = useRef<{ x: number; y: number; v: View } | null>(null)
 
   const [glError, setGlError] = useState<string | null>(null)
+  const { theme } = useTheme()
   const [cmap, setCmap] = useState<ColormapName>('sanket')
   const [floorDb, setFloorDb] = useState(() => Math.round(source.dbMin + 6))
   const [ceilDb, setCeilDb] = useState(source.dbMax)
@@ -69,8 +71,8 @@ export function Waterfall({ source, full, view, onViewChange, detections, select
   }, [source])
 
   useEffect(() => {
-    glRef.current?.setLut(buildLut(cmap))
-  }, [cmap, source])
+    glRef.current?.setLut(buildLut(cmap, theme))
+  }, [cmap, source, theme])
 
   useEffect(() => {
     const el = plotRef.current
@@ -104,7 +106,7 @@ export function Waterfall({ source, full, view, onViewChange, detections, select
       [(view.f0 - full.f0) / fSpan, (view.f1 - full.f0) / fSpan, view.t0 / full.t1, view.t1 / full.t1],
       [(floorDb - source.dbMin) / dbSpan, (ceilDb - source.dbMin) / dbSpan],
     )
-  }, [view, floorDb, ceilDb, cmap, size, source, full])
+  }, [view, floorDb, ceilDb, cmap, theme, size, source, full])
 
   useEffect(() => {
     const el = plotRef.current
@@ -263,7 +265,7 @@ export function Waterfall({ source, full, view, onViewChange, detections, select
           />
           <span
             className="h-2 w-16 rounded-[2px]"
-            style={{ background: `linear-gradient(to right, ${COLORMAPS[cmap].stops.join(',')})` }}
+            style={{ background: `linear-gradient(to right, ${themedStops(cmap, theme).join(',')})` }}
             aria-hidden
           />
           <input
@@ -324,8 +326,9 @@ export function Waterfall({ source, full, view, onViewChange, detections, select
           onPointerLeave={() => setHover(null)}
           onDoubleClick={() => onViewChange(full)}
           onKeyDown={onKeyDown}
-          // The plot is always dark, so its overlays use the dark-theme evidence palette in both themes.
-          className="dark relative min-h-0 cursor-crosshair touch-none overflow-hidden bg-[#05070a] select-none focus-visible:outline-offset-[-2px]"
+          // The plot follows the theme: a dark ground in the dark theme and a pale one in the light
+          // theme (the colormap is reversed to match), and its overlays use that theme's palette.
+          className={`relative min-h-0 cursor-crosshair touch-none overflow-hidden select-none focus-visible:outline-offset-[-2px] ${theme === 'dark' ? 'bg-[#05070a]' : 'bg-[#f6f9fb]'}`}
         >
           <canvas ref={canvasRef} className="absolute inset-0 size-full" />
 
@@ -354,12 +357,12 @@ export function Waterfall({ source, full, view, onViewChange, detections, select
                     top: `${top * 100}%`,
                     height: `${(bottom - top) * 100}%`,
                   }}
-                  className={`absolute rounded-[2px] ${LEVEL_BORDER[d.level]} ${selected ? 'border-2 bg-white/[0.04]' : 'border border-dashed opacity-75 hover:opacity-100'}`}
+                  className={`absolute rounded-[2px] ${LEVEL_BORDER[d.level]} ${selected ? 'border-2 bg-foreground/[0.05]' : 'border border-dashed opacity-75 hover:opacity-100'}`}
                 >
                   {i === 0 && (
                     <span
                       style={{ top: `calc(${labelTop}% + 2px)` }}
-                      className={`num absolute left-0.5 rounded-[2px] bg-[#05070a]/85 px-1 text-2xs font-semibold whitespace-nowrap ${LEVEL_TEXT[d.level]}`}
+                      className={`num absolute left-0.5 rounded-[2px] bg-background/85 px-1 text-2xs font-semibold whitespace-nowrap ${LEVEL_TEXT[d.level]}`}
                     >
                       #{d.id} {d.label}
                     </span>
@@ -371,9 +374,9 @@ export function Waterfall({ source, full, view, onViewChange, detections, select
 
           {hover && !dragging && (
             <>
-              <div className="pointer-events-none absolute inset-y-0 w-px bg-white/25" style={{ left: hover.x }} />
-              <div className="pointer-events-none absolute inset-x-0 h-px bg-white/25" style={{ top: hover.y }} />
-              <div className="num pointer-events-none absolute right-2 bottom-2 rounded-[3px] bg-[#05070a]/85 px-2 py-1 text-2xs text-white/90">
+              <div className="pointer-events-none absolute inset-y-0 w-px bg-foreground/30" style={{ left: hover.x }} />
+              <div className="pointer-events-none absolute inset-x-0 h-px bg-foreground/30" style={{ top: hover.y }} />
+              <div className="num pointer-events-none absolute right-2 bottom-2 rounded-[3px] bg-background/85 px-2 py-1 text-2xs text-foreground">
                 Δf {signed(hover.f / units.freqDiv, units.freqDecimals)} {units.freqUnit} · t{' '}
                 {(hover.t * units.timeMul).toFixed(units.timeDecimals)} {units.timeUnit} · {signed(hover.db, 1)} dB
               </div>
@@ -381,7 +384,7 @@ export function Waterfall({ source, full, view, onViewChange, detections, select
           )}
 
           {glError && (
-            <div className="absolute inset-0 grid place-items-center p-6 text-center text-sm text-white/80" role="alert">
+            <div className="absolute inset-0 grid place-items-center p-6 text-center text-sm text-foreground" role="alert">
               {glError}
             </div>
           )}

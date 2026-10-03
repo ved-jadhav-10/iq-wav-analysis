@@ -18,14 +18,22 @@ export const COLORMAPS: Record<ColormapName, { label: string; stops: string[] }>
   gray: { label: 'Grayscale', stops: ['#000000', '#ffffff'] },
 }
 
+/** The colormap's stops for a theme. The dark theme keeps quiet cells dark and strong signals
+ * bright; the light theme reverses each map, so quiet cells are pale and strong signals are dark
+ * (the order of stops is the order of level in both). */
+export function themedStops(name: ColormapName, theme: 'dark' | 'light'): string[] {
+  const stops = COLORMAPS[name].stops
+  return theme === 'light' ? [...stops].reverse() : stops
+}
+
 function hexToRgb(hex: string): [number, number, number] {
   const v = parseInt(hex.slice(1), 16)
   return [(v >> 16) & 255, (v >> 8) & 255, v & 255]
 }
 
 /** 256-entry RGBA lookup table, linearly interpolated between evenly spaced stops. */
-export function buildLut(name: ColormapName): Uint8Array {
-  const stops = COLORMAPS[name].stops.map(hexToRgb)
+export function buildLut(name: ColormapName, theme: 'dark' | 'light' = 'dark'): Uint8Array {
+  const stops = themedStops(name, theme).map(hexToRgb)
   const lut = new Uint8Array(256 * 4)
   const segments = stops.length - 1
   for (let i = 0; i < 256; i++) {

@@ -173,7 +173,7 @@ One local process tree, no external services.
 3. UNKNOWN always says why and what would settle it.
 4. Synthetic data is always labelled as such, on screen and in any screenshot.
 5. No dead controls: a button that can't work yet isn't shown.
-6. Plots are dark in both themes.
+6. Plots follow the theme: the waterfall's colormap is reversed in the light theme (quiet cells pale, strong signals dark), so a signal is as readable on either ground.
 7. A value taken on a convention says so and offers the alternative; `needsReview` items are visible without opening each parameter.
 8. Layout follows [UI.md](UI.md); the page never scrolls as a whole.
 

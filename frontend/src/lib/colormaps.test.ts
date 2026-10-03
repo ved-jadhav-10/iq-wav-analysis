@@ -17,6 +17,18 @@ describe('colormaps', () => {
     })
   }
 
+  for (const name of Object.keys(COLORMAPS) as ColormapName[]) {
+    it(`${name}: in the light theme luminance falls monotonically, so quiet cells are the palest`, () => {
+      const lut = buildLut(name, 'light')
+      let prev = Infinity
+      for (let i = 0; i < 256; i++) {
+        const y = relativeLuminance(lut[i * 4], lut[i * 4 + 1], lut[i * 4 + 2])
+        expect(y).toBeLessThanOrEqual(prev + 1e-3)
+        prev = y
+      }
+    })
+  }
+
   it('starts and ends on the first and last stop exactly', () => {
     const lut = buildLut('gray')
     expect(Array.from(lut.slice(0, 3))).toEqual([0, 0, 0])
