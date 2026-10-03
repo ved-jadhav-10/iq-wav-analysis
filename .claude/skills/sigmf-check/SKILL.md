@@ -1,6 +1,6 @@
 ---
 name: sigmf-check
-description: Validate a .sigmf-meta (or .sigmf archive) against the SigMF specification with the reference sigmf-python validator, and against what Sanket's reader makes of it. Use on SigMF files Sanket writes (dsp.synth, the TorchSig export, later "Save as SigMF"), and on third-party SigMF files that read oddly.
+description: Validate a .sigmf-meta (or .sigmf archive) against the SigMF specification with the reference sigmf-python validator, and against what Sanket's reader makes of it. Use on SigMF files Sanket writes (dsp.synth, the TorchSig export, Save as SigMF, the `--sigmf` annotations), and on third-party SigMF files that read oddly.
 ---
 
 1. Spec check, dev-time only (the `sigmf` package is LGPL and is never a product dependency, so run it through `uvx`, which keeps it out of the workspace):

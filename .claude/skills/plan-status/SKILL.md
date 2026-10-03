@@ -9,5 +9,5 @@ description: Check the repository against the progress checklists in docs/PLAN.m
    - only run the specific command a claim rests on (e.g. `uv run pytest tests/dsp/test_slice.py` for one test file, not the full `pytest`), or reuse a result already reported this session;
    - for CI or bench-gate items, the latest recorded run (`gh run list --branch main --limit 1`, or a `bench/results/*.md` file) rather than re-running CI or bench locally.
 3. Tick an item in §5 only with evidence; untick one whose evidence no longer holds. Never tick an exit gate that CI or `bench/` hasn't measured — a missed gate number is recorded in §0's Open gates table, not left unticked with no explanation.
-4. Update §0: the stage table (Built / Gate met), the Open gates table, the "Checked against the repository on" date, and the **Next** list (the ordered build list; drop items that landed). Keep entries short; don't add sprint dates or owner names.
+4. Update §0: the stage table (State / Still open), the Open gates table, the "Checked against the repository on" date, and the **Next** list (the ordered build list; drop items that landed). Keep entries short; don't add sprint dates or owner names.
 5. Report what changed and what evidence each change rests on.

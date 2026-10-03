@@ -16,4 +16,4 @@ Check, citing file:line for each finding:
 6. **Tests.** New outputs are tested against exact `dsp.synth` truth, including the UNKNOWN/HYPOTHESIS path (see `tests/dsp/test_no_silent_defaults.py`), not "it didn't crash".
 7. **Streaming.** Readers and detectors stay chunked; flag any whole-file `read()`/`np.fromfile` without a bound.
 
-Run `uv run pytest -q tests/dsp` and report its result. Output: a list of findings, most serious first, each with the rule, location, the concrete failure (input → wrong level or value) and the fix. Say "no findings" if there are none; don't pad.
+Run `uv run python -m pytest -q tests/dsp` and report its result. Output: a list of findings, most serious first, each with the rule, location, the concrete failure (input → wrong level or value) and the fix. Say "no findings" if there are none; don't pad.

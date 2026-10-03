@@ -1,221 +1,126 @@
 # Claude Code tooling for building Sanket
 
-This lists the Claude Code skills, plugins, MCP servers, custom project skills, `CLAUDE.md` rules and hooks we use to build Sanket (SIH26147). It also says **when and where** each one is used. Timing uses the milestones **M0–M8** from [PLAN §5](../docs/PLAN.md#5-milestones), plus **idea submission**, the external SIH deadline in [PLAN §9](../docs/PLAN.md#9-external-dates-sih). Current status is in [PLAN §0](../docs/PLAN.md#0-progress).
+The Claude Code skills, plugins, MCP servers, custom project skills, subagents and hooks we use to build Sanket (SIH26147), and **when** each is used. Timing follows milestones M0–M8 ([PLAN §5](../docs/PLAN.md#5-milestones)) plus the external SIH dates ([PLAN §9](../docs/PLAN.md#9-external-dates-sih)); status is in [PLAN §0](../docs/PLAN.md#0-progress).
 
-- **Verification dates:** MCP server details were checked against their repos on 26 September 2026, and plugins and skills on 27 September 2026. Machine facts in [§2](#2-machine-setup) were checked on 27 September 2026. The 27 September revision moved everything onto milestone timing; it did not re-check external repos.
-- **Dev-time only:** everything here helps us *build* the tool. The shipped product must never depend on an MCP server, an LLM, or any network service, because it has to run air-gapped. Two rival repos ship LLM copilots and cloud auth; we deliberately don't.
-
----
+- **Verified:** MCP servers against their repos on 26 Sep 2026; plugins, skills and the machine (§2) on 27 Sep. The 27 Sep revision moved everything onto milestone timing without re-checking external repos; `.mcp.json` and `.claude/settings.json` re-read on 3 Oct.
+- **Dev-time only:** all of this helps us *build* the tool. The shipped product never depends on an MCP server, an LLM or any network service (air-gapped). Two rival repos ship LLM copilots and cloud auth; we deliberately don't.
 
 ## 1. Tooling by milestone
 
-**Set up** means install, configure or create it at the start of that stage. **Use** lists what does the work during the stage. Custom project skills are marked *(custom)*; see [§8](#8-custom-project-skills).
+**Set up** = install, configure or create at the start of the stage; **Use** = what does the work. *(custom)* = a project skill (§7).
 
 | Stage | Set up | Use |
 |---|---|---|
-| **Every change, from M0** | — | `code-review` on every change (`/code-review high` on sync, `gf2` and FEC code); `ponytail` left on; `run` to see a change working in the app; Context7 for current library docs; `simplify` before closing a milestone's exit gate |
-| **Pitches** (finale deck, before every pitch) | `gh auth login`; GitHub MCP (read-only token); `sanket-brand` *(custom)* | `chrome-browser` to check sih.gov.in for finale dates and templates; `rival-scan` *(custom)*, or the [STANDARDS §10](../docs/STANDARDS_TO_BEAT.md#10-how-to-refresh-this-document) queries by hand, to refresh the rival matrix; Playwright MCP for workspace screenshots, labelled *synthetic* where they are; `pptx` for the deck; `artifact-diagramming` for the architecture diagram; `claim-check` *(custom)* on every number in the deck |
-| **M0** Foundations | Done: Python 3.12 via uv; Playwright and Context7 MCP (`.mcp.json`); permissions and pre-commit ([§10](#10-hooks-and-permissions)); `plan-status` *(custom)*; plugins `ponytail` and `frontend-design`, project scope ([§5](#5-plugins)) | Context7 for uv, FastAPI and GitHub Actions; `run` to check that `sanket` starts one process serving the UI; `plan-status` to update PLAN §0; `fewer-permission-prompts` once there is some usage history |
-| **M1** Ingest, evidence, ground truth, bench v0 | Done: the [§9](#9-claudemd-rules) rules merged into `.claude/CLAUDE.md`; `gen-iq`, `inspect-iq` (backed by `tools/inspect_iq.py`), `sigmf-check` (the reference validator via `uvx`, dev-time only) and `bench-run` *(custom)*, written by hand rather than through `skill-creator`'s eval loop; `evidence-auditor` subagent; plugin `superpowers` (project scope); TorchSig 2.2.0 in WSL2 (`~/torchsig-env`) | `superpowers` test-first against `dsp/synth` truth; `gen-iq`, `inspect-iq` and `sigmf-check` on every format and container round trip; `dataviz` for the sniffer confusion matrix (an exit-gate artifact); optional GNU Radio MCP to cross-check the generator; optional `sdr-skills` after reading it |
-| **M2** Spectrum, detection, estimation, tiles | Serena MCP (done: `serena-agent` 1.7.0 via `uv tool`, user scope); Chrome DevTools MCP (**to do**: add to `.mcp.json`, see [§6](#6-mcp-servers)); `dsp-reviewer` subagent (done) | `superpowers` for detectors and estimators; `frontend-design` for the tiled level-of-detail waterfall; Chrome DevTools to measure first tile ≤ 2 s and 60 fps pan/zoom; `dataviz` for per-SNR-bucket detection and estimation results; `bench-run`; IQEngine as the reference for tiles |
-| **M3** Sync and demodulation | — | `superpowers`; `dsp-reviewer`; `/code-review high`; `dataviz` for BER-vs-theory curves (exit gate: within 1 dB); `frontend-design` for the eye diagram |
-| **M4** Modulation classification | Jupyter, Hugging Face and arXiv MCP; `eval-amc` *(custom)* | `deep-research` and arXiv on low-SNR and open-set AMC; Jupyter for training and evaluation experiments; Hugging Face for dataset cards and licences; `eval-amc`, which drives `dataviz` for accuracy-vs-SNR curves, confusion matrices and reliability diagrams |
-| **M5** GF(2), interleavers, FEC | `fec-catalogue` *(custom)* | `superpowers`; `deep-research` and arXiv on blind code and interleaver identification; `pdf` for CCSDS, DVB-S2 and 802.11 tables; `fec-catalogue` for each catalogue entry; `bench-run` on the null set (exit gate: 0 false accepts); `/code-review high` |
-| **M6** Framing and known-system verification | `system-catalogue` *(custom)* | `superpowers`; `bench-run` to measure the blind-sync false-alarm rate (≤ 10⁻⁶ per stream) and the false system matches on the null set (exit gate: 0); `pdf` for the ITU-R and CCSDS specifications behind each entry; `system-catalogue` for each known-system entry |
-| **M7** Analyst workflow and reports | Motion (npm package) only if a transition needs it; shadcn MCP only if we adopt shadcn/ui components ([§7](#7-uidesign-toolkit-notes)) | `frontend-design` for the open-recording flow, context entry, capture, profiles, overrides, before/after diff, history, batch and compare views; `@playwright/test` (`frontend/e2e/`) for the open → analyse → override → save profile → apply → export E2E, with Playwright MCP for debugging it; `pdf` to check generated PDF reports; `sanket-brand` for report styling; `security-review` on uploads, archive extraction, profile import, capture subprocesses and export filenames; Chrome DevTools for regressions |
-| **M8** Hardening, validation, 1.0 | `decoder-truth` and `judge-drill` *(custom)* | `decoder-truth` for real-capture ground truth; `bench-run` on the sealed set; `dataviz` and `xlsx` for `bench/VALIDATION.md` and the head-to-head; `security-review` for the release review; `rival-scan` on `loop` or `schedule` until the finale; `claim-check` on the README, deck and docs; `/ponytail-audit` before the release freeze; `pptx` and `artifact-design` for finale material; `judge-drill` before the finale |
-
----
+| **Every change** | — | `code-review` (`/code-review high` on sync, `gf2` and FEC code); `ponytail` on; `run` to see a change working; Context7 for library docs; `simplify` before a milestone's exit gate |
+| **Pitches** (finale deck, before every pitch) | `gh auth login`; GitHub MCP (read-only token); `sanket-brand` *(custom)* | `chrome-browser` to check sih.gov.in for dates and templates; `rival-scan` *(custom)* or the [STANDARDS §10](../docs/STANDARDS_TO_BEAT.md#10-how-to-refresh-this-document) queries by hand; Playwright MCP for workspace screenshots, labelled *synthetic* where they are; `pptx` for the deck; `artifact-diagramming` for the architecture diagram; `claim-check` *(custom)* on every number |
+| **M0** | Done: Python 3.12 via uv; Playwright and Context7 MCP (`.mcp.json`); permissions and pre-commit (§8); `plan-status` *(custom)*; plugins `ponytail` and `frontend-design` (project scope) | Context7 for uv, FastAPI, GitHub Actions; `run` to check `sanket` serves the UI; `plan-status` for PLAN §0; `fewer-permission-prompts` once there is usage history |
+| **M1** | Done: the project rules in `.claude/CLAUDE.md`; `gen-iq`, `inspect-iq` (on `tools/inspect_iq.py`), `sigmf-check` (reference validator via `uvx`) and `bench-run` *(custom)*, written by hand rather than through `skill-creator`'s eval loop; the `evidence-auditor` subagent; plugin `superpowers` (project scope); TorchSig 2.2.0 in WSL2 (`~/torchsig-env`) | `superpowers` test-first against `dsp/synth` truth; `gen-iq`, `inspect-iq`, `sigmf-check` on every format and container round trip; `dataviz` for the sniffer confusion matrix; optional GNU Radio MCP to cross-check the generator; optional `sdr-skills` after reading it |
+| **M2** | Done: Serena MCP (`serena-agent` 1.7.0 via `uv tool`, user scope); Chrome DevTools MCP (`.mcp.json`); the `dsp-reviewer` subagent | `superpowers` for detectors and estimators; `frontend-design` for the tiled level-of-detail waterfall; Chrome DevTools to measure first tile ≤ 2 s and 60 fps pan/zoom; `dataviz` for per-SNR results; `bench-run`; IQEngine as the reference for tiles |
+| **M3** | — | `superpowers`; `dsp-reviewer`; `/code-review high`; `dataviz` for BER-vs-theory curves (gate: within 1 dB); `frontend-design` for the eye diagram |
+| **M4** | Jupyter, Hugging Face and arXiv MCP; `eval-amc` *(custom)* | `deep-research` and arXiv on low-SNR and open-set AMC; Jupyter for training and evaluation; Hugging Face for dataset cards and licences; `eval-amc` (drives `dataviz` for accuracy-vs-SNR, confusion matrices, reliability diagrams) |
+| **M5** | `fec-catalogue` *(custom)* | `superpowers`; `deep-research` and arXiv on blind code and interleaver identification; `pdf` for CCSDS, DVB-S2 and 802.11 tables; `fec-catalogue` per entry; `bench-run` on the null set (gate: 0 false accepts); `/code-review high` |
+| **M6** | `system-catalogue` *(custom)* | `superpowers`; `bench-run` for the blind-sync false-alarm rate (≤ 10⁻⁶ per stream) and false system matches on the null set (gate: 0); `pdf` for the ITU-R and CCSDS specifications; `system-catalogue` per entry |
+| **M7** | Motion (npm) only if a transition needs it; shadcn MCP only if we adopt shadcn/ui (§5) | `frontend-design` for context entry, capture, profiles, overrides, before/after diff, batch and compare views; `@playwright/test` (`frontend/e2e/`) for the open → analyse → override → save profile → apply → export E2E, Playwright MCP to debug it; `pdf` to check generated reports; `sanket-brand` for report styling; `security-review` on uploads, archive extraction, profile import, capture subprocesses and export names; Chrome DevTools for regressions |
+| **M8** | `decoder-truth` and `judge-drill` *(custom)* | `decoder-truth` for real-capture ground truth; `bench-run` on the sealed set; `dataviz` and `xlsx` for `bench/VALIDATION.md` and the head-to-head; `security-review` for the release; `rival-scan` on `loop` or `schedule` until the finale; `claim-check` on README, deck and docs; `/ponytail-audit` before the release freeze; `pptx` and `artifact-design` for finale material; `judge-drill` before the finale |
 
 ## 2. Machine setup
 
-State of the main dev machine on 27 September 2026:
-
-| Tool | State |
-|---|---|
-| Node.js | 22.13 ✓ |
-| Git | ✓ |
-| uv | 0.12.19 ✓ |
-| Python | 3.12.14 installed through uv ✓ (3.14 is also present; `python` is not on PATH, so use `uv run`) |
-| GitHub CLI | logged in ✓ |
-| WSL | `Ubuntu` 26.04 (WSL2) with uv and TorchSig 2.2.0 + CPU PyTorch in `~/torchsig-env` ✓ |
-| Serena | 1.7.0 via `uv tool install -p 3.13 serena-agent`, registered at user scope ✓ |
+The main dev machine on 27 Sep 2026: Node.js 22.13; Git; uv 0.12.19; Python 3.12.14 through uv (3.14 also present; `python` is not on PATH, so use `uv run`); GitHub CLI logged in; WSL2 `Ubuntu` 26.04 with uv and TorchSig 2.2.0 + CPU PyTorch in `~/torchsig-env`; Serena 1.7.0 via `uv tool install -p 3.13 serena-agent`, user scope.
 
 ```powershell
 wsl -d Ubuntu -- ~/torchsig-env/bin/python -c "import torchsig; print(torchsig.__version__)"
 # Optional, M1: radioconda (github.com/ryanvolz/radioconda) for GNU Radio reference flowgraphs
 ```
 
----
-
 ## 3. Built-in skills
 
-These are already available in Claude Code. Invoke one by name (e.g. `/code-review`), or describe the task and Claude loads the matching skill.
+Invoke by name (e.g. `/code-review`) or describe the task.
 
 | Skill | Use it for | Milestones |
 |---|---|---|
-| `code-review` | Bug-focused review of every change; `/code-review high` on sync, `gf2` and FEC code | Every change |
+| `code-review` | Bug-focused review of every change; `high` on sync, `gf2` and FEC code | Every change |
 | `simplify` | Clean-up pass on finished code | Before each exit gate |
-| `run` | Launch the app and confirm a change works end to end | M0 onward |
-| `init` | Refresh `.claude/CLAUDE.md` from the codebase once `dsp/` and `backend/` exist, keeping the [§9](#9-claudemd-rules) rules | M1 |
-| `update-config` | Change the permissions or add hooks in `.claude/settings.json` ([§10](#10-hooks-and-permissions)) | When needed |
-| `fewer-permission-prompts` | Build an allowlist of safe read-only commands from real usage | M0, once there is history |
-| `skill-creator` | Build and evaluate the custom skills in [§8](#8-custom-project-skills) | Pitches, M0, M1, M4, M5, M8 |
-| `chrome-browser` | Read sih.gov.in in your own Chrome session. The portal blocks automated fetches, so this is the reliable way to confirm PS details and dates. | Pitches; again when the finale date is announced |
+| `run` | Launch the app and confirm a change works end to end | M0 on |
+| `init` | Refresh `.claude/CLAUDE.md` from the codebase, keeping its project rules | When the repo map drifts |
+| `update-config` | Permissions or hooks in `.claude/settings.json` (§8) | When needed |
+| `fewer-permission-prompts` | An allowlist of safe read-only commands from real usage | Once there is history |
+| `skill-creator` | Build and evaluate the custom skills (§7) | Pitches, M4, M5, M8 |
+| `chrome-browser` | Read sih.gov.in in your own Chrome (the portal blocks automated fetches) to confirm PS details and dates | Pitches; when the finale date is announced |
 | `pptx` | The finale deck (the idea deck was submitted 30 Sep 2026) | Pitches, M8 |
-| `artifact-design` / `artifact-diagramming` | A shareable page for the competitive matrix; the architecture diagram | Pitches, M8 |
-| `dataviz` | Confusion matrices, per-SNR results, BER curves, accuracy-vs-SNR, reliability diagrams, benchmark charts; consistent palette in light and dark | M1–M5, M8 |
+| `artifact-design` / `artifact-diagramming` | A shareable competitive-matrix page; the architecture diagram | Pitches, M8 |
+| `dataviz` | Confusion matrices, per-SNR results, BER and accuracy-vs-SNR curves, reliability diagrams, benchmark charts, one palette in both themes | M1–M5, M8 |
 | `deep-research` | Literature sweeps: low-SNR and open-set AMC; blind code reconstruction (Marazin, Barbier, Cluzeau–Tillich, Sendrier, Valembois); interleaver identification | M4, M5 |
-| `pdf` | Reading papers and standards (CCSDS, DVB-S2 LDPC tables); checking our generated PDF reports | M5, M7 |
+| `pdf` | Papers and standards (CCSDS, DVB-S2 LDPC tables); checking our PDF reports | M5, M7 |
 | `xlsx` | Benchmark results and the rival matrix as a spreadsheet | M8 |
-| `security-review` | Upload handling, path traversal in export filenames (a rival hit this), parser fuzzing gaps | M7, M8 |
+| `security-review` | Upload handling, path traversal in export names (a rival hit this), parser-fuzzing gaps | M7, M8 |
 | `loop` / `schedule` | Re-run `rival-scan` on a schedule until the finale | M8 |
 
-Not needed: `claude-api` (there's no LLM in the product), `computer-use`, `built-in-browser`, `morning`, `import-memory`, `docx`, `docs`, `artifact-capabilities`, `keybindings-help`.
+Not needed: `claude-api` (no LLM in the product), `computer-use`, `built-in-browser`, `morning`, `import-memory`, `docx`, `docs`, `artifact-capabilities`, `keybindings-help`. Considered and dropped: `webapp-testing` (the E2E tests use `@playwright/test` directly), `brand-guidelines` (it applies **Anthropic's** brand) and `theme-factory` (preset themes would override our fixed identity, [PLAN §4](../docs/PLAN.md#4-product-identity-fixed)); `sanket-brand` replaces both.
 
----
+## 4. Plugins
 
-## 4. Skills considered and dropped
+Checked 27 Sep 2026. Install with `/plugin marketplace add <owner>/<repo>`, then `/plugin install <plugin>@<marketplace>`, unless noted. All three are enabled in `.claude/settings.json`.
 
-- `webapp-testing`: the E2E tests use `@playwright/test` directly (`frontend/e2e/`, run by CI), so a skill for writing Playwright scripts adds nothing.
-- `brand-guidelines` applies **Anthropic's** brand, not ours.
-- `theme-factory` applies preset themes, which would override our fixed identity.
-- `sanket-brand` *(custom, [§8](#8-custom-project-skills))* replaces both. The identity was fixed in M0 ([PLAN §4](../docs/PLAN.md#4-product-identity-fixed)).
-
----
-
-## 5. Plugins
-
-Checked against their repos on 27 September 2026. Install with `/plugin marketplace add <owner>/<repo>`, then `/plugin install <plugin>@<marketplace>`, unless noted otherwise.
-
-| Plugin | Why we need it | When | Install | Notes |
+| Plugin | Why | When | Install | Notes |
 |---|---|---|---|---|
-| **`ponytail`** ([DietrichGebert/ponytail](https://github.com/dietrichgebert/ponytail), MIT) | Adds a "does this need to exist, or is it already in the codebase or stdlib" check before new code is written. This matches the plan's anti-abstraction rule. Independently measured at about 10–15 % less code and cost on real sessions: smaller than its own marketing, but a real, positive signal (unlike similar "token saver" tools; see [§6](#6-mcp-servers)). | Install in M0; on for every change; `/ponytail-audit` before the M8 release freeze | `/plugin marketplace add DietrichGebert/ponytail`, then `/plugin install ponytail@ponytail` (two separate prompts; its install note says both are required) | Needs Node.js on PATH. Toggle with `/ponytail [lite\|full\|ultra\|off]`. |
-| **`frontend-design`** (official, `anthropics/claude-code`) | Anthropic's skill for non-generic UI, packaged as a plugin. Keeps new screens consistent instead of drifting into default layouts. The M0 workspace was built without it. | Install in M0; used for new UI in M2 (tiled waterfall), M3 (eye diagram) and M7 (analyst workflow) | `/plugin install frontend-design@claude-plugins-official` | First-party, no secrets. Verify with `/plugin` after install. New screens must still follow the [PLAN §4](../docs/PLAN.md#4-product-identity-fixed) UI rules. |
-| **`superpowers`** ([obra/superpowers](https://github.com/obra/superpowers)) | A brainstorm → plan → test-first → review workflow that matches our rules: exact ground truth over "it didn't crash", and the Definition of Done in [PLAN §6](../docs/PLAN.md#6-quality-system). | Trial in M1, the first milestone with `dsp/synth` ground truth; then M2, M3, M5 and M6, the algorithm-heavy milestones. Not useful for M0 scaffolding or UI. | `/plugin install superpowers@claude-plugins-official` if the official marketplace is enabled; otherwise `/plugin marketplace add obra/superpowers-marketplace`, then `/plugin install superpowers@superpowers-marketplace` | Large and opinionated (14+ skills). It must not override the project rules in [§9](#9-claudemd-rules), e.g. "no silent defaults" or VERIFIED only from proof. Keep it only if the M1 trial shows it helps. |
+| **`ponytail`** ([DietrichGebert/ponytail](https://github.com/dietrichgebert/ponytail), MIT) | A "does this need to exist, or is it already in the codebase or stdlib" check before new code, matching the plan's anti-abstraction rule. Independently measured at about 10–15 % less code and cost on real sessions: smaller than its marketing, but real | M0 on, every change; `/ponytail-audit` before the M8 freeze | `/plugin marketplace add DietrichGebert/ponytail`, then `/plugin install ponytail@ponytail` (both prompts are required) | Needs Node.js on PATH. `/ponytail [lite\|full\|ultra\|off]` |
+| **`frontend-design`** (official, `anthropics/claude-code`) | Non-generic, consistent UI for new screens (the M0 workspace was built without it) | New UI in M2 (tiled waterfall), M3 (eye diagram), M7 (analyst workflow) | `/plugin install frontend-design@claude-plugins-official` | First-party, no secrets. New screens still follow PLAN §4 |
+| **`superpowers`** ([obra/superpowers](https://github.com/obra/superpowers)) | Brainstorm → plan → test-first → review, matching exact-ground-truth testing and the Definition of Done ([PLAN §6](../docs/PLAN.md#6-quality-system)) | Algorithm-heavy milestones (trial in M1, then M2, M3, M5, M6); not for scaffolding or UI | `/plugin install superpowers@claude-plugins-official`, or `/plugin marketplace add obra/superpowers-marketplace` then `/plugin install superpowers@superpowers-marketplace` | Large and opinionated (14+ skills); must not override CLAUDE.md's rules (no silent defaults, VERIFIED only from proof). Keep only while it helps |
 
-Not added: the `commit-commands` and `feature-dev` bundles from `claude-plugins-official`. `/code-review`, `/simplify` and the `CLAUDE.md` rules already cover that ground.
+Not added: `commit-commands` and `feature-dev` (`/code-review`, `/simplify` and CLAUDE.md cover them).
 
----
+## 5. MCP servers
 
-## 6. MCP servers
+**Project scope** (`.mcp.json`, committed) for servers without secrets; **user scope** for anything with a token. Never commit tokens. `.mcp.json` today: Playwright, Context7, Chrome DevTools.
 
-Use **project scope** (`--scope project`, written to `.mcp.json` and committed) for servers without secrets, so every clone gets them. Use **user scope** for anything that needs a token. Never commit tokens.
-
-| Server | Why we need it | When | Install | Notes |
+| Server | Why | When | Install | Notes |
 |---|---|---|---|---|
-| **GitHub** (official, [github/github-mcp-server](https://github.com/github/github-mcp-server)) | Rival scans (repo trees, READMEs, commits); later our own issues, PRs and Actions logs | Pitches onward | `claude mcp add --transport http github https://api.githubcopilot.com/mcp/ --header "Authorization: Bearer <FINE_GRAINED_PAT>"` | User scope. Use a fine-grained PAT with read-only access for scanning. The local Docker image supports `--read-only`. |
-| **Context7** ([upstash/context7](https://github.com/upstash/context7)) | Up-to-date docs for uv, FastAPI, React, Vite, PyTorch, ONNX Runtime, SciPy, `sigmf` | M0 onward | Configured in `.mcp.json` | An API key from context7.com is optional (higher limits): add `--header "Authorization: Bearer <KEY>"` at user scope. |
-| **Playwright** ([microsoft/playwright-mcp](https://github.com/microsoft/playwright-mcp)) | Drive the React GUI: take screenshots for the deck, check the waterfall and evidence cards, upload a bench file, debug E2E tests | Pitches (screenshots), M2 and M7 (checking UI changes, debugging E2E) | Configured in `.mcp.json` | Works on the accessibility tree, so no vision model is needed. Uses `cmd /c npx` because native Windows needs the wrapper; on Linux or macOS, override it in user scope with plain `npx`. The CI E2E tests use `@playwright/test`, not this server. |
-| **Serena** ([oraios/serena](https://github.com/oraios/serena)) | LSP-based, symbol-level code retrieval and editing: Claude reads the one function it needs instead of whole files, which keeps DSP and FEC review cheaper | M2 onward, once `dsp/` is big enough to benefit | `claude mcp add --scope user serena -- serena start-mcp-server --context claude-code --project-from-cwd` | Older `uvx … --context ide-assistant` instructions circulating online are outdated. |
-| **Chrome DevTools** (official, [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp)) | Performance traces and console/network inspection for the WebGL2 waterfall: frame budget, GPU memory and tile fetches, which Playwright's accessibility tree can't see | M2 (first-tile and 60 fps gates), M7, M8 | `claude mcp add chrome-devtools-mcp -- npx -y chrome-devtools-mcp`, or `/plugin marketplace add ChromeDevTools/chrome-devtools-mcp`, then `/plugin install chrome-devtools-mcp` | Needs Chrome remote debugging enabled locally. The waterfall already renders on demo data, so it can be used as soon as it's installed. |
-| **Jupyter** ([datalayer/jupyter-mcp-server](https://github.com/datalayer/jupyter-mcp-server), ★1.3k, BSD-3) | Notebook experiments with Claude running cells and reading outputs: AMC training and evaluation, estimator sweeps | M4 (optionally M2) | `/plugin marketplace add datalayer/jupyter-mcp-server`, then `/plugin install datalayer` | Needs a running JupyterLab. |
-| **Hugging Face** ([official](https://huggingface.co/docs/hub/en/hf-mcp-server)) | Find RF datasets and models; check dataset cards and licences | M4 | `claude mcp add hf-mcp-server -t http "https://huggingface.co/mcp?login"` | Read-only token. **Never upload recordings.** |
-| **arXiv** ([blazickjp/arxiv-mcp-server](https://github.com/blazickjp/arxiv-mcp-server), ★3.2k, Apache-2.0) | Read AMC and blind-FEC papers section by section; export BibTeX for deck references | M4, M5 | `claude mcp add --transport stdio --scope user arxiv -- uvx arxiv-mcp-server` | Needs uv. |
-| **shadcn** (official, [ui.shadcn.com/docs/mcp](https://ui.shadcn.com/docs/mcp)), *conditional* | Live shadcn/ui component data (props, variants, structure) instead of hallucinated APIs | M7, **only if** we adopt shadcn/ui components | `pnpm dlx shadcn@latest mcp init --client claude`, or add to `.mcp.json`: `{"mcpServers":{"shadcn":{"command":"npx","args":["shadcn@latest","mcp"]}}}` | The frontend doesn't use shadcn/ui today; its tokens only use shadcn-compatible names. Project scope, no secret. |
-| **GNU Radio** ([yoelbassin/gr-mcp](https://github.com/yoelbassin/gr-mcp), ★50, **GPL-3.0**), *optional* | Build and run reference flowgraphs to cross-check `dsp/synth` | M1 | `/plugin marketplace add yoelbassin/gr-mcp`, then `/plugin install marconi` | Needs GNU Radio 3.10+. GPL: dev-time only; never copy its code into the product. |
+| **GitHub** ([github/github-mcp-server](https://github.com/github/github-mcp-server)) | Rival scans (trees, READMEs, commits); later our issues, PRs and Actions logs | Pitches on | `claude mcp add --transport http github https://api.githubcopilot.com/mcp/ --header "Authorization: Bearer <FINE_GRAINED_PAT>"` | User scope, read-only fine-grained PAT. The local Docker image supports `--read-only` |
+| **Context7** ([upstash/context7](https://github.com/upstash/context7)) | Current docs for uv, FastAPI, React, Vite, PyTorch, ONNX Runtime, SciPy, `sigmf` | M0 on | In `.mcp.json` | Optional API key (higher limits) at user scope: `--header "Authorization: Bearer <KEY>"` |
+| **Playwright** ([microsoft/playwright-mcp](https://github.com/microsoft/playwright-mcp)) | Drive the GUI: deck screenshots, checking UI changes, uploading a bench file, debugging E2E | Pitches, M2, M7 | In `.mcp.json` | Works on the accessibility tree. `cmd /c npx` is for native Windows; on Linux/macOS override at user scope with plain `npx`. CI uses `@playwright/test`, not this |
+| **Chrome DevTools** ([ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp)) | Performance traces, console and network for the WebGL2 waterfall (frame budget, GPU memory, tile fetches), which the accessibility tree can't see | M2 (first-tile and 60 fps gates), M7, M8 | In `.mcp.json` (`cmd /c npx -y chrome-devtools-mcp@latest`) | Needs Chrome remote debugging locally |
+| **Serena** ([oraios/serena](https://github.com/oraios/serena)) | LSP symbol-level reading and editing: read one function instead of a whole file, which keeps DSP and FEC review cheaper | M2 on | `claude mcp add --scope user serena -- serena start-mcp-server --context claude-code --project-from-cwd` | Older `uvx … --context ide-assistant` instructions are outdated |
+| **Jupyter** ([datalayer/jupyter-mcp-server](https://github.com/datalayer/jupyter-mcp-server), BSD-3) | Notebook experiments with Claude running cells: AMC training and evaluation, estimator sweeps | M4 (optionally M2) | `/plugin marketplace add datalayer/jupyter-mcp-server`, then `/plugin install datalayer` | Needs a running JupyterLab |
+| **Hugging Face** ([official](https://huggingface.co/docs/hub/en/hf-mcp-server)) | Find RF datasets and models; check cards and licences | M4 | `claude mcp add hf-mcp-server -t http "https://huggingface.co/mcp?login"` | Read-only token. **Never upload recordings** |
+| **arXiv** ([blazickjp/arxiv-mcp-server](https://github.com/blazickjp/arxiv-mcp-server), Apache-2.0) | AMC and blind-FEC papers section by section; BibTeX for deck references | M4, M5 | `claude mcp add --transport stdio --scope user arxiv -- uvx arxiv-mcp-server` | Needs uv |
+| **shadcn** ([ui.shadcn.com/docs/mcp](https://ui.shadcn.com/docs/mcp)), *conditional* | Live shadcn/ui component data | M7, **only if** we adopt shadcn/ui (today only the token names are shadcn-compatible) | `pnpm dlx shadcn@latest mcp init --client claude`, or `.mcp.json`: `{"mcpServers":{"shadcn":{"command":"npx","args":["shadcn@latest","mcp"]}}}` | Project scope, no secret |
+| **GNU Radio** ([yoelbassin/gr-mcp](https://github.com/yoelbassin/gr-mcp), **GPL-3.0**), *optional* | Reference flowgraphs to cross-check `dsp/synth` | M1 | `/plugin marketplace add yoelbassin/gr-mcp`, then `/plugin install marconi` | Needs GNU Radio 3.10+. Dev-time only; never copy its code |
 
-**Community skill (optional, M1 onward):** [briannasywa/sdr-skills](https://github.com/briannasywa/sdr-skills) (MIT) is an SDR knowledge skill covering DSP, modulation, IQ formats, SigMF and GNU Radio 3.10, with 8 small Python tools. Install with `npx skills add briannasywa/sdr-skills --skill software-defined-radio`. **On 27 September it was 10 days old with 0 stars, so read its `SKILL.md` and tools before enabling it.**
+**Optional community skill (M1 on):** [briannasywa/sdr-skills](https://github.com/briannasywa/sdr-skills) (MIT; DSP, modulation, IQ formats, SigMF, GNU Radio 3.10, 8 small tools): `npx skills add briannasywa/sdr-skills --skill software-defined-radio`. On 27 Sep it was 10 days old with 0 stars: read its `SKILL.md` and tools first.
 
-**Personal and optional, never project scope:** a persistent-memory MCP such as [thedotmack/claude-mem](https://github.com/thedotmack/claude-mem) keeps your own session history across `/compact` and later sessions. The repo's shared context lives in `CLAUDE.md` and these docs, so a tool like this belongs in your own user scope only.
+**Personal, user scope only:** a persistent-memory MCP such as [thedotmack/claude-mem](https://github.com/thedotmack/claude-mem); shared context lives in CLAUDE.md and the docs. Cost: [ryoppippi/ccusage](https://github.com/ryoppippi/ccusage) reads local session logs (`npx ccusage@latest`, `… monthly`), no API key.
 
-**Deliberately not added:**
-- filesystem MCP: the built-in tools already cover this
-- database or cloud MCPs: we use SQLite locally, and the product is air-gapped
-- any MCP that would upload recordings
-- Task Master: [PLAN §0](../docs/PLAN.md#0-progress) is the tracker, and `plan-status` keeps it current
-- generic "token-saving" or "context mode" MCP servers advertising 90 %+ savings: independent benchmarks of similarly marketed tools found some *increase* cost. `ponytail` ([§5](#5-plugins)) is the one tool in this category with a validated gain. Don't install another without measuring it first.
+**Deliberately not added:** a filesystem MCP (built-in tools cover it); database or cloud MCPs (local SQLite, air-gapped product); any MCP that would upload recordings; Task Master (PLAN §0 is the tracker, `plan-status` keeps it current); generic "token-saving"/"context mode" servers claiming 90 %+ savings (independent benchmarks found some *increase* cost; `ponytail` is the one with a validated gain, so measure before adding another).
 
----
+## 6. UI/design toolkit notes
 
-## 7. UI/design toolkit notes
+The frontend is an analyst instrument with a fixed identity (PLAN §4), so the animated shadcn kits (Magic UI, Aceternity, Watermelon UI, Motion Primitives, coss ui/Origin UI) are skipped: licensing and visual-noise risk for no benefit.
 
-The frontend is an analyst instrument, not a marketing site, and its identity is fixed ([PLAN §4](../docs/PLAN.md#4-product-identity-fixed)). So we skip the animated shadcn kits (Magic UI, Aceternity, Watermelon UI, Motion Primitives, coss ui/Origin UI): they add licensing and visual-noise risk for no benefit here.
+- **IQEngine** ([GitHub](https://github.com/IQEngine/IQEngine), MIT): the reference for tiled spectrogram rendering (M2) and recording management (M7); see [PLAN §3](../docs/PLAN.md#3-architecture) and [STANDARDS §3](../docs/STANDARDS_TO_BEAT.md#3-open-source-prior-art).
+- **Motion** (`motion.dev`, MIT): a plain npm package, not installed. Add in M7 only if the before/after diff or stage transitions need it, respecting reduced motion (PLAN §2).
+- **tweakcn:** retired once M0 fixed the palette in `frontend/src/styles/index.css`; contrast is checked by axe in E2E.
 
-- **IQEngine** ([GitHub](https://github.com/IQEngine/IQEngine), MIT): the reference for tiled spectrogram rendering (M2) and recording management (M7). See the [README tech stack](../README.md#tech-stack) and [STANDARDS §3](../docs/STANDARDS_TO_BEAT.md#3-open-source-prior-art).
-- **Motion** (`motion.dev`, MIT): a plain npm dependency, not a Claude tool. It isn't installed. Add it in M7 only if the before/after diff or stage transitions need it, and respect reduced-motion ([PLAN §2](../docs/PLAN.md#2-the-production-bar)).
-- **shadcn MCP server:** conditional; see [§6](#6-mcp-servers).
-- **tweakcn:** retired. It was for choosing the palette, and M0 fixed the palette in `frontend/src/styles/index.css`. Contrast is checked by axe in E2E, per PLAN §2.
+## 7. Custom project skills
 
----
-
-## 8. Custom project skills
-
-Put each skill in `.claude/skills/<name>/SKILL.md` and commit it. Build and test them with `skill-creator`. `plan-status` exists; the rest are created in the milestone shown.
+Each skill is `.claude/skills/<name>/SKILL.md`, committed; build and test with `skill-creator`. **Exist:** `plan-status`, `gen-iq`, `inspect-iq`, `sigmf-check`, `bench-run` (read their files for the steps). **To create** in the milestone shown:
 
 | Skill | What it does | Runs | Output | Create in |
 |---|---|---|---|---|
-| `sanket-brand` | Applies the §4 identity to anything outside the app — decks, artifacts, PDF reports: colour tokens from `index.css`, IBM Plex fonts, evidence shown as glyph + label + colour, *synthetic* labels | Reads `frontend/src/brand.ts`, `styles/index.css`, `components/levelStyles.ts` | Styled output that matches the GUI | Pitches |
-| `rival-scan` | Re-run the GitHub searches from [STANDARDS §10](../docs/STANDARDS_TO_BEAT.md#10-how-to-refresh-this-document); fetch trees and READMEs of new or changed repos; diff against the matrix | GitHub MCP or `gh api` | Proposed edits to `STANDARDS_TO_BEAT.md` | Pitches |
-| `claim-check` | Find every number in the README, deck and docs; match each to a `bench/` result, a STANDARDS target (labelled as a target) or a [STANDARDS §11](../docs/STANDARDS_TO_BEAT.md#11-references) reference; flag anything unsupported | grep + `bench/results/` | List of unsupported claims | Pitches |
-| `plan-status` | Compare the repo with the [PLAN §0](../docs/PLAN.md#0-progress) checklists and propose edits. Never tick an item without evidence: the file exists, or the test or check passes. | `git`, file checks, test and bench commands | Proposed edits to PLAN §0 | M0 |
-| `gen-iq` | Generate a synthetic recording with exact ground truth: modulation, symbol rate, SNR, impairments, FEC, interleaver, framing with CRC | a scratch script calling `dsp.synth.chain.generate` and `write_sigmf` | `.sigmf-data` + `.sigmf-meta`, with the truth stored as annotations | M1 |
-| `inspect-iq` | Quick sanity report on any file: ranked format candidates, channel count, quadrature check, clipping, DC, IQ balance, what's still UNKNOWN | `uv run python tools/inspect_iq.py` | Markdown summary with the assumptions block | M1 |
-| `sigmf-check` | Validate `.sigmf-meta` against the spec with the `sigmf` package; flag a missing `core:sample_rate` or `core:datatype` | `uvx --from sigmf sigmf_validate -v` | Pass/fail with fixes | M1 |
-| `bench-run` | Run the benchmark and null set; compare with the last committed results; refuse to update numbers if the sealed set was touched | `uv run bench run …`, `uv run python -m bench.sniffer` | `bench/results/bench-v0-<set>.{json,md}` + a diff table | M1 |
-| `eval-amc` | Evaluate an AMC checkpoint on our in-scope set, TorchSig, HisarMod and RadioML 2018.01A (corrected labels), plus the null set | `ml.evaluate` | Accuracy-vs-SNR chart (via `dataviz`), confusion matrix, reliability diagram, open-set AUROC/FPR@95/OSCR per SNR bin, a model-card update | M4 |
-| `fec-catalogue` | Add or verify a catalogue entry (conv/RS/LDPC): encode → channel → blind ID → decode round trip, plus a licence/source note | pytest on that entry | Catalogue YAML + test | M5 |
-| `system-catalogue` | Add or verify a known-system entry (e.g. POCSAG, NAVTEX): record the public specification and licence note, add a `dsp/synth` preset, check that blind chain → Match gives VERIFIED, and add near-miss null files that must not match | pytest on that entry + `bench-run --null` | Catalogue YAML + synth preset + tests | M6 |
-| `decoder-truth` | For a real capture, run the matching reference decoder (readsb, AIS-catcher, rtl_433, multimon-ng, SatDump, redsea) as a **subprocess**; keep only CRC-passing frames and write them as SigMF annotations | subprocess + `sigmf` | `.sigmf-meta` with protocol-level ground truth | M8 |
-| `judge-drill` | Quiz the presenter on likely judge questions (no metadata, how a decode is proven, accuracy at 0 dB, overlapping signals, pseudo-random interleavers, offline, why not Krypto500 or GNU Radio) plus random module questions; score the answers against PROBLEM_STATEMENT's readings, the README limits and STANDARDS | — | Drill transcript with gaps | M8 |
+| `sanket-brand` | Applies the PLAN §4 identity outside the app (decks, artifacts, PDF reports): tokens from `index.css`, IBM Plex, evidence as glyph + label + colour, *synthetic* labels | Reads `brand.ts`, `styles/index.css`, `levelStyles.ts` | Output matching the GUI | Pitches |
+| `rival-scan` | Re-runs the [STANDARDS §10](../docs/STANDARDS_TO_BEAT.md#10-how-to-refresh-this-document) searches; fetches trees and READMEs of new or changed repos; diffs against the matrix | GitHub MCP or `gh api` | Proposed edits to STANDARDS | Pitches |
+| `claim-check` | Finds every number in README, deck and docs and matches it to a `bench/` result, a STANDARDS target (labelled as one) or a [STANDARDS §11](../docs/STANDARDS_TO_BEAT.md#11-references) reference | grep + `bench/results/` | Unsupported claims | Pitches |
+| `eval-amc` | Evaluates an AMC checkpoint on our in-scope set, TorchSig, HisarMod, RadioML 2018.01A (corrected labels) and the null set | `ml.evaluate` | Accuracy-vs-SNR chart, confusion matrix, reliability diagram, open-set AUROC/FPR@95/OSCR per SNR bin, model-card update | M4 |
+| `fec-catalogue` | Adds or verifies a conv/RS/LDPC entry: encode → channel → blind ID → decode round trip, with a licence/source note | pytest on that entry | Catalogue entry + test | M5 |
+| `system-catalogue` | Adds or verifies a known-system entry: specification and licence note, a `dsp/synth` preset, blind chain → Match gives VERIFIED, near-miss null files that must not match | pytest + `bench-run --null` | `catalogue.toml` entry + synth preset + tests | M6 |
+| `decoder-truth` | Runs the matching reference decoder (readsb, AIS-catcher, rtl_433, multimon-ng, SatDump, redsea) on a real capture as a **subprocess**; keeps only CRC-passing frames as SigMF annotations | subprocess + `sigmf` | `.sigmf-meta` with protocol-level truth | M8 |
+| `judge-drill` | Quizzes the presenter on likely judge questions (no metadata, how a decode is proven, accuracy at 0 dB, overlapping signals, pseudo-random interleavers, offline, why not Krypto500 or GNU Radio) plus random module questions, scored against PROBLEM_STATEMENT, the README limits and STANDARDS | — | Transcript with gaps | M8 |
 
-Minimal `SKILL.md` shape:
+**Subagents** (`.claude/agents/`, both exist): `evidence-auditor` (from M1: every new output a Parameter with the right level, no silent defaults, VERIFIED only from proof) and `dsp-reviewer` (from M2: units, sample-rate assumptions, matched-filter and timing phase on DSP changes).
 
-```markdown
----
-name: gen-iq
-description: Generate a synthetic SigMF IQ recording with exact ground truth (modulation, symbol rate, SNR, impairments, FEC, interleaver, CRC-framed payload). Use when a test, benchmark or demo needs a signal with known answers.
----
+## 8. Hooks and permissions
 
-1. Ask for (or default from bench/presets.yaml): modulation, sps, symbol rate, SNR (state Es/N0 vs per-sample), impairments, FEC, interleaver, frame layout.
-2. Run `uv run python -m dsp.synth --preset <name> --out data/generated/<name>`.
-3. Verify the round trip: `uv run python -m dsp.synth.verify data/generated/<name>.sigmf-meta`.
-4. Report the file paths and the truth table. Never reuse a sealed-bench seed.
-```
-
-**Subagents** (`.claude/agents/`):
-- `evidence-auditor` (from M1): confirms every new output field carries an evidence level and that no stage defaults silently.
-- `dsp-reviewer` (from M2): checks unit consistency (PSD vs power), sample-rate assumptions, and the matched-filter/timing phase on DSP changes.
-
----
-
-## 9. `CLAUDE.md` rules
-
-**Location:** [`.claude/CLAUDE.md`](CLAUDE.md), which Claude Code loads automatically. This block was merged into it in M1, when `dsp/` got code; that file is now the live copy, and this one is the reference:
-
-```markdown
-## Project rules (SIH26147)
-- Never assume a sample rate, datatype, byte order or IQ order silently. Unknown -> Assumptions block + UNKNOWN or an analyst prompt.
-- Every value a stage outputs is a Parameter with level (VERIFIED/MEASURED/ESTIMATED/HYPOTHESIS/UNKNOWN), confidence, method, evidence[], alternatives[].
-- VERIFIED requires CRC pass, sync-word recurrence, or re-encode BER consistent with EVM. Nothing else.
-- Blind searches count every hypothesis; acceptance thresholds are multiple-testing corrected.
-- Tests compare against exact ground truth from dsp.synth — never "it didn't crash".
-- Don't touch bench/sealed/ or its seeds. Numbers in README/deck must come from bench/results/.
-- Readers and detectors are chunked/streaming; no whole-file loads.
-- The product runs offline: no network calls, CDNs, telemetry or LLMs at runtime.
-- Don't copy code from rival SIH repos (most are unlicensed). Credit every third-party library in THIRD_PARTY.md.
-- GPL tools (GNU Radio, gr-mcp, URH, komm, readsb, AIS-catcher, rtl_433, multimon-ng, SatDump) are dev-time references or subprocess-only test tools; never vendor or import their code. PySDR code is CC BY-NC-SA: learn from it, don't copy it.
-- Use `galois` for finite fields and RS. scikit-commpy and pyldpc are stale: vendor small functions with attribution; don't depend on them.
-- Blind FEC/interleaver work goes through the shared GF(2) kernel (dsp/gf2); don't write a second elimination routine. Rank matrices need L >= w + 30 rows; every detector also runs on shuffled bits.
-- Never claim generic pseudo-random seed recovery; only the standard-permutation catalogue.
-- Known-system and profile matches never overwrite blind results. A match is VERIFIED only when that system's own check passes on this recording, expressed as one of the three existing proof kinds (crc, sync_recurrence, reencode); every entry tried goes in the ledger.
-- Profile values count as analyst-entered and are checked on every recording; profiles hold no samples and are data, never code.
-- SDR drivers (librtlsdr, libhackrf, UHD) are GPL: capture runs their command-line recorders as subprocesses with an argument list, never a shell; never import or link them. No capture from network-attached receivers.
-- RadioML is a benchmark only, with corrected labels; train on dsp.synth.
-- Python: 3.12, uv, ruff, pyright strict on dsp/. Frontend: TS strict, ESLint, Vitest.
-- When a milestone item lands, update docs/PLAN.md §0.
-```
-
----
-
-## 10. Hooks and permissions
-
-- **Lint and format:** done by **pre-commit** (`.pre-commit-config.yaml`: large-file guard, ruff check and format, ESLint, licence check) rather than Claude Code edit hooks, so it applies to every commit whoever or whatever wrote the code. Install once per clone with `uv run pre-commit install`. CI runs the same checks.
-- **Permissions:** `.claude/settings.json` (committed) allows the test, lint, typecheck, build, e2e, licence and read-only `gh` commands without prompting. Extend it with `fewer-permission-prompts` once there is real usage, or edit it with `update-config`. Personal overrides go in `.claude/settings.local.json`, which is git-ignored.
-- **Optional `Stop` hook**, not set up: `uv run pytest -q -x --lf`, so a turn doesn't end with failing tests. Add it with `update-config` if turns start ending red.
-
-**Cost monitoring (optional, personal):** [ryoppippi/ccusage](https://github.com/ryoppippi/ccusage) reads local Claude Code session logs and reports daily, monthly and per-session cost, with no API key. `npx ccusage@latest` gives a one-off report; `npx ccusage@latest monthly` gives the aggregate.
-
----
+- **Formatting:** a `PostToolUse` hook (`.claude/hooks/format_python.sh`, in `.claude/settings.json`) runs `ruff format` and `ruff check --fix` on a `.py` file right after Claude edits it, and never fails the edit. **pre-commit** (`.pre-commit-config.yaml`: large-file guard, merge-conflict, TOML and YAML checks, ruff check and format, ESLint, licence check) applies to every commit whoever wrote it; install once per clone with `uv run pre-commit install`. CI runs the same checks.
+- **Permissions:** `.claude/settings.json` (committed) allows the test, lint, typecheck, build, e2e, licence, pre-commit and read-only `gh` commands without prompting; extend with `fewer-permission-prompts` or edit with `update-config`. Personal overrides go in the git-ignored `.claude/settings.local.json`.
+- **Optional `Stop` hook**, not set up: `uv run python -m pytest -q -x --lf`, so a turn doesn't end red. Add it with `update-config` if turns start ending with failing tests.
 
 The research behind the plan is summarised as references in [STANDARDS §11](../docs/STANDARDS_TO_BEAT.md#11-references); the full research notes are in git history (removed 30 Sep 2026).

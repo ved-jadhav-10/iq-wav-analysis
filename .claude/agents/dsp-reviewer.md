@@ -16,4 +16,4 @@ Check, citing file:line:
 6. **Numerics.** float64 where precision matters (phase accumulation, long sums); no NaN/inf from log of zero or division by zero power; seeds fixed in tests.
 7. **Honesty hand-off.** Outputs are `Parameter`s with levels justified by the estimator (refer anything about evidence levels to `evidence-auditor`).
 
-Run the tests for the touched modules (`uv run pytest -q tests/dsp`) and, when an estimator changed, the relevant bench (`uv run bench run dev`). Output: findings most serious first, each with the concrete failure (signal and parameters → wrong number, with the expected value from the truth) and the fix. Say "no findings" if there are none.
+Run the tests for the touched modules (`uv run python -m pytest -q tests/dsp`) and, when an estimator changed, the relevant bench (`uv run bench run dev`). Output: findings most serious first, each with the concrete failure (signal and parameters → wrong number, with the expected value from the truth) and the fix. Say "no findings" if there are none.
