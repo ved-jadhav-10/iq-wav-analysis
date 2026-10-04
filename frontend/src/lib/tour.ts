@@ -87,6 +87,16 @@ export const TOUR_ANCHORS: readonly string[] = TOUR_STEPS.map((s) => s.anchor)
 const selector = (anchor: string) => `[data-tour="${anchor}"]`
 const present = (anchor: string) => document.querySelector(selector(anchor)) !== null
 
+/**
+ * Where the Open step's popover goes: beside the button, never under it, because that is where the
+ * Open menu drops down and the analyst may open it mid-tour. From 1280px the menu hangs from the
+ * button's left edge, so the popover goes left of the button; below that it is fixed to the window's
+ * left edge (OpenMenu's `max-xl`), so the popover goes right.
+ */
+function openPlacement(): Pick<NonNullable<DriveStep['popover']>, 'side' | 'align'> {
+  return { side: window.matchMedia('(min-width: 1280px)').matches ? 'left' : 'right', align: 'start' }
+}
+
 /** Two animation frames: the next section is in the DOM and laid out. */
 function settled(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
@@ -98,6 +108,9 @@ interface Options {
   section?: SectionId
   /** Switches the workspace to a section. Without it only what is on screen is toured. */
   showSection?: (section: SectionId) => void
+  /** Leaves for the start screen. While the tour dims the page, a click on the element marked
+   * `data-home` ends the tour and calls it, instead of just closing the tour. */
+  onHome?: () => void
 }
 
 /**
@@ -123,8 +136,25 @@ export function startTour(opts: Options): void {
   function finish() {
     if (finished) return
     finished = true
+    if (opts.onHome) document.removeEventListener('click', onHomeClick, true)
     if (opts.showSection && opts.section && shown !== opts.section) opts.showSection(opts.section)
     opts.onDone()
+  }
+
+  /** driver.js switches pointer events off for everything but its own elements, so the home
+   * control is found by where the click landed, not by its target. A click on the popover is the
+   * popover's, even where it covers the control. */
+  function onHomeClick(e: MouseEvent) {
+    const home = document.querySelector('[data-home]')?.getBoundingClientRect()
+    if (!home) return
+    const inside = (r: DOMRect) => e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
+    const popover = document.querySelector('.driver-popover')?.getBoundingClientRect()
+    if (!inside(home) || (popover && inside(popover))) return
+    e.preventDefault()
+    e.stopImmediatePropagation() // before driver.js reads it as a click on the overlay
+    tour.destroy()
+    finish()
+    opts.onHome?.()
   }
 
   /** Moves to the next (or previous) step whose element exists, switching section on the way. */
@@ -155,7 +185,7 @@ export function startTour(opts: Options): void {
 
   const driveSteps: DriveStep[] = steps.map((s) => ({
     element: selector(s.anchor),
-    popover: { title: s.title, description: s.description },
+    popover: { title: s.title, description: s.description, ...(s.anchor === 'open' ? openPlacement() : {}) },
   }))
   const tour = driver({
     steps: driveSteps,
@@ -181,5 +211,6 @@ export function startTour(opts: Options): void {
     },
     onDestroyed: finish,
   })
+  if (opts.onHome) document.addEventListener('click', onHomeClick, true)
   tour.drive()
 }

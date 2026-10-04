@@ -157,6 +157,11 @@
 }
 
 /* Onboarding tour (driver.js) */
+/* The Open menu, if the analyst opens it mid-tour, stays above the dimming overlay (z-index 10000)
+   so the interface can be shown; the popover (1000000000) is placed clear of it in tour.ts. */
+.driver-active #open-menu {
+  z-index: 10001;
+}
 .driver-popover.sanket-tour {
   background: var(--surface);
   color: var(--foreground);

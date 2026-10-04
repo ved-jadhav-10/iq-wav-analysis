@@ -88,6 +88,7 @@ export function TopBar({
         <button
           type="button"
           onClick={onHome}
+          data-home
           aria-label={`${BRAND.name}: back to the start screen`}
           title="Back to the start screen (the analysis keeps running and is kept in History)"
           className="-mx-1.5 -my-1 flex items-center gap-2.5 rounded-md px-1.5 py-1 transition-colors hover:bg-surface-2"

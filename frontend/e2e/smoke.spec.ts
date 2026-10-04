@@ -1017,3 +1017,58 @@ test('the dashboard draws the waterfall, constellation and eye together and ever
     await page.getByRole('button', { name: /^Switch to (light|dark) theme$/ }).click()
   }
 })
+
+test('the logo leaves for the start screen in one click even while the tour dims the page', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.goto('/')
+  await page.locator('[data-sample="scene_fsk"]').click()
+  await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
+  await page.getByRole('button', { name: 'Help' }).click()
+  await page.getByRole('button', { name: /Take the tour/ }).click()
+  await expect(page.locator('.driver-popover')).toBeVisible()
+  // The overlay covers the logo, so Playwright's own hit test refuses; force sends the click to
+  // the logo's position, as a mouse would.
+  await page.getByRole('button', { name: /back to the start screen/ }).click({ force: true })
+  await expect(page.getByTestId('start-screen')).toBeVisible()
+  await expect(page.locator('.driver-popover')).toHaveCount(0)
+  await expect(page.locator('.driver-overlay')).toHaveCount(0)
+})
+
+test('during the tour the Open menu shows in full, clear of the popover, at every width', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.goto('/')
+  await page.locator('[data-sample="scene_fsk"]').click()
+  await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
+  const rect = (selector: string) =>
+    `(() => { const r = document.querySelector('${selector}').getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom } })()`
+  type Box = { l: number; t: number; r: number; b: number }
+  for (const size of [
+    { width: 1918, height: 950 },
+    { width: 1440, height: 800 },
+    { width: 1280, height: 720 },
+    { width: 1100, height: 760 },
+    { width: 900, height: 700 },
+  ]) {
+    await page.setViewportSize(size)
+    await page.getByRole('button', { name: 'Help' }).click()
+    await page.getByRole('button', { name: /Take the tour/ }).click()
+    await expect(page.locator('.driver-popover')).toBeVisible()
+    await expect(page.locator('.driver-popover-title')).toHaveText('Open any recording')
+    await page.locator('button[aria-controls="open-menu"]').click()
+    const menu = page.locator('#open-menu')
+    await expect(menu).toBeVisible()
+    const where = `${size.width} wide`
+    const m = (await page.evaluate(rect('#open-menu'))) as Box
+    const p = (await page.evaluate(rect('.driver-popover'))) as Box
+    const apart = p.r <= m.l || p.l >= m.r || p.b <= m.t || p.t >= m.b
+    expect(apart, `${where}: popover ${JSON.stringify(p)} vs menu ${JSON.stringify(m)}`).toBe(true)
+    // Above the dimming overlay: what is at the menu's centre is the menu itself.
+    const top = await page.evaluate(
+      `(() => { const e = document.elementFromPoint(${(m.l + m.r) / 2}, ${m.t + 20}); return e ? e.closest('#open-menu') !== null : false })()`,
+    )
+    expect(top, `${where}: the menu is under the overlay`).toBe(true)
+    await page.keyboard.press('Escape') // ends the tour
+    await expect(page.locator('.driver-popover')).toHaveCount(0)
+    if (await menu.isVisible()) await page.locator('button[aria-controls="open-menu"]').click()
+  }
+})

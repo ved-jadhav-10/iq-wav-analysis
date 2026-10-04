@@ -589,6 +589,12 @@ export default function App() {
     setWelcomeOpen(false)
   }
 
+  // The tour outlives the render that started it, so it leaves through the latest goHome.
+  const homeRef = useRef(goHome)
+  useEffect(() => {
+    homeRef.current = goHome
+  })
+
   // The section on screen when the tour starts, which it returns to; read at start, not render time.
   const shownRef = useRef(shownView)
   useEffect(() => {
@@ -598,7 +604,12 @@ export default function App() {
   function runTour() {
     // After the next paint, so the sections the tour points at are in the DOM.
     requestAnimationFrame(() =>
-      startTour({ onDone: markOnboardingSeen, section: shownRef.current, showSection: changeView }),
+      startTour({
+        onDone: markOnboardingSeen,
+        section: shownRef.current,
+        showSection: changeView,
+        onHome: () => homeRef.current(),
+      }),
     )
   }
 
