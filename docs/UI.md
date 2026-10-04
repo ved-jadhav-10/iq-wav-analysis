@@ -7,7 +7,7 @@ How the frontend is laid out and, above all, the layout invariants that three se
 One column, fixed to the viewport:
 
 ```
-TopBar      48px   logo · section nav · file name and Synthetic/Real label · Open menu · Download menu · offline badge · Help · team badge · theme
+TopBar      48px   logo (a button back to the start screen while a recording or History is open) · section nav · file name and Synthetic/Real label · Open menu · Download menu · offline badge · Help · team badge · theme
 Workspace          the start screen or the selected section, fills the remaining height
 StatusBar   24px   version, provenance, tile shape
 ```

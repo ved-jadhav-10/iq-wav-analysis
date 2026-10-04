@@ -810,6 +810,27 @@ test('Alt+5 opens the Assumptions modal over the section instead of blanking the
   await expect(page.getByTestId('start-screen')).toBeVisible()
 })
 
+test('the logo returns to the start screen without a reload, and a sample opens again from there', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.goto('/')
+  // Already home: the brand is not a control.
+  await expect(page.getByRole('button', { name: /back to the start screen/ })).toHaveCount(0)
+  await page.locator('[data-sample="scene_fsk"]').click()
+  await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
+  await page.getByRole('button', { name: /back to the start screen/ }).click()
+  await expect(page.getByTestId('start-screen')).toBeVisible()
+  await expect(page.getByRole('button', { name: /back to the start screen/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Open sample/ }).first()).toBeVisible()
+  // From History too, which is where the logo would otherwise be dead.
+  await SECTION_NAV(page).getByRole('button', { name: 'History' }).click()
+  await page.getByRole('button', { name: /back to the start screen/ }).click()
+  await expect(page.getByTestId('start-screen')).toBeVisible()
+  await page.locator('[data-sample="scene_fsk"]').click()
+  await expect(page.getByRole('button', { name: /^#1 / })).toBeVisible()
+  const fit = await pageFit(page)
+  expect(fit.scrollHeight).toBeLessThanOrEqual(fit.innerHeight)
+})
+
 test('first run shows the welcome once; Skip remembers it and Help brings it back', async ({ page }) => {
   // Only on the first load: the reload below must find what the dialog remembered.
   await page.addInitScript(

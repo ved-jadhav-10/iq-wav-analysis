@@ -19,6 +19,8 @@ interface Props {
   progress?: { done: number; total: number }
   view: SectionId
   onViewChange: (view: SectionId) => void
+  /** Closes the open recording and returns to the start screen; absent when already there. */
+  onHome?: () => void
   /** Reopens the welcome dialog (and from it the guided tour). */
   onHelp: () => void
   /** `sequence` reads numbered files (rec_000, rec_001, ...) as one recording. */
@@ -42,6 +44,7 @@ export function TopBar({
   progress,
   view,
   onViewChange,
+  onHome,
   onHelp,
   onOpen,
   onUpload,
@@ -51,6 +54,17 @@ export function TopBar({
   onSaveSigmf,
 }: Props) {
   const { theme, toggle } = useTheme()
+  const brand = (
+    <>
+      <Logo className="size-7" />
+      <div className="flex items-baseline gap-2">
+        <span className="text-[15px] font-semibold tracking-tight">{BRAND.name}</span>
+        <span lang="hi" className="font-deva text-xs text-subtle-foreground max-xl:hidden">
+          {BRAND.nativeName}
+        </span>
+      </div>
+    </>
+  )
   return (
     <header className="relative flex h-12 shrink-0 items-center gap-3 border-b bg-surface px-3">
       {progress && progress.total > 0 && (
@@ -68,15 +82,21 @@ export function TopBar({
           />
         </div>
       )}
-      <div className="flex items-center gap-2.5">
-        <Logo className="size-7" />
-        <div className="flex items-baseline gap-2">
-          <span className="text-[15px] font-semibold tracking-tight">{BRAND.name}</span>
-          <span lang="hi" className="font-deva text-xs text-subtle-foreground max-xl:hidden">
-            {BRAND.nativeName}
-          </span>
-        </div>
-      </div>
+      {/* A button only when there is somewhere to go back to; the negative margin gives its hover
+          background room without moving anything. */}
+      {onHome ? (
+        <button
+          type="button"
+          onClick={onHome}
+          aria-label={`${BRAND.name}: back to the start screen`}
+          title="Back to the start screen (the analysis keeps running and is kept in History)"
+          className="-mx-1.5 -my-1 flex items-center gap-2.5 rounded-md px-1.5 py-1 transition-colors hover:bg-surface-2"
+        >
+          {brand}
+        </button>
+      ) : (
+        <div className="flex items-center gap-2.5">{brand}</div>
+      )}
 
       <div className="h-5 w-px bg-border max-xl:hidden" aria-hidden />
 

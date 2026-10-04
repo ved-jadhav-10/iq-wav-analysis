@@ -567,6 +567,18 @@ export default function App() {
     setRun((n) => n + 1)
   }
 
+  /** Back to the start screen. The server keeps analysing and keeps the result in History; the
+   * stored section is left alone, so the next recording opens on the section this one was on. */
+  function goHome() {
+    tourWaiting.current = false
+    setRecording(null)
+    setBatch(null)
+    setFormatNeeded(null)
+    setOpenError(null)
+    setAssumptionsModalOpen(false)
+    if (view === 'history') changeView('dashboard')
+  }
+
   // First run: the welcome dialog, once. Help in the top bar brings it back.
   const [welcomeOpen, setWelcomeOpen] = useState(() => !hasSeenOnboarding())
   // "Take the tour" with nothing open opens the first sample and waits for its first result.
@@ -640,6 +652,7 @@ export default function App() {
         }
         view={shownView}
         onViewChange={changeView}
+        onHome={(recording || shownView === 'history') && !opening ? goHome : undefined}
         onHelp={() => setWelcomeOpen(true)}
         onOpen={(path, sequence) => void openPath(path, false, sequence)}
         onUpload={(files) => void upload(files)}
