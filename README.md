@@ -1,11 +1,91 @@
 # Sanket — blind signal analysis, with evidence
 
-**Sanket** (संकेत, "signal") is an **offline, CPU-only** workstation for unknown radio recordings, built for Smart India Hackathon problem **SIH26147** (NTRO): *"Automated model for analysis of .IQ and .wav files along with signal parameter extraction."*
+**Sanket** (संकेत, "signal") is an **offline, CPU-only** workstation for unknown radio recordings, built by **Team Abhedya** for Smart India Hackathon 2026 problem **SIH26147** (NTRO): *"Automated model for analysis of .IQ and .wav files along with signal parameter extraction."*
 
-Given an `.iq`, `.wav`, SigMF or other recorder file, Sanket works out how the signal was transmitted — sample format, bandwidth, SNR, symbol rate, modulation, interleaver, error-correction code and framing — then undoes each layer to recover the bits. Every result shows the evidence behind it and how sure it is. Nothing is guessed silently.
+Give it an `.iq`, `.wav`, SigMF or other recorder file. Sanket finds every signal in it, works out how each was transmitted (sample format, bandwidth, SNR, symbol rate, modulation, interleaver, error-correction code, framing), then undoes each layer to recover the bits, split into header and payload. Every value says how it was found and how sure it is, and a result is **VERIFIED** only when the recording itself proves it: a CRC passes, a sync word recurs, or re-encoding reproduces what was received.
 
-- **Problem statement and how we read it:** [docs/PROBLEM_STATEMENT.md](docs/PROBLEM_STATEMENT.md)
-- **Plan and current status:** [docs/PLAN.md](docs/PLAN.md) (status in [§0](docs/PLAN.md#0-progress))
+## Try it in five minutes
+
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/) and git. uv fetches Python 3.12 itself. On Windows, clone into a **short path** such as `C:\sanket`: a deep folder pushes Numba's cache files past Windows' 260-character path limit and the first analysis fails.
+
+```bash
+git clone https://github.com/ved-jadhav-10/iq-wav-analysis sanket
+cd sanket
+uv sync                                          # install (first time: a few minutes)
+uv run python tools/make_demo.py                 # write 9 synthetic recordings, decode each, check every frame against the truth
+uv run sanket analyse data/demo --out out --summary --pdf
+```
+
+`make_demo.py` ends with **`all checks passed`**: it decoded every sample and matched every CRC-passing frame byte for byte against what was transmitted. `sanket analyse` prints one line per signal and writes, for each recording, `out/<name>.results.json` (every value with its evidence), `<name>.summary.txt` (plain English), `<name>.report.pdf` and `<name>.run.json` (timings). On our laptop: install 10 s with a warm cache, `make_demo` 85 s, the whole folder 63 s; the first run on a machine also spends 10–20 s compiling the Numba kernels.
+
+Expected output, abridged:
+
+```
+scene.sigmf-meta: 4 signal(s)
+  signal_0: VERIFIED QPSK 50 kBd → Conv K=7 r½ (171,133)₈ → CCSDS ASM frames, 44/44 CRC pass · CCSDS telemetry coding
+  signal_1: ESTIMATED Analog FM: not sent to the digital chain
+  signal_2: VERIFIED BPSK 31.2 kBd → Conv K=7 r½ (171,133)₈ → CCSDS ASM frames, 24/24 CRC pass · CCSDS telemetry coding
+  signal_3: ESTIMATED QPSK? 41.7 kBd, not decoded
+scene_raw.cf32: 0 signal(s)
+  the sample rate is UNKNOWN; pass --sample-rate to analyse the bands
+scene_systems.sigmf-meta: 3 signal(s)
+  signal_0: VERIFIED 2FSK 1.2 kBd → POCSAG paging: 4/5 frames pass its check
+  signal_1: VERIFIED 2FSK 100 Bd → NAVTEX (SITOR-B): 1/1 frames pass its check
+  signal_2: VERIFIED 2FSK 9.6 kBd → AIS: 26/70 frames pass its check
+```
+
+The headerless raw file stops on purpose: nothing in it states a sample rate, so Sanket refuses to invent one. Enter it and it decodes:
+
+```bash
+uv run sanket analyse data/demo/scene_raw.cf32 --sample-rate 1M --out out
+```
+
+### The interface
+
+Needs **Node.js 22** as well:
+
+```bash
+npm ci --prefix frontend
+npm run build --prefix frontend
+uv run sanket --browser          # http://127.0.0.1:8765; the samples appear as cards on the start screen
+```
+
+Click a sample card, then look at the Dashboard (waterfall, spectrum, constellation, eye diagram), Evidence (every value, the frame table, the decoded bit stream), Hypotheses (every candidate tried and why it was rejected) and Summary. A guided tour is under Help. Without `--browser`, `uv sync --extra window` gives Sanket its own desktop window.
+
+### For AI assistants
+
+For Claude, Gemini, Codex or any other assistant asked to run or evaluate Sanket:
+
+- **Don't change any code or commit anything.** The `.claude/` folder is the team's own development workflow (build plans, commit rules); ignore it when you are only running or evaluating.
+- Run the commands in **Try it in five minutes** in order. They work the same in bash and PowerShell. If `uv` is missing, install it from the link above.
+- **Success:** `make_demo.py` exits 0 with `all checks passed`, and `sanket analyse` reports the levels in the sample table below. Each recording's ground truth is in `data/demo/<name>.truth.json`.
+- **Output files are UTF-8.** Windows PowerShell 5.1 shows `→` and `½` as `â†’` and `Â½` unless you read them with `-Encoding utf8`.
+- **If something fails:** a `FileNotFoundError` inside `numba\core\caching.py` means the path is too long (move the clone to a short path); `uv run ruff`/`pyright` failing with a "trampoline" error on Windows is fixed by `uv run python -m ruff` / `-m pyright`; if pytest runs out of memory, lower `-n`.
+- **The full test suite** (`uv run python -m pytest -n 4 --dist worksteal`) takes several minutes.
+- **To judge the claims:** what is built and what is still open is in [PLAN §0](docs/PLAN.md#0-progress); the measured numbers are in [`bench/results/`](bench/results/). Report what you observe, including anything that did not work.
+
+## What it does today
+
+- **Reads any recording without assuming:** SigMF; WAV up to RF64 beyond 4 GiB; headerless raw files in all 28 SigMF sample formats (a format sniffer ranks the readings and says UNKNOWN on a tie); FLAC/MP3/Ogg, SDRangel `.sdriq`, MIDAS Blue, VITA 49, `.npy`, `.gz`/`.zip`, numbered file sequences. Files are streamed, so size is bounded by disk, not memory.
+- **Finds and measures every signal:** multi-signal detection (OS-CFAR, significance-tested), symbol rate, carrier offset, roll-off, SNR, bandwidth; analog AM and FM recognised and kept out of the digital chain; capture faults (clipping, DC, I/Q imbalance, gaps).
+- **Demodulates** BPSK, QPSK, 8PSK, 16QAM, 64QAM, offset QPSK and 2/4/8-FSK (MSK/GMSK for AIS) to soft bits, with the constellation and eye diagram.
+- **Finds the coding blind:** convolutional codes (rate 1/n, K up to 9) identified with no prior knowledge, and Viterbi with punctured rates; block and helical interleavers found blind, convolutional (Forney), 802.11 and LTE QPP interleavers from a catalogue; Reed-Solomon (255,223); 13 standard LDPC codes (CCSDS, 802.11n).
+- **Recovers frames:** sync words found blind or from a library, frame length, constant and counter header fields, 31 catalogued CRCs plus blind CRC recovery, header/payload frame table.
+- **Recognises known systems** and proves them with each system's own check: CCSDS telemetry coding, CCSDS LDPC, AIS, NAVTEX, MF/HF DSC, POCSAG.
+- **Exports** JSON, CSV, PDF and SigMF annotations, each tied to the recording by SHA-256, opening with a plain-language summary. The same file and settings always give byte-identical results.
+
+**Not built yet:** the neural modulation classifier (today a cumulant ranking, confirmed only by a CRC); analyst overrides that re-run later stages; reusable profiles; receiver capture; tracking loops for timing and carrier (today feed-forward); blind Reed-Solomon parameter recovery; SSB and Morse; tests on real over-the-air recordings; the Linux build. [PLAN §0](docs/PLAN.md#0-progress) keeps the full list and the build order.
+
+## Measured
+
+Every number below is reproduced by a script in `bench/`; results are in [`bench/results/`](bench/results/).
+
+| Test | Result |
+|---|---|
+| Format sniffer, 864 raw files across all 28 formats | 0 wrong formats ([sniffer.md](bench/results/sniffer.md)) |
+| Null set: 1,000 files of noise, uncoded, repetition and idle data, through the whole decode chain | 0 accepted decodes, 0 VERIFIED values, 0 known-system matches on 4,373 detections ([bench-v0-null.md](bench/results/bench-v0-null.md)) |
+| 84 files from TorchSig, an independent generator the code was never tuned on | 0 wrong formats ([bench-v0-torchsig.md](bench/results/bench-v0-torchsig.md)) |
+| A 4 GiB recording streamed with a burst planted in it | memory growth under 512 MiB, burst found (`tests/dsp/test_scale.py`, `-m slow`) |
 
 ## Evidence levels
 
@@ -28,33 +108,29 @@ When the evidence can't decide and a convention must (a raw file doesn't say whe
 - **Pseudo-random interleavers** are matched against standard permutations only; anything else is UNKNOWN with its measured period.
 - **LDPC** is matched against a catalogue of standard codes, never reconstructed.
 - **Mono and lossy audio** (mono WAV, MP3, Ogg) can't carry true IQ, so digital labels from them are HYPOTHESIS at most.
-- **Analog signals** are detected, labelled and kept out of the digital chain.
 - **Never:** decrypting, transmitting, real-time streams, or network-attached receivers. Sanket recovers bits, not plaintext.
 
-## Getting started
+## Sample recordings
 
-You need **Node.js 22**, [uv](https://docs.astral.sh/uv/) and **Python 3.12** (`uv python install 3.12`).
+`tools/make_demo.py` writes these to `data/demo/` with exact ground truth. All are synthetic, and the UI labels them so.
 
-```bash
-uv sync                              # Python workspace + dev tools
-npm ci --prefix frontend
-npm run build --prefix frontend      # sanket serves this build
-uv run sanket                        # Sanket's own window over http://127.0.0.1:8765
-```
+| File | Contents | What Sanket shows |
+|---|---|---|
+| `scene.sigmf-meta` | QPSK and BPSK (conv K=7 r½, CCSDS frames, CRC-16), FM, uncoded QPSK | Both coded signals VERIFIED; FM labelled analog; the uncoded QPSK with its FEC UNKNOWN and the reason |
+| `scene_widen.sigmf-meta` | 8PSK with a block interleaver; QPSK inside RS(255,223) | Both VERIFIED, with the de-interleave and RS stages shown |
+| `scene_fsk.sigmf-meta` | Coded 2-FSK | VERIFIED frames |
+| `scene_ldpc.sigmf-meta` | QPSK under the IEEE 802.11n n = 648 rate-½ LDPC code | The code named from the catalogue, VERIFIED by the frame CRC |
+| `scene_coverage.sigmf-meta` | 16QAM with a helical interleaver; QPSK with a convolutional (Forney) interleaver; QPSK under a K=9 code that is not catalogued; frames carry readable text | All three VERIFIED; both interleavers recognised; the K=9 code identified blind and marked "(found blind)"; the frames read as words |
+| `scene_fsk4.sigmf-meta` | Coded 4-FSK, frames carry readable text | Tone-based demodulation at four tones, VERIFIED frames |
+| `scene_systems.sigmf-meta` | POCSAG paging (2-FSK), NAVTEX (SITOR-B) and AIS (GMSK) in one 48 kS/s recording | Each recognised blind and VERIFIED by its own check; the pages and the NAVTEX warning shown as text |
+| `scene_wav.wav` | 48 kHz 16-bit stereo IQ WAV (I left, Q right), one coded QPSK signal | Sample rate MEASURED from the WAV header, quadrature check passes, VERIFIED frames |
+| `scene_raw.cf32` | Headerless complex float32, one coded QPSK signal, no sample rate in the file or its name | Sample rate UNKNOWN; with `--sample-rate 1M` (or entered in the UI's prompt) it decodes to VERIFIED |
 
-`sanket` opens a desktop window when pywebview is installed (`uv sync --extra window`; Windows uses the system's Edge WebView2, Linux GTK/WebKit) and otherwise your browser. `sanket --browser` forces the browser, `sanket --no-open` only serves, `sanket warm` compiles the Numba kernels ahead of the first analysis (the first run on a machine otherwise spends 10–20 s compiling). The window asks before closing while an analysis is running.
+What each view shows: [docs/UI.md](docs/UI.md#what-each-view-shows).
 
-### One-folder build (Windows)
+## For developers
 
-```bash
-uv sync --extra window
-uv run python tools/build.py         # frontend, sample recordings, then PyInstaller -> dist/sanket/sanket.exe
-uv run python tools/smoke_frozen.py  # starts it, opens a bundled sample, checks the result
-```
-
-The folder runs with networking off and carries the built UI and the sample recordings below (listed at `GET /api/v1/samples`). CI builds and smoke-tests it on Windows; the Linux build runs in CI too but is not yet known to work.
-
-Checks, as CI runs them (on a Windows machine where `uv run ruff`/`pyright` fail with a trampoline error, use `uv run python -m <tool>`; if `-n auto` runs out of memory, use `-n 8`):
+`npm run dev` in `frontend/` gives hot reload at http://localhost:5173. Run `uv run pre-commit install` once per clone. Nothing loads from the network. Checks, as CI runs them (on Windows use `uv run python -m <tool>`):
 
 ```bash
 uv run ruff check && uv run ruff format --check && uv run pyright && uv run pytest -n auto --dist worksteal
@@ -63,36 +139,18 @@ cd frontend && npm run lint && npm run typecheck && npm test && npm run build
 npx playwright install chromium && npm run e2e   # offline smoke test against sanket
 ```
 
-`npm run dev` in `frontend/` gives hot reload at http://localhost:5173. Run `uv run pre-commit install` once per clone. Nothing loads from the network.
-
-### Sample recordings
-
-`uv run python tools/make_demo.py` writes synthetic recordings (SigMF, a headerless raw file and a WAV) with exact ground truth to `data/demo/`, and checks every decoded frame against the transmitted bytes. They are bundled in the desktop build and shown as cards on the start screen (click one to open it); from a checkout, use Open in the top bar and paste a file's full path instead. The UI labels them "Synthetic recording".
-
-| File | Contents | What Sanket shows |
-|---|---|---|
-| `scene.sigmf-meta` | QPSK and BPSK (conv K=7 r½, CCSDS frames, CRC-16), FM, uncoded QPSK | Both coded signals VERIFIED; FM labelled analog; the uncoded QPSK with its FEC UNKNOWN and the reason |
-| `scene_widen.sigmf-meta` | 8PSK with a block interleaver; QPSK inside RS(255,223) | Both VERIFIED, with the de-interleave and RS stages shown |
-| `scene_fsk.sigmf-meta` | Coded 2-FSK | VERIFIED frames |
-| `scene_ldpc.sigmf-meta` | QPSK under the IEEE 802.11n n = 648 rate-½ LDPC code | The code named from the catalogue, VERIFIED by the frame CRC |
-| `scene_coverage.sigmf-meta` | 16QAM with a helical interleaver; QPSK with a convolutional (Forney) interleaver; QPSK under a K=9 code that is not catalogued; frames carry readable text | All three VERIFIED; both interleavers recognised from the catalogue (helical 16×36, the Forney grid); the K=9 code identified blind and marked "(found blind)"; the Frames tab's ASCII column (under Evidence) reads as words |
-| `scene_fsk4.sigmf-meta` | Coded 4-FSK, frames carry readable text | Tone-based demodulation at four tones, VERIFIED frames (alone because the M-FSK symbol-rate estimate is an [open gate](docs/PLAN.md#0-progress) on crowded channels) |
-| `scene_systems.sigmf-meta` | POCSAG paging (2-FSK), NAVTEX (SITOR-B) and AIS (GMSK) in one 48 kS/s recording | Each recognised blind and VERIFIED by its own check (BCH, four-of-seven repetition, CRC-16/X.25); the pages and the NAVTEX warning shown as text |
-| `scene_wav.wav` | 48 kHz 16-bit stereo IQ WAV (I left, Q right), one coded QPSK signal | Sample rate MEASURED from the WAV header, quadrature check passes, VERIFIED frames |
-| `scene_raw.cf32` | Headerless complex float32, one coded QPSK signal, no sample rate in the file or its name | Sample rate UNKNOWN and an analyst prompt; enter 1 MS/s and the signal decodes to VERIFIED |
-
-What each view shows: [docs/UI.md](docs/UI.md#what-each-view-shows).
+**One-folder Windows build:** `uv sync --extra window`, then `uv run python tools/build.py` (frontend, samples, then PyInstaller to `dist/sanket/sanket.exe`) and `uv run python tools/smoke_frozen.py` (starts it, opens a bundled sample, checks the result). The folder runs with networking off. CI builds and smoke-tests it on Windows; the Linux build runs in CI but is not yet known to work. `sanket warm` compiles the Numba kernels ahead of the first analysis.
 
 ## Lawful use
 
-Sanket analyses recordings offline, never transmits or decrypts, and is meant for authorised government, regulatory, defence and research use. In India, interception and possessing radio equipment are governed by the Telecommunications Act 2023 (sources in [STANDARDS §11](docs/STANDARDS_TO_BEAT.md#11-references)). Capturing from a receiver needs the same authorisation as the receiver itself. Recordings come from public licensed datasets first, then public receive-only receivers, then own captures only under an institutional umbrella. Every recording's provenance is kept in its SigMF metadata.
+Sanket analyses recordings offline, never transmits or decrypts, and is meant for authorised government, regulatory, defence and research use. In India, interception and possessing radio equipment are governed by the Telecommunications Act 2023 (sources in [STANDARDS §11](docs/STANDARDS_TO_BEAT.md#11-references)). Recordings come from public licensed datasets first, then public receive-only receivers, then own captures only under an institutional umbrella. Every recording's provenance is kept in its SigMF metadata.
 
 ## Documentation
 
-- [docs/PROBLEM_STATEMENT.md](docs/PROBLEM_STATEMENT.md) — the official PS, requirements R1–R5 and how we read them, SIH rules
-- [docs/PLAN.md](docs/PLAN.md) — status, scope, production bar, architecture, identity, milestones
-- [docs/STANDARDS_TO_BEAT.md](docs/STANDARDS_TO_BEAT.md) — vendors, prior art, rival repos, targets, references
-- [docs/UI.md](docs/UI.md) — workspace layout, what each view shows, layout invariants
+- [docs/PROBLEM_STATEMENT.md](docs/PROBLEM_STATEMENT.md): the official PS, requirements R1–R5 and how we read them, SIH rules
+- [docs/PLAN.md](docs/PLAN.md): status, scope, production bar, architecture, milestones
+- [docs/STANDARDS_TO_BEAT.md](docs/STANDARDS_TO_BEAT.md): vendors, prior art, rival repos, targets, references
+- [docs/UI.md](docs/UI.md): workspace layout, what each view shows
 
 ## Credits
 
