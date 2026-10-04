@@ -12,6 +12,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import Field
+from starlette.types import Scope
 
 from dsp.detect import Detection, detection_parameters
 from dsp.evidence import CamelModel, Parameter
@@ -33,6 +34,18 @@ from .sigmf_export import NotDescribable, annotated_meta, save_beside
 from .uploads import DEFAULT_MAX_UPLOAD_BYTES, UploadError, UploadStore
 
 API_PREFIX = "/api/v1"
+
+
+class _Frontend(StaticFiles):
+    """The built UI. Its assets are named by content hash, but `index.html` is not: without a
+    cache header the desktop window (whose cache outlives the process) can keep showing an old
+    page after a rebuild. `no-cache` still lets it reuse the file when the ETag matches."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        if response.status_code in (200, 304) and Path(path).parts[:1] != ("assets",):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 class SampleInfo(CamelModel):
@@ -585,6 +598,6 @@ def create_app(
         )
 
     # Mounted last so every API route above takes precedence over the SPA files.
-    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
+    app.mount("/", _Frontend(directory=frontend_dist, html=True), name="frontend")
     app.state.busy = store.busy  # the desktop window asks before closing on a running analysis
     return app

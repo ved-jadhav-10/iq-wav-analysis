@@ -32,6 +32,13 @@ def test_serves_spa_and_assets(client: TestClient) -> None:
     assert client.get("/assets/app.js").text == "console.log('ok')"
 
 
+def test_page_is_revalidated_but_hashed_assets_are_not(client: TestClient) -> None:
+    """A rebuilt UI must reach a window whose cache outlives the process."""
+    assert client.get("/").headers["cache-control"] == "no-cache"
+    assert client.get("/index.html").headers["cache-control"] == "no-cache"
+    assert "cache-control" not in client.get("/assets/app.js").headers
+
+
 def test_openapi_schema_is_versioned(client: TestClient) -> None:
     assert client.get("/api/v1/openapi.json").json()["info"]["title"] == "Sanket"
 
