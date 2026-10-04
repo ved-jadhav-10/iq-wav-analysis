@@ -62,19 +62,21 @@ For Claude, Gemini, Codex or any other assistant asked to run or evaluate Sanket
 - **Output files are UTF-8.** Windows PowerShell 5.1 shows `→` and `½` as `â†’` and `Â½` unless you read them with `-Encoding utf8`.
 - **If something fails:** a `FileNotFoundError` inside `numba\core\caching.py` means the path is too long (move the clone to a short path); `uv run ruff`/`pyright` failing with a "trampoline" error on Windows is fixed by `uv run python -m ruff` / `-m pyright`; if pytest runs out of memory, lower `-n`.
 - **The full test suite** (`uv run python -m pytest -n 4 --dist worksteal`) takes several minutes.
-- **To judge the claims:** what is built and what is still open is in [PLAN §0](docs/PLAN.md#0-progress); the measured numbers are in [`bench/results/`](bench/results/). Report what you observe, including anything that did not work.
+- **To judge the claims:** the project's status is in [PLAN §0](docs/PLAN.md#0-progress); the measured numbers are in [`bench/results/`](bench/results/). Report what you observe, including anything that did not work.
 
-## What it does today
+## Planned
 
-- **Reads any recording without assuming:** SigMF; WAV up to RF64 beyond 4 GiB; headerless raw files in all 28 SigMF sample formats (a format sniffer ranks the readings and says UNKNOWN on a tie); FLAC/MP3/Ogg, SDRangel `.sdriq`, MIDAS Blue, VITA 49, `.npy`, `.gz`/`.zip`, numbered file sequences. Files are streamed, so size is bounded by disk, not memory.
-- **Finds and measures every signal:** multi-signal detection (OS-CFAR, significance-tested), symbol rate, carrier offset, roll-off, SNR, bandwidth; analog AM and FM recognised and kept out of the digital chain; capture faults (clipping, DC, I/Q imbalance, gaps).
-- **Demodulates** BPSK, QPSK, 8PSK, 16QAM, 64QAM, offset QPSK and 2/4/8-FSK (MSK/GMSK for AIS) to soft bits, with the constellation and eye diagram.
-- **Finds the coding blind:** convolutional codes (rate 1/n, K up to 9) identified with no prior knowledge, and Viterbi with punctured rates; block and helical interleavers found blind, convolutional (Forney), 802.11 and LTE QPP interleavers from a catalogue; Reed-Solomon (255,223); 13 standard LDPC codes (CCSDS, 802.11n).
-- **Recovers frames:** sync words found blind or from a library, frame length, constant and counter header fields, 31 catalogued CRCs plus blind CRC recovery, header/payload frame table.
-- **Recognises known systems** and proves them with each system's own check: CCSDS telemetry coding, CCSDS LDPC, AIS, NAVTEX, MF/HF DSC, POCSAG.
-- **Exports** JSON, CSV, PDF and SigMF annotations, each tied to the recording by SHA-256, opening with a plain-language summary. The same file and settings always give byte-identical results.
+- The neural modulation classifier, with open-set rejection
+- Analyst overrides that re-run every later stage, with a before/after diff
+- Reusable profiles of a solved chain
+- Capture from a local receiver
+- Tracking loops for timing and carrier
+- Blind Reed-Solomon parameter recovery
+- SSB and Morse
+- Tests on real over-the-air recordings
+- The Linux build
 
-**Not built yet:** the neural modulation classifier (today a cumulant ranking, confirmed only by a CRC); analyst overrides that re-run later stages; reusable profiles; receiver capture; tracking loops for timing and carrier (today feed-forward); blind Reed-Solomon parameter recovery; SSB and Morse; tests on real over-the-air recordings; the Linux build. [PLAN §0](docs/PLAN.md#0-progress) keeps the full list and the build order.
+[PLAN §0](docs/PLAN.md#0-progress) keeps the full list and the build order.
 
 ## Measured
 
