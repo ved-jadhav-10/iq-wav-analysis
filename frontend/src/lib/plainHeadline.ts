@@ -67,7 +67,8 @@ export function plainHeadline(d: HeadlineInput): string {
         const blind = coded && /\(found blind\)/i.test(d.headline)
         const il = param(d.stages, 'deinterleave', 'interleaver')
         const undone =
-          il && il.level === 'VERIFIED' && typeof il.value === 'string' && il.value.trim()
+          il && il.level === 'VERIFIED' && typeof il.value === 'string' && il.value.trim() &&
+          !/^none$/i.test(il.value.trim())
             ? il.value.replace(/\s+from bit\s+\d+\s*$/i, '').trim()
             : null
         return (

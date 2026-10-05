@@ -92,6 +92,17 @@ describe('plainHeadline', () => {
       ),
     }
     expect(plainHeadline(hypothesis)).not.toContain('de-interleaved')
+    const none = {
+      ...verified,
+      stages: verified.stages.map((s) =>
+        s.id === 'deinterleave'
+          ? { ...s, parameters: [p('interleaver', 'Interleaver', 'none', { level: 'VERIFIED' })] }
+          : s,
+      ),
+    }
+    expect(plainHeadline(none)).toBe(
+      'Digital 8PSK signal, error-corrected and proven by 67 of 67 frame checksums (CRC)',
+    )
   })
 
   it('says when the error-correcting code was found blind rather than taken from the catalogue', () => {

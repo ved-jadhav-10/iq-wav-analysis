@@ -2,6 +2,7 @@
 against the exact transmitted frames (PLAN M3-M6)."""
 
 import math
+import re
 from dataclasses import replace
 from typing import Any
 
@@ -209,6 +210,12 @@ def test_rs_concatenated_frames_all_decode_through_the_outer_code() -> None:
     outer = next(p for p in fec_stage.parameters if p.id == "outer_code")
     assert outer.value == "RS(255,223) CCSDS" and outer.level is EvidenceLevel.VERIFIED
     assert report.search is not None and report.search.shuffled_accepts == 0
+    # Sent with no interleaver: the decoded chain says so, proved by the same CRC passes.
+    stages = [s.id for s in report.stages]
+    assert stages.index("deinterleave") == stages.index("fec") - 1
+    interleaver = next(s for s in report.stages if s.id == "deinterleave").parameters[0]
+    assert interleaver.value == "none" and interleaver.level is EvidenceLevel.VERIFIED
+    assert interleaver.proof is not None and interleaver.proof.kind == "crc"
 
 
 def test_uncoded_random_data_is_not_verified() -> None:
@@ -217,6 +224,12 @@ def test_uncoded_random_data_is_not_verified() -> None:
     assert not report.frames and report.no_frames_reason
     fec_stage = next(s for s in report.stages if s.id == "fec")
     assert fec_stage.parameters[0].level is EvidenceLevel.UNKNOWN
+    interleaver = next(s for s in report.stages if s.id == "deinterleave").parameters[0]
+    assert interleaver.level is EvidenceLevel.UNKNOWN and interleaver.value is None
+    assert report.search is not None
+    shown = sum(1 for r in report.search.rows if r.layer == "Interleaver")  # the ledger is capped
+    tried = re.match(r"(\d+) interleaver chains tried", interleaver.evidence[0])
+    assert tried and int(tried[1]) >= max(shown, 1)
 
 
 def test_repetition_coded_frames_are_decoded_as_the_equivalent_convolutional_code() -> None:

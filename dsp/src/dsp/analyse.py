@@ -1957,15 +1957,28 @@ def _decode_stages(
                     f"Syndrome rate {acc.syndrome or 0:.3f} here (0.5 if wrong)",
                 ),
             )
-            stages.append(
-                _stage(
-                    "deinterleave",
-                    "Deinterleave",
-                    acc.interleaver,
-                    E.VERIFIED,
-                    (promote(param, proof),),
-                )
+        else:
+            param = Parameter(
+                id="interleaver",
+                name="Interleaver",
+                value="none",
+                level=E.HYPOTHESIS,
+                method="The frames pass their CRC on the stream as decoded, with nothing "
+                "deinterleaved; a permuted stream would scatter the sync word and fail the CRC",
+                evidence=(
+                    "The chain was accepted before the interleaver search, which runs only when "
+                    "no plain chain decodes",
+                ),
             )
+        stages.append(
+            _stage(
+                "deinterleave",
+                "Deinterleave",
+                acc.interleaver or "None",
+                E.VERIFIED,
+                (promote(param, proof),),
+            )
+        )
         code_params = [
             promote(
                 Parameter(
@@ -2114,6 +2127,7 @@ def _decode_stages(
                 else ""
             )
         )
+        stages.append(_unknown_interleaver_stage(search))
         stages.append(
             _stage(
                 "fec",
@@ -2141,6 +2155,48 @@ def _decode_stages(
             )
         )
     return stages, frames
+
+
+def _unknown_interleaver_stage(search: _Search) -> StageReport:
+    """No chain decoded, so whether an interleaver is present stays open: say which were tried."""
+    tried = [c for c in search.chains if c.interleaver]
+    screened = sum(1 for c in tried if c.syndrome is not None and c.syndrome >= SYNDROME_SCREEN)
+    reach = (
+        f"{len(CATALOGUE)} catalogued block, helical, 802.11 and LTE QPP interleavers, "
+        f"{len(FORNEY_CATALOGUE)} convolutional ones and the block and helical ones found "
+        "blind, each only in front of the K=7 r½ code"
+    )
+    if tried:
+        evidence = (
+            f"{len(tried)} interleaver chains tried across the branches ({reach}): "
+            f"{screened} failed the code-syndrome screen at every alignment and the rest gave no "
+            "CRC passes.",
+        )
+    else:
+        evidence = (
+            f"The interleaver search ({reach}) did not run: the walk ended before it, on a "
+            "significant chain or a known system's own check.",
+        )
+    return _stage(
+        "deinterleave",
+        "Deinterleave",
+        "No interleaver confirmed",
+        E.UNKNOWN,
+        (
+            Parameter(
+                id="interleaver",
+                name="Interleaver",
+                value=None,
+                level=E.UNKNOWN,
+                method="Interleaver catalogue and blind block/helical search, each aligned by the "
+                "inner code's parity syndrome, decided by sync word + CRC",
+                evidence=evidence,
+                resolve_hint="Decoding the signal settles it: a confirmed chain shows whether it "
+                "needs deinterleaving. An interleaver in front of another code, or a "
+                "non-standard pseudo-random one, is not searched.",
+            ),
+        ),
+    )
 
 
 _PREFIX_WARNING = (
